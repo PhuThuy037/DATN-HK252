@@ -121,15 +121,15 @@ User Input
 
 Chạy Docker:
 
-docker compose up --build
+make build
 
 Chạy migration:
 
-alembic upgrade head
+make migrate
 
-Truy cập Swagger:
+Truy cập Swagger (API docs):
 
-http://localhost:8000/docs
+http://localhost:8000/docs#/default
 
 ---
 
