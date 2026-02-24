@@ -23,9 +23,7 @@ class Rule(TimestampMixin, SQLModel, table=True):
             "scope",
             "priority",
         ),
-        Index(
-            "ix_rules_stable_key_company", "stable_key", "company_id"
-        ),
+        Index("ix_rules_stable_key_company", "stable_key", "company_id"),
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
