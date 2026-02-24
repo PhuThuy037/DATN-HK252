@@ -1,6 +1,6 @@
-from app.auth.model import User, RefreshToken
-from app.company_member.model import CompanyMember
+from app.auth.model import User
 from app.company.model import Company
+from app.company_member.model import CompanyMember
 from app.conversation.model import Conversation
 from app.messages.model import Message
 from app.prompt_entitity.model import PromptEntity
