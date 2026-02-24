@@ -12,6 +12,7 @@ dependencies = [
     "httpx>=0.28.1",
     "passlib[bcrypt]>=1.7.4",
     "pgvector>=0.4.2",
+    "presidio-analyzer>=2.2.361",
     "psycopg[binary]>=3.3.2",
     "pydantic-settings>=2.13.0",
     "pyjwt>=2.11.0",
@@ -20,6 +21,7 @@ dependencies = [
     "python-multipart>=0.0.22",
     "redis>=7.2.0",
     "ruff>=0.15.1",
+    "spacy>=3.8.11",
     "sqlmodel>=0.0.33",
     "uvicorn[standard]>=0.40.0",
 ]

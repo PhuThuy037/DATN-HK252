@@ -1,3 +1,4 @@
+# app/rule/model.py
 from typing import Any, Optional
 from uuid import UUID, uuid4
 
@@ -14,6 +15,7 @@ class Rule(TimestampMixin, SQLModel, table=True):
     __tablename__ = "rules"
     __table_args__ = (
         Index("ix_rules_company_enabled_scope", "company_id", "enabled", "scope"),
+        Index("ix_rules_enabled_scope", "enabled", "scope"),
         Index(
             "ix_rules_company_enabled_scope_priority",
             "company_id",
@@ -21,7 +23,9 @@ class Rule(TimestampMixin, SQLModel, table=True):
             "scope",
             "priority",
         ),
-        Index("ix_rules_enabled_scope", "enabled", "scope"),
+        Index(
+            "ix_rules_stable_key_company", "stable_key", "company_id"
+        ),
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
@@ -29,17 +33,18 @@ class Rule(TimestampMixin, SQLModel, table=True):
     # NULL = global rule, NOT NULL = company rule
     company_id: Optional[UUID] = Field(default=None, foreign_key="companies.id")
 
+    # ✅ stable identifier for seeding/upsert
+    stable_key: str = Field(nullable=False, index=True)
+
     name: str = Field(nullable=False, index=True)
     description: Optional[str] = Field(default=None)
 
     scope: RuleScope = Field(
         sa_column=sa.Column(
-            sa.Enum(RuleScope, name="rule_scope", native_enum=True),
-            nullable=False,
+            sa.Enum(RuleScope, name="rule_scope", native_enum=True), nullable=False
         )
     )
 
-    # JSONB conditions
     conditions: dict[str, Any] = Field(sa_column=Column(JSONB, nullable=False))
 
     conditions_version: int = Field(
@@ -49,8 +54,7 @@ class Rule(TimestampMixin, SQLModel, table=True):
 
     action: RuleAction = Field(
         sa_column=sa.Column(
-            sa.Enum(RuleAction, name="rule_action", native_enum=True),
-            nullable=False,
+            sa.Enum(RuleAction, name="rule_action", native_enum=True), nullable=False
         )
     )
 
@@ -86,7 +90,6 @@ class Rule(TimestampMixin, SQLModel, table=True):
 
     created_by: UUID = Field(foreign_key="users.id", nullable=False)
 
-    # relationships
     company: Optional["Company"] = Relationship(back_populates="rules")
     creator: "User" = Relationship(back_populates="created_rules")
     embeddings: list["RuleEmbedding"] = Relationship(back_populates="rule")
