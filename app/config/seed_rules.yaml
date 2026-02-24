@@ -1,0 +1,87 @@
+version: 1
+defaults:
+  scope: "prompt"
+  rag_mode: "off"
+  enabled: true
+  conditions_version: 1
+
+rules:
+  - key: "global.pii.cccd.block"
+    name: "Chặn CCCD"
+    description: "Chặn khi phát hiện CCCD (12 số) với độ tin cậy cao"
+    action: "block"
+    severity: "high"
+    priority: 100
+    conditions:
+      any:
+        - entity_type: "CCCD"
+          min_score: 0.85
+
+  - key: "global.pii.phone.mask"
+    name: "Che SĐT"
+    description: "Che số điện thoại"
+    action: "mask"
+    severity: "medium"
+    priority: 60
+    conditions:
+      any:
+        - entity_type: "PHONE"
+          min_score: 0.80
+
+  - key: "global.pii.tax.mask"
+    name: "Che mã số thuế"
+    description: "Che MST (10 số hoặc 10-3)"
+    action: "mask"
+    severity: "medium"
+    priority: 55
+    conditions:
+      any:
+        - entity_type: "TAX_ID"
+          min_score: 0.80
+
+  - key: "global.pii.email.mask"
+    name: "Che email"
+    description: "Che email"
+    action: "mask"
+    severity: "low"
+    priority: 30
+    conditions:
+      any:
+        - entity_type: "EMAIL"
+          min_score: 0.80
+
+  - key: "global.security.prompt_injection.block"
+    name: "Chặn prompt injection"
+    description: "Chặn nếu detector security đánh dấu prompt injection"
+    action: "block"
+    severity: "high"
+    priority: 120
+    conditions:
+      any:
+        - signal:
+            field: "security.prompt_injection"
+            equals: true
+
+  - key: "global.dev.api_secret.block"
+    name: "Chặn API secret (dev)"
+    description: "Chặn token/secret nếu persona dev"
+    action: "block"
+    severity: "high"
+    priority: 110
+    conditions:
+      all:
+        - entity_type: "API_SECRET"
+          min_score: 0.85
+        - signal:
+            field: "persona"
+            equals: "dev"
+  - key: "global.pii.credit_card.mask"
+    name: "Che thẻ tín dụng"
+    description: "Che số thẻ tín dụng"
+    action: "mask"
+    severity: "high"
+    priority: 90
+    conditions:
+      any:
+        - entity_type: "CREDIT_CARD"
+          min_score: 0.80

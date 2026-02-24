@@ -1,0 +1,33 @@
+version: 1
+
+personas:
+  dev:
+    keywords:
+      - "api key"
+      - "apikey"
+      - "secret"
+      - "token"
+      - "bearer"
+      - "authorization"
+      - ".env"
+      - "github"
+      - "docker"
+      - "kubernetes"
+      - "k8s"
+      - "aws"
+      - "gcp"
+      - "openai"
+  office:
+    keywords:
+      - "cccd"
+      - "căn cước"
+      - "căn cước công dân"
+      - "cmnd"
+      - "mã số thuế"
+      - "mst"
+      - "hợp đồng"
+      - "lương"
+      - "nhân sự"
+      - "ngân hàng"
+      - "số tài khoản"
+      - "stk"
