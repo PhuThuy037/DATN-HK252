@@ -59,7 +59,7 @@ rules:
     conditions:
       any:
         - signal:
-            field: "security.prompt_injection"
+            field: "security.prompt_injection_block"
             equals: true
 
   - key: "global.dev.api_secret.block"
