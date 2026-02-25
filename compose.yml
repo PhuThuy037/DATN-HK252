@@ -1,6 +1,5 @@
 services:
   db:
-    # Đổi sang image chính chủ, cực kỳ ổn định
     image: pgvector/pgvector:pg16
     container_name: datn-postgres
     restart: unless-stopped
@@ -37,10 +36,10 @@ services:
     container_name: datn-api
     restart: unless-stopped
     env_file: .env
-    environment:
-      UV_CACHE_DIR: /tmp/uv-cache
     ports:
       - "${API_PORT:-8000}:8000"
+    environment:
+      - HUGGINGFACEHUB_API_TOKEN=${HF_TOKEN}
     depends_on:
       db:
         condition: service_healthy
@@ -48,10 +47,7 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
-      - /app/.venv
-      - uv-cache:/tmp/uv-cache
-    # DEV default: hot reload
-    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   pgadmin:
     image: dpage/pgadmin4:8
@@ -72,4 +68,3 @@ services:
 volumes:
   pgdata:
   pgadmin-data:
-  uv-cache:
