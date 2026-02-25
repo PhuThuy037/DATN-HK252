@@ -16,6 +16,7 @@ from app.conversation.schemas import (
 from app.conversation import service as convo_service
 from app.permissions.deps.conversation import ConversationView
 from app.common.schemas import ApiResponse
+from app.common.enums import RuleAction
 
 router = APIRouter(prefix="/v1", tags=["conversations"])
 
@@ -64,7 +65,7 @@ def send_message(
     payload: MessageCreateIn,
     session: SessionDep,
     principal: CurrentPrincipal,
-    access: ConversationView,  # ✅ ensures user can view/send in this conversation
+    access: ConversationView,
 ):
     # access.conversation already loaded by guard; ensure same id
     msg = convo_service.append_user_message(
@@ -74,6 +75,12 @@ def send_message(
         content=payload.content,
         input_type=payload.input_type,
     )
+    if msg.final_action == RuleAction.block:
+        return ApiResponse(
+            ok=False,
+            data=msg,
+            error=None,
+        )
     return ApiResponse(ok=True, data=msg)
 
 
