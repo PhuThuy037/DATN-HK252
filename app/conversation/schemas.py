@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field as PydanticField
@@ -56,6 +56,12 @@ class MessageOut(BaseModel):
     risk_score: Optional[float]
     ambiguous: bool
     created_at: datetime
-
+    matched_rule_ids: Optional[list[str]] = None
+    entities_json: Optional[dict[str, Any]] = None
+    rag_evidence_json: Optional[dict[str, Any]] = None
+    latency_ms: Optional[int] = None
+    blocked: bool = False
+    blocked_reason: Optional[str] = None
+    
     class Config:
         from_attributes = True

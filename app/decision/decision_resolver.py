@@ -48,7 +48,6 @@ class DecisionResolver:
                 final_action=masks[0].action, matched=matches_sorted, chosen=masks[0]
             )
 
-        # fallback: lấy rule priority cao nhất
         return DecisionResult(
             final_action=matches_sorted[0].action,
             matched=matches_sorted,

@@ -1,12 +1,11 @@
+# app/decision/detectors/presidio_detector.py
 from __future__ import annotations
 
-from typing import Any, List
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any, Iterable, List
 
 from presidio_analyzer import AnalyzerEngine
-from presidio_analyzer.nlp_engine import NlpEngineProvider
-
-from app.common.enums import EntitySource
+from presidio_analyzer.nlp_engine import SpacyNlpEngine
 
 
 @dataclass(slots=True)
@@ -15,59 +14,59 @@ class Entity:
     start: int
     end: int
     score: float
-    source: str
-    text: str
-    metadata: dict[str, Any]
+    source: str = "presidio"
+    text: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class PresidioDetector:
-    """
-    Presidio wrapper.
-    Chỉ dùng cho PII quốc tế (email, credit card, ssn...)
-    """
-
-    TYPE_MAP = {
-        "EMAIL_ADDRESS": "EMAIL",
-        "PHONE_NUMBER": "PHONE",
-        "CREDIT_CARD": "CREDIT_CARD",
-        "IP_ADDRESS": "IP",
-        "URL": "URL",
-        "US_SSN": "SSN",
+    # ✅ loại nhiễu phổ biến
+    DEFAULT_DROP_TYPES = {
+        "DATE_TIME",  # hay ăn ké số
+        "URL",  # hay ăn ké domain trong email
     }
 
-    def __init__(self) -> None:
-        configuration = {
-            "nlp_engine_name": "spacy",
-            "models": [
-                {"lang_code": "en", "model_name": "en_core_web_sm"},
-            ],
-        }
-
-        provider = NlpEngineProvider(nlp_configuration=configuration)
-        nlp_engine = provider.create_engine()
-
+    def __init__(
+        self,
+        *,
+        model_name: str = "en_core_web_sm",
+        drop_types: Iterable[str] | None = None,
+        min_score: float = 0.5,
+    ):
+        nlp_engine = SpacyNlpEngine(
+            models=[{"lang_code": "en", "model_name": model_name}]
+        )
         self.analyzer = AnalyzerEngine(nlp_engine=nlp_engine)
 
-    def scan(self, text: str, language: str = "en") -> List[Entity]:
-        results = self.analyzer.analyze(text=text, language=language)
+        self.drop_types = (
+            set(drop_types) if drop_types is not None else set(self.DEFAULT_DROP_TYPES)
+        )
+        self.min_score = float(min_score)
 
-        entities: list[Entity] = []
+    def scan(self, text: str) -> List[Entity]:
+        results = self.analyzer.analyze(text=text, language="en")
+        out: list[Entity] = []
 
         for r in results:
-            mapped_type = self.TYPE_MAP.get(r.entity_type)
-            if not mapped_type:
-                continue  # bỏ những thứ linh tinh
+            et = str(r.entity_type)
 
-            entities.append(
+            if et in self.drop_types:
+                continue
+
+            if float(r.score) < self.min_score:
+                continue
+
+            frag = text[r.start : r.end]
+            out.append(
                 Entity(
-                    type=mapped_type,
-                    start=r.start,
-                    end=r.end,
+                    type=et,
+                    start=int(r.start),
+                    end=int(r.end),
                     score=float(r.score),
-                    source=EntitySource.presidio.value,
-                    text=text[r.start : r.end],
+                    source="presidio",
+                    text=frag,
                     metadata={},
                 )
             )
 
-        return entities
+        return out
