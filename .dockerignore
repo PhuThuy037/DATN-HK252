@@ -1,0 +1,22 @@
+# Bỏ qua môi trường ảo của host
+.venv
+venv
+env
+
+# Bỏ qua các file cache của Python và UV
+__pycache__
+*.pyc
+.pytest_cache
+.uv-cache
+
+# BỎ QUA CÁC FILE MODEL AI / DATA NẶNG (Quan trọng nhất!)
+*.gguf
+*.bin
+models/
+data/
+*.csv
+*.json
+
+# Bỏ qua Git và file môi trường
+.git
+.env
