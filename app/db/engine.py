@@ -1,5 +1,5 @@
 from sqlmodel import create_engine
-
+import app.db.all_models
 from app.core.config import get_settings
 
 settings = get_settings()
