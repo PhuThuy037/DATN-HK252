@@ -38,7 +38,6 @@ def _overlap_ratio(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
 @dataclass(slots=True)
 class MergeConfig:
     overlap_threshold: float = 0.80
-    # Nếu score bằng nhau, ưu tiên source nào?
     prefer_source_order: tuple[str, ...] = ("local_regex", "presidio")
 
 
