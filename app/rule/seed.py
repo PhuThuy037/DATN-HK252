@@ -36,8 +36,14 @@ class RuleSeeder:
 
         processed = 0
         for r in rules:
-            key = r["key"]
-            name = r["name"]
+            key = r.get("key")
+            if not key:
+                raise ValueError("Rule missing 'key'")
+
+            name = r.get("name")
+            if not name:
+                raise ValueError(f"Rule '{key}' missing 'name'")
+
             description = r.get("description")
 
             scope = _to_enum(
