@@ -60,27 +60,24 @@ def create_company_conversation(
 @router.post(
     "/conversations/{conversation_id}/messages", response_model=ApiResponse[MessageOut]
 )
-def send_message(
+async def send_message(
     conversation_id: UUID,
     payload: MessageCreateIn,
     session: SessionDep,
     principal: CurrentPrincipal,
     access: ConversationView,
 ):
-    # access.conversation already loaded by guard; ensure same id
-    msg = convo_service.append_user_message(
+    msg = await convo_service.append_user_message_async(
         session=session,
         conversation_id=conversation_id,
         user_id=principal.user_id,
         content=payload.content,
         input_type=payload.input_type,
     )
+
     if msg.final_action == RuleAction.block:
-        return ApiResponse(
-            ok=False,
-            data=msg,
-            error=None,
-        )
+        return ApiResponse(ok=False, data=msg, error=None)
+
     return ApiResponse(ok=True, data=msg)
 
 
