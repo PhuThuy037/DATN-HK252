@@ -38,8 +38,6 @@ services:
     env_file: .env
     ports:
       - "${API_PORT:-8000}:8000"
-    environment:
-      - HUGGINGFACEHUB_API_TOKEN=${HF_TOKEN}
     depends_on:
       db:
         condition: service_healthy

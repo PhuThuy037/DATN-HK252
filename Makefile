@@ -7,6 +7,7 @@ GID := $(shell id -g)
 # ===== Variables =====
 # Giá trị mặc định nếu quên truyền biến msg khi make revision
 msg ?= "auto_migration"
+run ?= seed_rule
 
 # Start services (background)
 up:
@@ -51,6 +52,13 @@ migrate:
 # Rollback last migration
 downgrade:
 	$(COMPOSE) exec -u $(UID):$(GID) api alembic downgrade -1
+
+# Run seed data
+seed:
+	$(COMPOSE) exec -e UV_CACHE_DIR=/tmp/.uv_cache -u $(UID):$(GID) api uv run python -m app.script.$(run)
+
+list-scripts:
+	ls app/script/*.py | xargs -n 1 basename | sed 's/\.py//'
 
 
 # ===== Code =====
