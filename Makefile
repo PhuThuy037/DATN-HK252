@@ -1,8 +1,14 @@
 # ===== Docker =====
 
 COMPOSE = docker compose
+
+ifeq ($(OS),Windows_NT)
+EXEC_USER :=
+else
 UID := $(shell id -u)
 GID := $(shell id -g)
+EXEC_USER := -u $(UID):$(GID)
+endif
 
 # ===== Variables =====
 # Giá trị mặc định nếu quên truyền biến msg khi make revision
@@ -35,7 +41,7 @@ logs:
 
 # Enter API container shell
 shell:
-	$(COMPOSE) exec -u $(UID):$(GID) api bash
+	$(COMPOSE) exec $(EXEC_USER) api bash
 
 
 # ===== Alembic =====
@@ -43,19 +49,19 @@ shell:
 # Create new migration
 # Usage: make revision msg="add_refresh_token"
 revision:
-	$(COMPOSE) exec -u $(UID):$(GID) api alembic revision --autogenerate -m "$(msg)"
+	$(COMPOSE) exec $(EXEC_USER) api alembic revision --autogenerate -m "$(msg)"
 
 # Apply latest migration
 migrate:
-	$(COMPOSE) exec -u $(UID):$(GID) api alembic upgrade head
+	$(COMPOSE) exec $(EXEC_USER) api alembic upgrade head
 
 # Rollback last migration
 downgrade:
-	$(COMPOSE) exec -u $(UID):$(GID) api alembic downgrade -1
+	$(COMPOSE) exec $(EXEC_USER) api alembic downgrade -1
 
 # Run seed data
 seed:
-	$(COMPOSE) exec -e UV_CACHE_DIR=/tmp/.uv_cache -u $(UID):$(GID) api uv run python -m app.script.$(run)
+	$(COMPOSE) exec -e UV_CACHE_DIR=/tmp/.uv_cache $(EXEC_USER) api uv run python -m app.script.$(run)
 
 list-scripts:
 	ls app/script/*.py | xargs -n 1 basename | sed 's/\.py//'
@@ -65,16 +71,23 @@ list-scripts:
 
 # Format code with Ruff
 format:
-	$(COMPOSE) exec -u $(UID):$(GID) api ruff format .
+	$(COMPOSE) exec $(EXEC_USER) api ruff format .
 
 # Check and fix lint errors with Ruff
 lint:
-	$(COMPOSE) exec -u $(UID):$(GID) api ruff check . --fix
+	$(COMPOSE) exec $(EXEC_USER) api ruff check . --fix
 
 # Run tests
 test:
-	$(COMPOSE) exec -u $(UID):$(GID) api pytest
+	$(COMPOSE) exec $(EXEC_USER) api pytest
 
 # Cleanup unused docker resources
 clean:
 	docker system prune -f
+
+seed-all:
+	$(COMPOSE) exec $(EXEC_USER) api alembic upgrade head
+	$(COMPOSE) exec -e UV_CACHE_DIR=/tmp/.uv_cache $(EXEC_USER) api uv run python -m app.script.seed_rule
+	$(COMPOSE) exec -e UV_CACHE_DIR=/tmp/.uv_cache $(EXEC_USER) api uv run python -m app.script.seed_policy_docs
+	$(COMPOSE) exec -e UV_CACHE_DIR=/tmp/.uv_cache $(EXEC_USER) api uv run python -m app.script.seed_policy_chunks
+	$(COMPOSE) exec -e UV_CACHE_DIR=/tmp/.uv_cache $(EXEC_USER) api uv run python -m app.script.seed_policy_chunk_embeddings
