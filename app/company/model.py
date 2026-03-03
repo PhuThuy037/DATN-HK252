@@ -27,6 +27,10 @@ class Company(TimestampMixin, SQLModel, table=True):
             index=True,
         ),
     )
+    system_prompt: str | None = Field(
+        default=None,
+        sa_column=sa.Column(sa.Text(), nullable=True),
+    )
 
     # relationships
     members: list["CompanyMember"] = Relationship(back_populates="company")

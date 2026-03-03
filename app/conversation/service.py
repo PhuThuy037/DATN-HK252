@@ -8,6 +8,7 @@ import anyio
 from sqlmodel import Session, select
 
 from app.chat.service import ChatService
+from app.company.model import Company
 from app.common.enums import (
     MemberStatus,
     MessageInputType,
@@ -15,6 +16,7 @@ from app.common.enums import (
     RuleAction,
     ScanStatus,
 )
+from app.core.config import get_settings
 from app.company_member.model import CompanyMember
 from app.conversation.model import Conversation
 from app.decision.rule_layering import compact_matches
@@ -27,10 +29,22 @@ from app.permissions.core import forbid, not_found
 _chat = ChatService()
 _scan = ScanEngineLocal(context_yaml_path="app/config/context_base.yaml")
 _mask_service = MaskService()
+_settings = get_settings()
 
 
 def _sha256_hex(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _resolve_system_prompt(*, session: Session, conversation: Conversation) -> str | None:
+    if conversation.company_id:
+        company = session.get(Company, conversation.company_id)
+        company_prompt = (company.system_prompt or "").strip() if company else ""
+        if company_prompt:
+            return company_prompt
+
+    default_prompt = (_settings.default_system_prompt or "").strip()
+    return default_prompt or None
 
 
 # =========================================================
@@ -110,14 +124,14 @@ async def append_user_message_async(
     user_id: UUID,
     content: str,
     input_type: MessageInputType = MessageInputType.user_input,
-) -> Message:
+) -> tuple[Message, UUID | None]:
     """
     Async version: dùng cho FastAPI async route (khuyến nghị).
     Flow:
       1) Save USER message (scan + mask/block)
       2) Call ChatService (dynamic model)
       3) Save ASSISTANT message (scan + mask/block)
-    Return: user_msg (giữ nguyên contract)
+    Return: (user_msg, assistant_message_id)
     """
     stmt = (
         select(Conversation).where(Conversation.id == conversation_id).with_for_update()
@@ -203,14 +217,14 @@ async def append_user_message_async(
 
     # Nếu user bị BLOCK -> stop luôn, KHÔNG gọi LLM
     if user_blocked:
-        return user_msg
+        return user_msg, None
 
     # -----------------------------
     # STEP 2) Call ChatService (DYNAMIC MODEL HERE)
     # NOTE: gửi masked vào LLM nếu có (tránh leak)
     # -----------------------------
     llm_input = user_masked or content
-    system_prompt = None
+    system_prompt = _resolve_system_prompt(session=session, conversation=c)
     temperature = float(c.temperature or 0.7)
     model_name = c.model_name  # "gemini-3-flash-preview" hoặc "qwen2.5:7b"
 
@@ -256,7 +270,7 @@ async def append_user_message_async(
         conversation_id=c.id,
         role=MessageRole.assistant,
         sequence_number=asst_seq,
-        input_type=MessageInputType.assistant_output,
+        input_type=MessageInputType.tool_result,
         content=None if asst_blocked else assistant_text,
         content_hash=_sha256_hex(assistant_text),
         content_masked=asst_masked,
@@ -276,8 +290,7 @@ async def append_user_message_async(
     session.commit()
     session.refresh(assistant_msg)
 
-    # giữ nguyên contract: return user_msg
-    return user_msg
+    return user_msg, assistant_msg.id
 
 
 def append_user_message(
@@ -292,7 +305,7 @@ def append_user_message(
     Sync wrapper: chỉ dùng cho script/CLI hoặc chỗ nào chắc chắn KHÔNG đang ở event loop.
     FastAPI async route -> gọi append_user_message_async() trực tiếp.
     """
-    return anyio.run(
+    user_msg, _ = anyio.run(
         append_user_message_async,
         session=session,
         conversation_id=conversation_id,
@@ -300,6 +313,7 @@ def append_user_message(
         content=content,
         input_type=input_type,
     )
+    return user_msg
 
 
 def list_messages(*, session: Session, conversation_id: UUID) -> list[Message]:
@@ -309,3 +323,29 @@ def list_messages(*, session: Session, conversation_id: UUID) -> list[Message]:
         .order_by(Message.sequence_number.asc())
     )
     return list(session.exec(stmt).all())
+
+
+def list_messages_page(
+    *,
+    session: Session,
+    conversation_id: UUID,
+    limit: int,
+    before_seq: int | None = None,
+) -> tuple[list[Message], bool, int | None, int | None, int | None]:
+    stmt = select(Message).where(Message.conversation_id == conversation_id)
+    if before_seq is not None:
+        stmt = stmt.where(Message.sequence_number < before_seq)
+
+    stmt = stmt.order_by(Message.sequence_number.desc()).limit(limit + 1)
+    rows_desc = list(session.exec(stmt).all())
+
+    has_more = len(rows_desc) > limit
+    if has_more:
+        rows_desc = rows_desc[:limit]
+
+    rows = list(reversed(rows_desc))
+    oldest_seq = rows[0].sequence_number if rows else None
+    newest_seq = rows[-1].sequence_number if rows else None
+    next_before_seq = oldest_seq if has_more else None
+
+    return rows, has_more, next_before_seq, oldest_seq, newest_seq

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from app.common.request_id import get_request_id
+from app.auth.deps import CurrentUser
 from app.auth.schemas import (
     RegisterRequest,
     RegisterResponse,
@@ -11,6 +12,7 @@ from app.auth.schemas import (
     RefreshResponse,
     LogoutRequest,
     MessageResponse,
+    UserPublic,
 )
 from app.auth.service import AuthService
 from app.common.schemas import ApiResponse, ok
@@ -46,3 +48,9 @@ def logout(payload: LogoutRequest, session: SessionDep, request: Request):
     svc.logout(session=session, refresh_token=payload.refresh_token)
     rid = get_request_id(request)
     return ok(MessageResponse(message="Logged out"), request_id=rid)
+
+
+@router.get("/me", response_model=ApiResponse[UserPublic])
+def me(current_user: CurrentUser, request: Request):
+    rid = get_request_id(request)
+    return ok(UserPublic.model_validate(current_user), request_id=rid)

@@ -145,10 +145,20 @@ def main():
             final_action = data.get("final_action")
             masked = data.get("content_masked")
             ambiguous = data.get("ambiguous")
+            assistant_message_id = data.get("assistant_message_id")
 
             print("\n" + "=" * 70)
             print("[CASE]", tc["name"])
-            print("ok:", ok, "| final_action:", final_action, "| ambiguous:", ambiguous)
+            print(
+                "ok:",
+                ok,
+                "| final_action:",
+                final_action,
+                "| ambiguous:",
+                ambiguous,
+                "| assistant_message_id:",
+                assistant_message_id,
+            )
 
             if masked:
                 print("masked:", masked)
@@ -165,6 +175,18 @@ def main():
 
                 if "expect_ambiguous" in tc:
                     assert_eq(ambiguous, tc["expect_ambiguous"], "ambiguous mismatch")
+
+                if tc["expect_action"] == "block":
+                    assert_eq(
+                        assistant_message_id,
+                        None,
+                        "assistant_message_id should be null when user message is blocked",
+                    )
+                else:
+                    if not assistant_message_id:
+                        raise AssertionError(
+                            "assistant_message_id missing for non-blocked user message"
+                        )
 
                 print("✅ PASS")
 

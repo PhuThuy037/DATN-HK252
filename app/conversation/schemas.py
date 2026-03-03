@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field as PydanticField
@@ -62,6 +62,31 @@ class MessageOut(BaseModel):
     latency_ms: Optional[int] = None
     blocked: bool = False
     blocked_reason: Optional[str] = None
-    
+
     class Config:
         from_attributes = True
+
+
+class SendMessageOut(MessageOut):
+    assistant_message_id: Optional[UUID] = None
+
+
+class MessagePublicOut(BaseModel):
+    id: UUID
+    role: MessageRole
+    content: Optional[str]
+    created_at: datetime
+    state: Literal["normal", "masked", "blocked"]
+
+
+class MessagesPageMeta(BaseModel):
+    limit: int
+    has_more: bool
+    next_before_seq: Optional[int] = None
+    oldest_seq: Optional[int] = None
+    newest_seq: Optional[int] = None
+
+
+class MessagesPageOut(BaseModel):
+    items: list[MessagePublicOut]
+    page: MessagesPageMeta

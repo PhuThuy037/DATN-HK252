@@ -21,7 +21,13 @@ class Entity:
 
 class PresidioDetector:
     # ✅ loại nhiễu phổ biến
-    DEFAULT_DROP_TYPES = {"DATE_TIME", "URL", "UK_NHS"}
+    DEFAULT_DROP_TYPES = {
+        "DATE_TIME",
+        "URL",
+        "UK_NHS",
+        "PERSON",
+        "ORGANIZATION",
+    }
 
     def __init__(
         self,

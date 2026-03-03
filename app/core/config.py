@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     jwt_refresh_token_expire_days: int = 7
     google_api_key: str | None = None
     chat_provider: str = "gemini"  # gemini | ollama
+    default_system_prompt: str | None = "You are a helpful assistant."
 
     model_config = SettingsConfigDict(
         env_file=".env",

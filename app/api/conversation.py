@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from app.api.deps import SessionDep
 from app.auth.deps import CurrentPrincipal
@@ -11,7 +11,10 @@ from app.conversation.schemas import (
     ConversationCreateCompanyIn,
     ConversationOut,
     MessageCreateIn,
-    MessageOut,
+    MessagesPageMeta,
+    MessagesPageOut,
+    MessagePublicOut,
+    SendMessageOut,
 )
 from app.conversation import service as convo_service
 from app.permissions.deps.conversation import ConversationView
@@ -58,7 +61,7 @@ def create_company_conversation(
 
 
 @router.post(
-    "/conversations/{conversation_id}/messages", response_model=ApiResponse[MessageOut]
+    "/conversations/{conversation_id}/messages", response_model=ApiResponse[SendMessageOut]
 )
 async def send_message(
     conversation_id: UUID,
@@ -67,30 +70,82 @@ async def send_message(
     principal: CurrentPrincipal,
     access: ConversationView,
 ):
-    msg = await convo_service.append_user_message_async(
+    msg, assistant_message_id = await convo_service.append_user_message_async(
         session=session,
         conversation_id=conversation_id,
         user_id=principal.user_id,
         content=payload.content,
         input_type=payload.input_type,
     )
+    out = SendMessageOut.model_validate(msg).model_copy(
+        update={"assistant_message_id": assistant_message_id}
+    )
 
     if msg.final_action == RuleAction.block:
-        return ApiResponse(ok=False, data=msg, error=None)
+        return ApiResponse(ok=False, data=out, error=None)
 
-    return ApiResponse(ok=True, data=msg)
+    return ApiResponse(ok=True, data=out)
 
 
 @router.get(
     "/conversations/{conversation_id}/messages",
-    response_model=ApiResponse[list[MessageOut]],
+    response_model=ApiResponse[MessagesPageOut],
 )
 def get_messages(
     conversation_id: UUID,
     session: SessionDep,
     access: ConversationView,
+    limit: int = Query(default=20, ge=1, le=50),
+    before_seq: int | None = Query(default=None, ge=1),
 ):
-    items = convo_service.list_messages(
-        session=session, conversation_id=conversation_id
+    items, has_more, next_before_seq, oldest_seq, newest_seq = (
+        convo_service.list_messages_page(
+            session=session,
+            conversation_id=conversation_id,
+            limit=limit,
+            before_seq=before_seq,
+        )
     )
-    return ApiResponse(ok=True, data=items)
+
+    out: list[MessagePublicOut] = []
+    for m in items:
+        is_blocked = m.final_action == RuleAction.block
+        is_masked = m.final_action == RuleAction.mask
+
+        if is_blocked:
+            safe_content = None
+            state = "blocked"
+        elif m.content_masked is not None:
+            safe_content = m.content_masked
+            state = "masked"
+        elif is_masked:
+            # Fail-safe: if action says MASK but masked text is missing, do not expose raw.
+            safe_content = None
+            state = "masked"
+        else:
+            safe_content = m.content
+            state = "normal"
+
+        out.append(
+            MessagePublicOut(
+                id=m.id,
+                role=m.role,
+                content=safe_content,
+                created_at=m.created_at,
+                state=state,
+            )
+        )
+
+    return ApiResponse(
+        ok=True,
+        data=MessagesPageOut(
+            items=out,
+            page=MessagesPageMeta(
+                limit=limit,
+                has_more=has_more,
+                next_before_seq=next_before_seq,
+                oldest_seq=oldest_seq,
+                newest_seq=newest_seq,
+            ),
+        ),
+    )

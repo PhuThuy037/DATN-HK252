@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
 from sqlmodel import Session, select
 
@@ -163,3 +164,12 @@ class AuthService:
             rt.revoked_at = _now_utc()
             session.add(rt)
             session.commit()
+
+
+def get_user_by_id(*, session: Session, user_id: UUID) -> User:
+    user = session.get(User, user_id)
+    if not user:
+        raise AppError.unauthorized("Invalid user")
+    if user.status != UserStatus.active:
+        raise AppError.unauthorized("User is inactive")
+    return user
