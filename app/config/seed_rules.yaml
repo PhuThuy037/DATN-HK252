@@ -85,3 +85,22 @@ rules:
       any:
         - entity_type: "CREDIT_CARD"
           min_score: 0.80
+
+  - key: "global.security.rag.block"
+    name: "Rag block"
+    action: "block"
+    priority: 130
+    conditions:
+      any:
+        - signal:
+            field: "rag.decision"
+            equals: "BLOCK"
+  - key: "global.security.rag.mask"
+    name: "Rag mask"
+    action: "mask"
+    priority: 125
+    conditions:
+      any:
+        - signal:
+            field: "rag.decision"
+            equals: "MASK"
