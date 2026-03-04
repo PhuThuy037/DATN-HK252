@@ -21,6 +21,12 @@ Phát triển công cụ ngăn chặn lộ thông tin riêng tư khi sử dụng
 
 ---
 
+## Sơ đồ kiến trúc hệ thống
+
+![System Architecture](images/architecture.png)
+
+---
+
 ## 2. Tính năng hiện có
 
 - Xác thực đầy đủ: register, login, refresh, logout, `GET /v1/auth/me`
