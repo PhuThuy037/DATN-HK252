@@ -24,24 +24,77 @@ class RuleEngine:
     """
     Match rule theo DSL trong Rule.conditions (JSONB).
 
-    Load rules:
-    - nếu company_id != None: (company_id = X OR company_id IS NULL) AND enabled=true
-    - nếu company_id == None: chỉ load global (company_id IS NULL) AND enabled=true
-    ORDER BY priority DESC
+    Runtime layering:
+    - Personal: enabled global rules.
+    - Company:
+      1) company override > company custom > global default
+      2) override(enabled=false) disables matching global stable_key for that company
+      3) final resolved rules are sorted by priority DESC
     """
 
     def load_rules(self, *, session: Session, company_id: Optional[UUID]) -> list[Rule]:
-        stmt = select(Rule).where(Rule.enabled.is_(True))
-
+        # Personal mode: only enabled global rules.
         if company_id is None:
-            stmt = stmt.where(Rule.company_id.is_(None))
-        else:
-            stmt = stmt.where(
-                (Rule.company_id == company_id) | (Rule.company_id.is_(None))
+            stmt = (
+                select(Rule)
+                .where(Rule.company_id.is_(None))
+                .where(Rule.enabled.is_(True))
+                .order_by(Rule.priority.desc())
             )
+            return list(session.exec(stmt).all())
 
-        stmt = stmt.order_by(Rule.priority.desc())
-        return list(session.exec(stmt).all())
+        # Company mode precedence:
+        # company override > company custom > global default
+        # and override(enabled=false) disables corresponding global rule for this company.
+        global_rows = list(
+            session.exec(
+                select(Rule)
+                .where(Rule.company_id.is_(None))
+                .order_by(Rule.created_at.desc())
+            ).all()
+        )
+        company_rows = list(
+            session.exec(
+                select(Rule)
+                .where(Rule.company_id == company_id)
+                .order_by(Rule.created_at.desc())
+            ).all()
+        )
+
+        global_by_key: dict[str, Rule] = {}
+        for g in global_rows:
+            if g.stable_key not in global_by_key:
+                global_by_key[g.stable_key] = g
+
+        global_keys = set(global_by_key.keys())
+
+        # Keep the newest company row for each global stable_key as override.
+        override_by_key: dict[str, Rule] = {}
+        custom_enabled: list[Rule] = []
+        for c in company_rows:
+            if c.stable_key in global_keys:
+                if c.stable_key not in override_by_key:
+                    override_by_key[c.stable_key] = c
+                continue
+            if c.enabled:
+                custom_enabled.append(c)
+
+        resolved: list[Rule] = []
+
+        for stable_key, g in global_by_key.items():
+            override = override_by_key.get(stable_key)
+            if override is None:
+                if g.enabled:
+                    resolved.append(g)
+                continue
+
+            if override.enabled:
+                resolved.append(override)
+            # else: explicit company disable, skip both override and global.
+
+        resolved.extend(custom_enabled)
+        resolved.sort(key=lambda r: int(r.priority), reverse=True)
+        return resolved
 
     def evaluate(
         self,
