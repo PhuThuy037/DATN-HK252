@@ -13,3 +13,4 @@ from app.rag.models.policy_chunk import PolicyChunk
 from app.rag.models.policy_chunk_embedding import PolicyChunkEmbedding
 from app.rag.models.policy_document import PolicyDocument
 from app.rag.models.rag_retrieval_log import RagRetrievalLog
+from app.rule_change_log.model import RuleChangeLog

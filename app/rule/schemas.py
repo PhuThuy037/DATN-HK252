@@ -65,3 +65,15 @@ class CompanyRuleUpdateIn(BaseModel):
 
 class CompanyRuleToggleEnabledIn(BaseModel):
     enabled: bool
+
+
+class RuleChangeLogOut(BaseModel):
+    id: UUID
+    company_id: UUID
+    rule_id: UUID
+    actor_user_id: UUID
+    action: str
+    changed_fields: list[str]
+    before_json: Optional[dict[str, Any]] = None
+    after_json: Optional[dict[str, Any]] = None
+    created_at: datetime

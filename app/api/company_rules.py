@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from app.api.deps import SessionDep
 from app.auth.deps import CurrentPrincipal
@@ -13,6 +13,7 @@ from app.rule.schemas import (
     CompanyRuleOut,
     CompanyRuleToggleEnabledIn,
     CompanyRuleUpdateIn,
+    RuleChangeLogOut,
 )
 
 router = APIRouter(prefix="/v1", tags=["company-rules"])
@@ -31,6 +32,25 @@ def list_company_rules(
         session=session,
         company_id=company_id,
         actor_user_id=principal.user_id,
+    )
+    return ApiResponse(ok=True, data=rows)
+
+
+@router.get(
+    "/companies/{company_id}/rules/change-logs",
+    response_model=ApiResponse[list[RuleChangeLogOut]],
+)
+def list_company_rule_change_logs(
+    company_id: UUID,
+    session: SessionDep,
+    principal: CurrentPrincipal,
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    rows = rule_service.list_company_rule_change_logs(
+        session=session,
+        company_id=company_id,
+        actor_user_id=principal.user_id,
+        limit=limit,
     )
     return ApiResponse(ok=True, data=rows)
 

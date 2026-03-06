@@ -6,8 +6,12 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.api.deps import SessionDep
+from app.auth.deps import CurrentPrincipal
+from app.common.enums import MemberRole
 from app.decision.detectors.local_regex_detector import LocalRegexDetector
 from app.decision.context_scorer import ContextScorer
+from app.permissions.core import forbid
+from app.permissions.loaders.conversation import load_company_member_active_or_403
 from app.rule.engine import RuleEngine
 from app.decision.decision_resolver import DecisionResolver
 
@@ -62,7 +66,29 @@ class FullScanResponse(BaseModel):
 
 
 @router.post("/full-scan", response_model=FullScanResponse)
-def debug_full_scan(req: FullScanRequest, session: SessionDep):
+def debug_full_scan(
+    req: FullScanRequest,
+    session: SessionDep,
+    principal: CurrentPrincipal,
+):
+    if req.company_id is None:
+        raise forbid(
+            "company_id is required for debug full-scan",
+            field="company_id",
+            reason="company_id_required",
+        )
+
+    member = load_company_member_active_or_403(
+        session=session,
+        company_id=req.company_id,
+        user_id=principal.user_id,
+    )
+    if member.role != MemberRole.company_admin:
+        raise forbid(
+            "Company admin required for debug full-scan",
+            field="company_id",
+            reason="not_company_admin",
+        )
 
     # 1️⃣ Detect entities
     entities = detector.scan(req.text)

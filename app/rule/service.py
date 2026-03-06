@@ -17,8 +17,10 @@ from app.rule.schemas import (
     CompanyRuleCreateIn,
     CompanyRuleOut,
     CompanyRuleUpdateIn,
+    RuleChangeLogOut,
     RuleOrigin,
 )
+from app.rule_change_log.model import RuleChangeLog
 
 
 def _load_company_or_404(*, session: Session, company_id: UUID) -> Company:
@@ -179,6 +181,62 @@ def _to_rule_out(*, rule: Rule, origin: RuleOrigin) -> CompanyRuleOut:
     )
 
 
+def _to_rule_change_out(*, row: RuleChangeLog) -> RuleChangeLogOut:
+    return RuleChangeLogOut(
+        id=row.id,
+        company_id=row.company_id,
+        rule_id=row.rule_id,
+        actor_user_id=row.actor_user_id,
+        action=row.action,
+        changed_fields=list(row.changed_fields or []),
+        before_json=row.before_json,
+        after_json=row.after_json,
+        created_at=row.created_at,
+    )
+
+
+def _snapshot_rule(*, rule: Rule) -> dict[str, Any]:
+    return {
+        "id": str(rule.id),
+        "company_id": str(rule.company_id) if rule.company_id else None,
+        "stable_key": rule.stable_key,
+        "name": rule.name,
+        "description": rule.description,
+        "scope": rule.scope.value,
+        "conditions": deepcopy(rule.conditions),
+        "conditions_version": int(rule.conditions_version),
+        "action": rule.action.value,
+        "severity": rule.severity.value,
+        "priority": int(rule.priority),
+        "rag_mode": rule.rag_mode.value,
+        "enabled": bool(rule.enabled),
+    }
+
+
+def _append_rule_change_log(
+    *,
+    session: Session,
+    company_id: UUID,
+    rule_id: UUID,
+    actor_user_id: UUID,
+    action: str,
+    changed_fields: list[str],
+    before_json: dict[str, Any] | None,
+    after_json: dict[str, Any] | None,
+) -> None:
+    session.add(
+        RuleChangeLog(
+            company_id=company_id,
+            rule_id=rule_id,
+            actor_user_id=actor_user_id,
+            action=action,
+            changed_fields=changed_fields,
+            before_json=before_json,
+            after_json=after_json,
+        )
+    )
+
+
 def _load_company_rule_by_stable_key(
     *, session: Session, company_id: UUID, stable_key: str
 ) -> Rule | None:
@@ -215,6 +273,28 @@ def list_company_rules(
         _to_rule_out(rule=r, origin=_classify_origin(rule=r, global_keys=global_keys))
         for r in rows
     ]
+
+
+def list_company_rule_change_logs(
+    *,
+    session: Session,
+    company_id: UUID,
+    actor_user_id: UUID,
+    limit: int,
+) -> list[RuleChangeLogOut]:
+    _load_company_or_404(session=session, company_id=company_id)
+    _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+
+    safe_limit = max(1, min(int(limit), 200))
+    rows = list(
+        session.exec(
+            select(RuleChangeLog)
+            .where(RuleChangeLog.company_id == company_id)
+            .order_by(RuleChangeLog.created_at.desc())
+            .limit(safe_limit)
+        ).all()
+    )
+    return [_to_rule_change_out(row=r) for r in rows]
 
 
 def create_company_custom_rule(
@@ -269,6 +349,28 @@ def create_company_custom_rule(
         created_by=actor_user_id,
     )
     session.add(row)
+    _append_rule_change_log(
+        session=session,
+        company_id=company_id,
+        rule_id=row.id,
+        actor_user_id=actor_user_id,
+        action="rule.create_custom",
+        changed_fields=[
+            "stable_key",
+            "name",
+            "description",
+            "scope",
+            "conditions",
+            "conditions_version",
+            "action",
+            "severity",
+            "priority",
+            "rag_mode",
+            "enabled",
+        ],
+        before_json=None,
+        after_json=_snapshot_rule(rule=row),
+    )
     session.commit()
     session.refresh(row)
     return _to_rule_out(rule=row, origin=RuleOrigin.company_custom)
@@ -297,6 +399,8 @@ def update_company_rule(
 
     if not changed_fields:
         return _to_rule_out(rule=row, origin=origin)
+
+    before_json = _snapshot_rule(rule=row)
 
     if origin == RuleOrigin.company_override:
         allowed_fields = {"enabled"}
@@ -344,7 +448,19 @@ def update_company_rule(
             )
         row.action = payload.action
 
+    after_json = _snapshot_rule(rule=row)
+
     session.add(row)
+    _append_rule_change_log(
+        session=session,
+        company_id=company_id,
+        rule_id=row.id,
+        actor_user_id=actor_user_id,
+        action="rule.update",
+        changed_fields=sorted(changed_fields),
+        before_json=before_json,
+        after_json=after_json,
+    )
     session.commit()
     session.refresh(row)
     return _to_rule_out(rule=row, origin=origin)
@@ -369,8 +485,21 @@ def soft_delete_company_rule(
     global_keys = _global_stable_keys(session=session)
     origin = _classify_origin(rule=row, global_keys=global_keys)
 
+    before_json = _snapshot_rule(rule=row)
     row.enabled = False
+    after_json = _snapshot_rule(rule=row)
+
     session.add(row)
+    _append_rule_change_log(
+        session=session,
+        company_id=company_id,
+        rule_id=row.id,
+        actor_user_id=actor_user_id,
+        action="rule.soft_delete",
+        changed_fields=["enabled"],
+        before_json=before_json,
+        after_json=after_json,
+    )
     session.commit()
     session.refresh(row)
     return _to_rule_out(rule=row, origin=origin)
@@ -404,6 +533,8 @@ def toggle_global_rule_for_company(
         stable_key=normalized_key,
     )
 
+    before_json = _snapshot_rule(rule=override) if override is not None else None
+
     if override is None:
         override = Rule(
             company_id=company_id,
@@ -423,7 +554,19 @@ def toggle_global_rule_for_company(
     else:
         override.enabled = bool(enabled)
 
+    after_json = _snapshot_rule(rule=override)
+
     session.add(override)
+    _append_rule_change_log(
+        session=session,
+        company_id=company_id,
+        rule_id=override.id,
+        actor_user_id=actor_user_id,
+        action="rule.toggle_global_enabled",
+        changed_fields=["enabled"],
+        before_json=before_json,
+        after_json=after_json,
+    )
     session.commit()
     session.refresh(override)
     return _to_rule_out(rule=override, origin=RuleOrigin.company_override)

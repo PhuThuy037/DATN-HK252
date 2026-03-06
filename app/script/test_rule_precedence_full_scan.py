@@ -94,9 +94,13 @@ def list_rules(client: httpx.Client, token: str, company_id: str) -> list[dict]:
     return data
 
 
-def full_scan(client: httpx.Client, company_id: str, text: str) -> dict:
+def full_scan(client: httpx.Client, token: str, company_id: str, text: str) -> dict:
     payload = {"text": text, "company_id": company_id}
-    r = client.post(f"{V1}/debug/full-scan", json=payload)
+    r = client.post(
+        f"{V1}/debug/full-scan",
+        json=payload,
+        headers=auth_headers(token),
+    )
     body = expect_status(r, 200)
     return body
 
@@ -173,14 +177,14 @@ def main() -> None:
         rules = list_rules(client, token, company_id)
         if not find_rule_by_key(rules, GLOBAL_PHONE_KEY):
             fail(f"cannot find global key={GLOBAL_PHONE_KEY} in list rules")
-        baseline = full_scan(client, company_id, PHONE_TEXT)
+        baseline = full_scan(client, token, company_id, PHONE_TEXT)
         if GLOBAL_PHONE_KEY not in stable_keys(baseline):
             fail(f"baseline full-scan should include {GLOBAL_PHONE_KEY}\n{pretty(baseline)}")
 
         print("[4/8] override global phone -> enabled=false, full-scan should not match global phone")
         override = toggle_global_phone(client, token, company_id, enabled=False)
         override_id = str(override["id"])
-        after_disable = full_scan(client, company_id, PHONE_TEXT)
+        after_disable = full_scan(client, token, company_id, PHONE_TEXT)
         if GLOBAL_PHONE_KEY in stable_keys(after_disable):
             fail(
                 "global phone key still matched after override disable\n"
@@ -189,7 +193,7 @@ def main() -> None:
 
         print("[5/8] override global phone -> enabled=true, full-scan should match again")
         toggle_global_phone(client, token, company_id, enabled=True)
-        after_enable = full_scan(client, company_id, PHONE_TEXT)
+        after_enable = full_scan(client, token, company_id, PHONE_TEXT)
         if GLOBAL_PHONE_KEY not in stable_keys(after_enable):
             fail(
                 "global phone key missing after override enable\n"
@@ -199,7 +203,7 @@ def main() -> None:
         print("[6/8] create custom phone block, expect final_action=block")
         custom_rule = create_custom_phone_block(client, token, company_id)
         custom_rule_id = str(custom_rule["id"])
-        with_custom_block = full_scan(client, company_id, PHONE_TEXT)
+        with_custom_block = full_scan(client, token, company_id, PHONE_TEXT)
         if str(with_custom_block.get("final_action", "")).lower() != "block":
             fail(f"expected final_action=block\n{pretty(with_custom_block)}")
 
@@ -209,7 +213,7 @@ def main() -> None:
         )
         patch_body = expect_status(patch_resp, 200)
         ensure_ok_api(patch_body, "patch custom action mask")
-        with_custom_mask = full_scan(client, company_id, PHONE_TEXT)
+        with_custom_mask = full_scan(client, token, company_id, PHONE_TEXT)
         if str(with_custom_mask.get("final_action", "")).lower() != "mask":
             fail(f"expected final_action=mask\n{pretty(with_custom_mask)}")
 

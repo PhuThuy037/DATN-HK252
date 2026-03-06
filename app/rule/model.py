@@ -14,6 +14,19 @@ from app.common.enums import RagMode, RuleAction, RuleScope, RuleSeverity
 class Rule(TimestampMixin, SQLModel, table=True):
     __tablename__ = "rules"
     __table_args__ = (
+        Index(
+            "uq_rules_global_stable_key",
+            "stable_key",
+            unique=True,
+            postgresql_where=sa.text("company_id IS NULL"),
+        ),
+        Index(
+            "uq_rules_company_stable_key",
+            "company_id",
+            "stable_key",
+            unique=True,
+            postgresql_where=sa.text("company_id IS NOT NULL"),
+        ),
         Index("ix_rules_company_enabled_scope", "company_id", "enabled", "scope"),
         Index("ix_rules_enabled_scope", "enabled", "scope"),
         Index(
