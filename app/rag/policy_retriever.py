@@ -8,14 +8,15 @@ import httpx
 from sqlmodel import Session, select
 
 from app.core.config import get_settings
-from app.rag.models.policy_chunk import PolicyChunk
-from app.rag.models.policy_chunk_embedding import PolicyChunkEmbedding
-from app.rag.models.rag_retrieval_log import RagRetrievalLog
 from app.rag.embedding_cache import (
-    make_key,
     get_embedding_from_cache,
+    make_key,
     set_embedding_cache,
 )
+from app.rag.models.policy_chunk import PolicyChunk
+from app.rag.models.policy_chunk_embedding import PolicyChunkEmbedding
+from app.rag.models.policy_document import PolicyDocument
+from app.rag.models.rag_retrieval_log import RagRetrievalLog
 
 
 class RetrievedChunk:
@@ -43,16 +44,11 @@ class PolicyRetriever:
     async def _embed(self, text: str) -> list[float]:
         key = make_key(model=self.embed_model, text=text)
 
-        # 1️⃣ Try cache
         cached = await get_embedding_from_cache(key)
         if cached is not None:
             return cached
 
-        # 2️⃣ Call Ollama
-        async with httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=10,  # giảm từ 60 xuống 10s (fail-fast)
-        ) as client:
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=10) as client:
             r = await client.post(
                 "/api/embeddings",
                 json={"model": self.embed_model, "prompt": text},
@@ -67,9 +63,7 @@ class PolicyRetriever:
         if len(emb) != self.embedding_dim:
             raise RuntimeError(f"dim mismatch {len(emb)} vs {self.embedding_dim}")
 
-        # 3️⃣ Save cache (non-blocking)
         await set_embedding_cache(key, emb)
-
         return emb
 
     async def retrieve(
@@ -87,17 +81,31 @@ class PolicyRetriever:
 
         q_emb = await self._embed(query)
 
-        # NOTE:
-        # - Nếu muốn multi-tenant strict: filter PolicyChunk.company_id in (company_id, None)
-        # - Hiện MVP: lấy tất cả (mày có thể bật filter ở dưới)
         stmt = (
             select(PolicyChunk, PolicyChunkEmbedding)
+            .join(PolicyDocument, PolicyDocument.id == PolicyChunk.document_id)
             .join(PolicyChunkEmbedding, PolicyChunkEmbedding.chunk_id == PolicyChunk.id)
             .where(PolicyChunkEmbedding.model_name == self.embed_model)
-            # .where(PolicyChunk.company_id.is_(None) if company_id is None else PolicyChunk.company_id.in_([None, company_id]))
+            .where(PolicyDocument.enabled.is_(True))
+            .where(PolicyDocument.deleted_at.is_(None))
             .order_by(PolicyChunkEmbedding.embedding.cosine_distance(q_emb))  # type: ignore
             .limit(k)
         )
+
+        # Strict tenant isolation:
+        # - personal chat (company_id is None): only global
+        # - company chat: global + current company
+        if company_id is None:
+            stmt = stmt.where(PolicyChunk.company_id.is_(None)).where(
+                PolicyDocument.company_id.is_(None)
+            )
+        else:
+            stmt = stmt.where(
+                (PolicyChunk.company_id.is_(None)) | (PolicyChunk.company_id == company_id)
+            ).where(
+                (PolicyDocument.company_id.is_(None))
+                | (PolicyDocument.company_id == company_id)
+            )
 
         rows = session.exec(stmt).all()
 

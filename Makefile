@@ -39,6 +39,9 @@ reset-db:
 logs:
 	$(COMPOSE) logs -f api
 
+logs-worker:
+	$(COMPOSE) logs -f policy-worker
+
 # Enter API container shell
 shell:
 	$(COMPOSE) exec $(EXEC_USER) api bash
@@ -87,6 +90,7 @@ clean:
 
 seed-all:
 	$(COMPOSE) exec $(EXEC_USER) api alembic upgrade head
+	$(COMPOSE) exec -e UV_CACHE_DIR=/tmp/.uv_cache $(EXEC_USER) api uv run python -m app.script.seed_context_terms
 	$(COMPOSE) exec -e UV_CACHE_DIR=/tmp/.uv_cache $(EXEC_USER) api uv run python -m app.script.seed_rule
 	$(COMPOSE) exec -e UV_CACHE_DIR=/tmp/.uv_cache $(EXEC_USER) api uv run python -m app.script.seed_policy_docs
 	$(COMPOSE) exec -e UV_CACHE_DIR=/tmp/.uv_cache $(EXEC_USER) api uv run python -m app.script.seed_policy_chunks

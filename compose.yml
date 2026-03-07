@@ -47,6 +47,20 @@ services:
       - .:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  policy-worker:
+    build: .
+    container_name: datn-policy-worker
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    command: uv run python -m app.policy.worker
+
   pgadmin:
     image: dpage/pgadmin4:8
     container_name: datn-pgadmin
