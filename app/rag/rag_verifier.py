@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from typing import Any, Literal, Optional
 from uuid import UUID
 
-import httpx
 from sqlmodel import Session
 
 from app.core.config import get_settings
-from app.rag.policy_retriever import PolicyRetriever
+from app.llm import LlmTextResult, generate_text_async
 from app.rag.models.rag_retrieval_log import RagRetrievalLog
+from app.rag.policy_retriever import PolicyRetriever
 
 
 DecisionType = Literal["ALLOW", "MASK", "BLOCK"]
@@ -37,8 +37,13 @@ class RagVerifier:
         settings = get_settings()
 
         self.settings = settings
-        self.llm_model = llm_model or settings.ollama_model
-        self.base_url = settings.ollama_base_url.rstrip("/")
+        self.llm_provider = str(settings.non_embedding_llm_provider or "ollama").strip().lower()
+        default_model = (
+            settings.gemini_model
+            if self.llm_provider == "gemini"
+            else settings.ollama_model
+        )
+        self.llm_model = llm_model or default_model
 
         self.retriever = PolicyRetriever(
             embed_model=embed_model,
@@ -56,9 +61,6 @@ class RagVerifier:
     ) -> RagDecision:
         t0 = time.perf_counter()
 
-        # ---------------------------
-        # 1️⃣ RETRIEVE (fail-safe)
-        # ---------------------------
         try:
             chunks = await self.retriever.retrieve(
                 session=session,
@@ -67,7 +69,7 @@ class RagVerifier:
                 message_id=message_id,
                 top_k=self.retriever.top_k,
             )
-        except Exception as e:
+        except Exception:
             return RagDecision(
                 decision="ALLOW",
                 confidence=0.5,
@@ -75,17 +77,13 @@ class RagVerifier:
                 rationale="rag_retrieval_failed",
             )
 
-        # ---------------------------
-        # 2️⃣ BUILD PROMPT
-        # ---------------------------
         contexts = [c.content for c in chunks]
         prompt = self._build_prompt(user_text=user_text, contexts=contexts)
 
-        # ---------------------------
-        # 3️⃣ CALL LLM (timeout safe)
-        # ---------------------------
+        llm_out: LlmTextResult
         try:
-            raw = await self._call_ollama(prompt)
+            llm_out = await self._call_llm(prompt)
+            raw = llm_out.text
         except Exception:
             return RagDecision(
                 decision="ALLOW",
@@ -94,9 +92,6 @@ class RagVerifier:
                 rationale="rag_timeout",
             )
 
-        # ---------------------------
-        # 4️⃣ PARSE
-        # ---------------------------
         parsed_ok = True
         parse_error = None
 
@@ -132,9 +127,6 @@ class RagVerifier:
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
 
-        # ---------------------------
-        # 5️⃣ LOG (best-effort)
-        # ---------------------------
         try:
             session.add(
                 RagRetrievalLog(
@@ -144,7 +136,9 @@ class RagVerifier:
                     latency_ms=latency_ms,
                     results_json={
                         "meta": {
-                            "llm_model": self.llm_model,
+                            "llm_model": llm_out.model,
+                            "llm_provider": llm_out.provider,
+                            "llm_fallback_used": llm_out.fallback_used,
                             "embed_model": getattr(self.retriever, "embed_model", None),
                             "parsed_ok": parsed_ok,
                             "parse_error": parse_error,
@@ -166,23 +160,13 @@ class RagVerifier:
 
         return out
 
-    async def _call_ollama(self, prompt: str) -> str:
-        async with httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=10,  # 🔥 giảm từ 120 xuống 10s
-        ) as client:
-            r = await client.post(
-                "/api/generate",
-                json={
-                    "model": self.llm_model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0},
-                },
-            )
-            r.raise_for_status()
-            data: dict[str, Any] = r.json()
-            return (data.get("response") or "").strip()
+    async def _call_llm(self, prompt: str) -> LlmTextResult:
+        return await generate_text_async(
+            prompt=prompt,
+            provider=self.llm_provider,
+            model_name=self.llm_model,
+            timeout_s=self.settings.non_embedding_llm_timeout_seconds,
+        )
 
     def _build_prompt(self, *, user_text: str, contexts: list[str]) -> str:
         ctx_block = "\n\n---\n\n".join(contexts) if contexts else "(none)"
