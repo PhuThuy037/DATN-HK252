@@ -8,6 +8,7 @@ from app.api.company_settings import router as company_settings_router
 from app.api.conversation import router as conversation_router
 from app.api.debug import router as debug_router
 from app.api.policy_admin import router as policy_admin_router
+from app.api.rule_suggestions import router as rule_suggestions_router
 
 from app.common.errors import AppError
 from app.common.handlers import (
@@ -34,6 +35,7 @@ app.include_router(company_settings_router)
 app.include_router(conversation_router)
 app.include_router(debug_router)
 app.include_router(policy_admin_router)
+app.include_router(rule_suggestions_router)
 
 
 @app.get("/health")

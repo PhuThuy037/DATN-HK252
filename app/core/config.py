@@ -7,8 +7,15 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str | None = None
     policy_ingest_queue_name: str = "policy_ingest_jobs"
+    rule_duplicate_top_k: int = 5
+    rule_duplicate_exact_threshold: float = 0.92
+    rule_duplicate_near_threshold: float = 0.82
+    rule_duplicate_embed_model: str = "local-hash-1536-v1"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b"
+    gemini_model: str = "gemini-3-flash-preview"
+    non_embedding_llm_provider: str = "gemini"  # gemini | ollama
+    non_embedding_llm_timeout_seconds: float = 4.0
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60

@@ -16,3 +16,5 @@ from app.rag.models.policy_ingest_job import PolicyIngestJob
 from app.rag.models.policy_ingest_job_item import PolicyIngestJobItem
 from app.rag.models.rag_retrieval_log import RagRetrievalLog
 from app.rule_change_log.model import RuleChangeLog
+from app.suggestion.models.rule_suggestion import RuleSuggestion
+from app.suggestion.models.rule_suggestion_log import RuleSuggestionLog

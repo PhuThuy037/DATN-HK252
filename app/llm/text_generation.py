@@ -1,0 +1,285 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+import httpx
+
+from app.core.config import get_settings
+
+
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+
+
+@dataclass(slots=True)
+class LlmTextResult:
+    text: str
+    provider: str
+    model: str
+    fallback_used: bool = False
+
+
+def _normalize_provider(value: str | None) -> str:
+    p = (value or "").strip().lower()
+    if p in {"gemini", "ollama"}:
+        return p
+    return "ollama"
+
+
+def _has_usable_gemini_key(key: str | None) -> bool:
+    v = (key or "").strip()
+    if not v:
+        return False
+    lowered = v.lower()
+    if lowered in {"x", "changeme", "change-me", "your_api_key"}:
+        return False
+    return True
+
+
+def _extract_gemini_text(data: dict[str, Any]) -> str:
+    candidates = list(data.get("candidates") or [])
+    if not candidates:
+        raise RuntimeError(f"Gemini empty candidates: {data}")
+    content = candidates[0].get("content") or {}
+    parts = list(content.get("parts") or [])
+    texts = [str(p.get("text") or "").strip() for p in parts if isinstance(p, dict)]
+    out = "\n".join([t for t in texts if t]).strip()
+    if not out:
+        raise RuntimeError(f"Gemini empty text: {data}")
+    return out
+
+
+def _build_attempt_chain(preferred: str, *, gemini_available: bool) -> list[str]:
+    if preferred == "gemini":
+        if gemini_available:
+            return ["gemini", "ollama"]
+        return ["ollama"]
+    return ["ollama"]
+
+
+def _call_ollama_sync(
+    *,
+    prompt: str,
+    system_prompt: str | None,
+    model_name: str | None,
+    timeout_s: float,
+) -> tuple[str, str]:
+    settings = get_settings()
+    model = (model_name or settings.ollama_model).strip()
+    final_prompt = ""
+    if (system_prompt or "").strip():
+        final_prompt += (system_prompt or "").strip() + "\n\n"
+    final_prompt += prompt.strip()
+
+    with httpx.Client(
+        base_url=settings.ollama_base_url.rstrip("/"),
+        timeout=timeout_s,
+    ) as client:
+        r = client.post(
+            "/api/generate",
+            json={
+                "model": model,
+                "prompt": final_prompt,
+                "stream": False,
+                "options": {"temperature": 0},
+            },
+        )
+        r.raise_for_status()
+        data: dict[str, Any] = r.json()
+    text = str(data.get("response") or "").strip()
+    if not text:
+        raise RuntimeError("Ollama empty response")
+    return text, model
+
+
+def _call_gemini_sync(
+    *,
+    prompt: str,
+    system_prompt: str | None,
+    model_name: str | None,
+    timeout_s: float,
+) -> tuple[str, str]:
+    settings = get_settings()
+    model = (model_name or settings.gemini_model).strip()
+    key = (settings.google_api_key or "").strip()
+    if not _has_usable_gemini_key(key):
+        raise RuntimeError("Gemini API key missing")
+
+    contents: list[dict[str, Any]] = []
+    if (system_prompt or "").strip():
+        contents.append({"role": "user", "parts": [{"text": (system_prompt or "").strip()}]})
+    contents.append({"role": "user", "parts": [{"text": prompt.strip()}]})
+
+    with httpx.Client(timeout=timeout_s) as client:
+        r = client.post(
+            f"{GEMINI_BASE_URL}/models/{model}:generateContent",
+            params={"key": key},
+            json={
+                "contents": contents,
+                "generationConfig": {"temperature": 0},
+            },
+        )
+        r.raise_for_status()
+        data: dict[str, Any] = r.json()
+    return _extract_gemini_text(data), model
+
+
+async def _call_ollama_async(
+    *,
+    prompt: str,
+    system_prompt: str | None,
+    model_name: str | None,
+    timeout_s: float,
+) -> tuple[str, str]:
+    settings = get_settings()
+    model = (model_name or settings.ollama_model).strip()
+    final_prompt = ""
+    if (system_prompt or "").strip():
+        final_prompt += (system_prompt or "").strip() + "\n\n"
+    final_prompt += prompt.strip()
+
+    async with httpx.AsyncClient(
+        base_url=settings.ollama_base_url.rstrip("/"),
+        timeout=timeout_s,
+    ) as client:
+        r = await client.post(
+            "/api/generate",
+            json={
+                "model": model,
+                "prompt": final_prompt,
+                "stream": False,
+                "options": {"temperature": 0},
+            },
+        )
+        r.raise_for_status()
+        data: dict[str, Any] = r.json()
+    text = str(data.get("response") or "").strip()
+    if not text:
+        raise RuntimeError("Ollama empty response")
+    return text, model
+
+
+async def _call_gemini_async(
+    *,
+    prompt: str,
+    system_prompt: str | None,
+    model_name: str | None,
+    timeout_s: float,
+) -> tuple[str, str]:
+    settings = get_settings()
+    model = (model_name or settings.gemini_model).strip()
+    key = (settings.google_api_key or "").strip()
+    if not _has_usable_gemini_key(key):
+        raise RuntimeError("Gemini API key missing")
+
+    contents: list[dict[str, Any]] = []
+    if (system_prompt or "").strip():
+        contents.append({"role": "user", "parts": [{"text": (system_prompt or "").strip()}]})
+    contents.append({"role": "user", "parts": [{"text": prompt.strip()}]})
+
+    async with httpx.AsyncClient(timeout=timeout_s) as client:
+        r = await client.post(
+            f"{GEMINI_BASE_URL}/models/{model}:generateContent",
+            params={"key": key},
+            json={
+                "contents": contents,
+                "generationConfig": {"temperature": 0},
+            },
+        )
+        r.raise_for_status()
+        data: dict[str, Any] = r.json()
+    return _extract_gemini_text(data), model
+
+
+def generate_text_sync(
+    *,
+    prompt: str,
+    system_prompt: str | None = None,
+    provider: str | None = None,
+    model_name: str | None = None,
+    timeout_s: float | None = None,
+) -> LlmTextResult:
+    settings = get_settings()
+    preferred = _normalize_provider(provider or settings.non_embedding_llm_provider)
+    chain = _build_attempt_chain(
+        preferred,
+        gemini_available=_has_usable_gemini_key(settings.google_api_key),
+    )
+    timeout_value = float(timeout_s or settings.non_embedding_llm_timeout_seconds)
+
+    last_exc: Exception | None = None
+    for idx, p in enumerate(chain):
+        model_for_attempt = model_name if idx == 0 else None
+        try:
+            if p == "gemini":
+                text, model = _call_gemini_sync(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    model_name=model_for_attempt,
+                    timeout_s=timeout_value,
+                )
+            else:
+                text, model = _call_ollama_sync(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    model_name=model_for_attempt,
+                    timeout_s=timeout_value,
+                )
+            return LlmTextResult(
+                text=text,
+                provider=p,
+                model=model,
+                fallback_used=idx > 0,
+            )
+        except Exception as e:
+            last_exc = e
+            continue
+
+    raise RuntimeError("No LLM provider available") from last_exc
+
+
+async def generate_text_async(
+    *,
+    prompt: str,
+    system_prompt: str | None = None,
+    provider: str | None = None,
+    model_name: str | None = None,
+    timeout_s: float | None = None,
+) -> LlmTextResult:
+    settings = get_settings()
+    preferred = _normalize_provider(provider or settings.non_embedding_llm_provider)
+    chain = _build_attempt_chain(
+        preferred,
+        gemini_available=_has_usable_gemini_key(settings.google_api_key),
+    )
+    timeout_value = float(timeout_s or settings.non_embedding_llm_timeout_seconds)
+
+    last_exc: Exception | None = None
+    for idx, p in enumerate(chain):
+        model_for_attempt = model_name if idx == 0 else None
+        try:
+            if p == "gemini":
+                text, model = await _call_gemini_async(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    model_name=model_for_attempt,
+                    timeout_s=timeout_value,
+                )
+            else:
+                text, model = await _call_ollama_async(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    model_name=model_for_attempt,
+                    timeout_s=timeout_value,
+                )
+            return LlmTextResult(
+                text=text,
+                provider=p,
+                model=model,
+                fallback_used=idx > 0,
+            )
+        except Exception as e:
+            last_exc = e
+            continue
+
+    raise RuntimeError("No LLM provider available") from last_exc
