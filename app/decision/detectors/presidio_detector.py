@@ -20,7 +20,6 @@ class Entity:
 
 
 class PresidioDetector:
-    # ✅ loại nhiễu phổ biến
     DEFAULT_DROP_TYPES = {
         "DATE_TIME",
         "URL",

@@ -21,6 +21,14 @@ class Entity:
     metadata: dict
 
 
+@dataclass(slots=True, frozen=True)
+class ContextHint:
+    term: str
+    window_1: int = 60
+    window_2: int = 20
+    weight: float = 1.0
+
+
 # -----------------------------------
 # Local VN Regex Detector
 # -----------------------------------
@@ -41,13 +49,26 @@ class LocalRegexDetector:
         re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"),
     ]
 
-    CCCD_CONTEXT = ["cccd", "căn cước", "cmnd"]
-    TAX_CONTEXT = ["mst", "mã số thuế", "tax code"]
-    PHONE_CONTEXT = ["sđt", "số điện thoại", "hotline", "liên hệ", "số"]
+    # Keep ASCII-safe defaults; DB-backed context_terms is preferred in runtime.
+    CCCD_CONTEXT = ["cccd", "can cuoc", "cmnd"]
+    TAX_CONTEXT = ["mst", "ma so thue", "tax code"]
+    PHONE_CONTEXT = ["sdt", "so dien thoai", "hotline", "lien he", "so"]
 
-    def scan(self, text: str) -> List[Entity]:
+    DEFAULT_CONTEXT_HINTS: dict[str, list[ContextHint]] = {
+        "PHONE": [ContextHint(term=t) for t in PHONE_CONTEXT],
+        "CCCD": [ContextHint(term=t) for t in CCCD_CONTEXT],
+        "TAX_ID": [ContextHint(term=t) for t in TAX_CONTEXT],
+    }
+
+    def scan(
+        self,
+        text: str,
+        *,
+        context_hints_by_entity: dict[str, list[ContextHint]] | None = None,
+    ) -> List[Entity]:
         entities: List[Entity] = []
-        lower_text = text.lower()
+        lower_text = (text or "").lower()
+        hints = self._resolve_context_hints(context_hints_by_entity)
 
         # EMAIL
         for m in self.EMAIL_PATTERN.finditer(text):
@@ -66,9 +87,7 @@ class LocalRegexDetector:
         # PHONE
         for m in self.PHONE_PATTERN.finditer(text):
             normalized = self._normalize_phone(m.group())
-            context_level = self._context_level(
-                lower_text, m.start(), self.PHONE_CONTEXT
-            )
+            context_level = self._context_level(lower_text, m.start(), hints["PHONE"])
             score = 0.90 if context_level == 2 else 0.80 if context_level == 1 else 0.70
 
             entities.append(
@@ -88,9 +107,7 @@ class LocalRegexDetector:
 
         # CCCD
         for m in self.CCCD_PATTERN.finditer(text):
-            context_level = self._context_level(
-                lower_text, m.start(), self.CCCD_CONTEXT
-            )
+            context_level = self._context_level(lower_text, m.start(), hints["CCCD"])
             score = 0.95 if context_level == 2 else 0.85 if context_level == 1 else 0.65
 
             entities.append(
@@ -107,7 +124,7 @@ class LocalRegexDetector:
 
         # TAX ID
         for m in self.TAX_ID_PATTERN.finditer(text):
-            context_level = self._context_level(lower_text, m.start(), self.TAX_CONTEXT)
+            context_level = self._context_level(lower_text, m.start(), hints["TAX_ID"])
             score = 0.90 if context_level == 2 else 0.80 if context_level == 1 else 0.65
 
             entities.append(
@@ -142,26 +159,58 @@ class LocalRegexDetector:
 
         return entities
 
-    # -----------------------------------
-    # Helpers
-    # -----------------------------------
-
     def _normalize_phone(self, phone: str) -> str:
         digits = re.sub(r"[^\d]", "", phone)
         if digits.startswith("84"):
             digits = "0" + digits[2:]
         return digits
 
-    def _context_level(self, text: str, pos: int, keywords: List[str]) -> int:
+    def _resolve_context_hints(
+        self,
+        context_hints_by_entity: dict[str, list[ContextHint]] | None,
+    ) -> dict[str, list[ContextHint]]:
+        resolved: dict[str, list[ContextHint]] = {
+            "PHONE": list(self.DEFAULT_CONTEXT_HINTS["PHONE"]),
+            "CCCD": list(self.DEFAULT_CONTEXT_HINTS["CCCD"]),
+            "TAX_ID": list(self.DEFAULT_CONTEXT_HINTS["TAX_ID"]),
+        }
+        if not context_hints_by_entity:
+            return resolved
+
+        for et in ("PHONE", "CCCD", "TAX_ID"):
+            incoming = context_hints_by_entity.get(et) or []
+            if incoming:
+                resolved[et] = incoming
+        return resolved
+
+    def _context_level(self, text: str, pos: int, hints: List[ContextHint]) -> int:
         """
         0 = no context
-        1 = keyword within ±60
-        2 = keyword within ±20
+        1 = keyword within +/- window_1
+        2 = keyword within +/- window_2
         """
-        for window, level in [(20, 2), (60, 1)]:
-            start = max(0, pos - window)
-            end = min(len(text), pos + window)
-            snippet = text[start:end]
-            if any(k in snippet for k in keywords):
-                return level
+        if not hints:
+            return 0
+
+        # Stronger window first.
+        for hint in hints:
+            term = (hint.term or "").strip().lower()
+            if not term:
+                continue
+            w2 = max(1, int(hint.window_2))
+            start = max(0, pos - w2)
+            end = min(len(text), pos + w2)
+            if term in text[start:end]:
+                return 2
+
+        for hint in hints:
+            term = (hint.term or "").strip().lower()
+            if not term:
+                continue
+            w1 = max(1, int(hint.window_1))
+            start = max(0, pos - w1)
+            end = min(len(text), pos + w1)
+            if term in text[start:end]:
+                return 1
+
         return 0

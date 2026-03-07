@@ -32,13 +32,27 @@ class ContextScorer:
             for persona, cfg in personas.items()
         }
 
-    def score(self, text: str) -> ContextSignals:
+    def score(
+        self,
+        text: str,
+        *,
+        persona_keywords_override: dict[str, list[str]] | None = None,
+    ) -> ContextSignals:
         t = (text or "").lower()
+
+        active_keywords: dict[str, list[str]] = {
+            k: list(v) for k, v in self.persona_keywords.items()
+        }
+        if persona_keywords_override:
+            for persona, kws in persona_keywords_override.items():
+                normalized = [str(kw).lower() for kw in (kws or []) if str(kw).strip()]
+                if normalized:
+                    active_keywords[persona] = normalized
 
         best_persona: Optional[str] = None
         best_hits: list[str] = []
 
-        for persona, kws in self.persona_keywords.items():
+        for persona, kws in active_keywords.items():
             hits = [kw for kw in kws if kw in t]
             if len(hits) > len(best_hits):
                 best_persona = persona

@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlmodel import Session
 
 from app.decision.context_scorer import ContextScorer
+from app.decision.context_term_runtime import load_context_runtime_overrides
 from app.decision.decision_resolver import DecisionResolver
 from app.decision.detectors.local_regex_detector import LocalRegexDetector
 from app.decision.detectors.presidio_detector import PresidioDetector
@@ -70,9 +71,16 @@ class ScanEngineLocal:
         self, *, session: Session, text: str, company_id: Optional[UUID]
     ) -> dict[str, Any]:
         t0 = time.perf_counter()
+        overrides = load_context_runtime_overrides(
+            session=session,
+            company_id=company_id,
+        )
 
         # 1) entities
-        regex_entities = self.local.scan(text)
+        regex_entities = self.local.scan(
+            text,
+            context_hints_by_entity=overrides.regex_hints,
+        )
         spoken_entities = self.spoken.scan(text)
         presidio_entities = self.presidio.scan(text)
 
@@ -86,7 +94,10 @@ class ScanEngineLocal:
         )
 
         # 4) context
-        ctx = self.context.score(text)
+        ctx = self.context.score(
+            text,
+            persona_keywords_override=overrides.persona_keywords,
+        )
         signals = self.context.to_signals_dict(ctx)
 
         # 5) security

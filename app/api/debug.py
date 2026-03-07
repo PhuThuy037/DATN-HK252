@@ -8,12 +8,13 @@ from pydantic import BaseModel
 from app.api.deps import SessionDep
 from app.auth.deps import CurrentPrincipal
 from app.common.enums import MemberRole
-from app.decision.detectors.local_regex_detector import LocalRegexDetector
 from app.decision.context_scorer import ContextScorer
+from app.decision.context_term_runtime import load_context_runtime_overrides
+from app.decision.decision_resolver import DecisionResolver
+from app.decision.detectors.local_regex_detector import LocalRegexDetector
 from app.permissions.core import forbid
 from app.permissions.loaders.conversation import load_company_member_active_or_403
 from app.rule.engine import RuleEngine
-from app.decision.decision_resolver import DecisionResolver
 
 
 router = APIRouter(prefix="/v1/debug", tags=["Debug"])
@@ -22,11 +23,6 @@ detector = LocalRegexDetector()
 context_scorer = ContextScorer("app/config/context_base.yaml")
 rule_engine = RuleEngine()
 resolver = DecisionResolver()
-
-
-# =============================
-# REQUEST / RESPONSE MODELS
-# =============================
 
 
 class FullScanRequest(BaseModel):
@@ -60,11 +56,6 @@ class FullScanResponse(BaseModel):
     final_action: str
 
 
-# =============================
-# FULL SCAN ENDPOINT
-# =============================
-
-
 @router.post("/full-scan", response_model=FullScanResponse)
 def debug_full_scan(
     req: FullScanRequest,
@@ -90,14 +81,25 @@ def debug_full_scan(
             reason="not_company_admin",
         )
 
-    # 1️⃣ Detect entities
-    entities = detector.scan(req.text)
+    overrides = load_context_runtime_overrides(
+        session=session,
+        company_id=req.company_id,
+    )
 
-    # 2️⃣ Context signals
-    ctx = context_scorer.score(req.text)
+    # 1) Detect entities
+    entities = detector.scan(
+        req.text,
+        context_hints_by_entity=overrides.regex_hints,
+    )
+
+    # 2) Context signals
+    ctx = context_scorer.score(
+        req.text,
+        persona_keywords_override=overrides.persona_keywords,
+    )
     signals = context_scorer.to_signals_dict(ctx)
 
-    # 3️⃣ Rule matching
+    # 3) Rule matching
     matches = rule_engine.evaluate(
         session=session,
         company_id=req.company_id,
@@ -105,7 +107,7 @@ def debug_full_scan(
         signals=signals,
     )
 
-    # 4️⃣ Decision resolve
+    # 4) Resolve decision
     decision = resolver.resolve(matches)
 
     return {
