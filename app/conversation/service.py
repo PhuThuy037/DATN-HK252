@@ -16,10 +16,9 @@ from app.common.enums import (
     RuleAction,
     ScanStatus,
 )
-from app.core.config import get_settings
 from app.company_member.model import CompanyMember
 from app.conversation.model import Conversation
-from app.decision.rule_layering import compact_matches
+from app.core.config import get_settings
 from app.decision.scan_engine_local import ScanEngineLocal
 from app.decision.serializers import entity_to_dict, rulematch_to_dict
 from app.masking.service import MaskService
@@ -45,11 +44,6 @@ def _resolve_system_prompt(*, session: Session, conversation: Conversation) -> s
 
     default_prompt = (_settings.default_system_prompt or "").strip()
     return default_prompt or None
-
-
-# =========================================================
-# Conversation create APIs NEED these 2 functions
-# =========================================================
 
 
 def create_personal_conversation(
@@ -83,7 +77,6 @@ def create_company_conversation(
     model_name: str | None = None,
     temperature: float | None = None,
 ) -> Conversation:
-    # require active membership
     stmt = (
         select(CompanyMember)
         .where(CompanyMember.company_id == company_id)
@@ -112,11 +105,6 @@ def create_company_conversation(
     return c
 
 
-# =========================================================
-# Messages
-# =========================================================
-
-
 async def append_user_message_async(
     *,
     session: Session,
@@ -126,10 +114,9 @@ async def append_user_message_async(
     input_type: MessageInputType = MessageInputType.user_input,
 ) -> tuple[Message, UUID | None]:
     """
-    Async version: dùng cho FastAPI async route (khuyến nghị).
-    Flow:
+    Async flow:
       1) Save USER message (scan + mask/block)
-      2) Call ChatService (dynamic model)
+      2) Call ChatService
       3) Save ASSISTANT message (scan + mask/block)
     Return: (user_msg, assistant_message_id)
     """
@@ -140,7 +127,6 @@ async def append_user_message_async(
     if not c:
         raise not_found("Conversation not found", field="conversation_id")
 
-    # personal convo owner check
     if c.company_id is None and c.user_id != user_id:
         raise not_found(
             "Conversation not found",
@@ -148,7 +134,6 @@ async def append_user_message_async(
             reason="not_owner",
         )
 
-    # company convo membership check
     if c.company_id is not None:
         mem_stmt = (
             select(CompanyMember)
@@ -164,9 +149,7 @@ async def append_user_message_async(
                 reason="not_company_member",
             )
 
-    # -----------------------------
-    # STEP 1) Save USER message
-    # -----------------------------
+    # STEP 1: user message
     c.last_sequence_number = (c.last_sequence_number or 0) + 1
     user_seq = c.last_sequence_number
 
@@ -174,9 +157,7 @@ async def append_user_message_async(
 
     user_final: RuleAction = user_scan["final_action"]
     user_entities = user_scan["entities"]
-    user_matches = compact_matches(
-        user_scan["matches"], final_action=str(user_final).lower()
-    )
+    user_matches = user_scan["matches"]
 
     user_blocked = user_final == RuleAction.block
 
@@ -188,6 +169,7 @@ async def append_user_message_async(
         "entities": [entity_to_dict(e) for e in user_entities],
         "signals": user_scan["signals"],
         "matched_rules": [rulematch_to_dict(m) for m in user_matches],
+        "timing_ms_by_stage": user_scan.get("timing_ms_by_stage") or {},
     }
     user_matched_rule_ids = [str(m.rule_id) for m in user_matches]
 
@@ -215,18 +197,14 @@ async def append_user_message_async(
     session.commit()
     session.refresh(user_msg)
 
-    # Nếu user bị BLOCK -> stop luôn, KHÔNG gọi LLM
     if user_blocked:
         return user_msg, None
 
-    # -----------------------------
-    # STEP 2) Call ChatService (DYNAMIC MODEL HERE)
-    # NOTE: gửi masked vào LLM nếu có (tránh leak)
-    # -----------------------------
+    # STEP 2: call chat provider
     llm_input = user_masked or content
     system_prompt = _resolve_system_prompt(session=session, conversation=c)
     temperature = float(c.temperature or 0.7)
-    model_name = c.model_name  # "gemini-3-flash-preview" hoặc "qwen2.5:7b"
+    model_name = c.model_name
 
     assistant_text = await _chat.generate_reply(
         system_prompt=system_prompt,
@@ -241,17 +219,13 @@ async def append_user_message_async(
         company_id=c.company_id,
     )
 
-    # -----------------------------
-    # STEP 3) Save ASSISTANT message (scan + mask/block)
-    # -----------------------------
+    # STEP 3: assistant message
     c.last_sequence_number = (c.last_sequence_number or 0) + 1
     asst_seq = c.last_sequence_number
 
     asst_final: RuleAction = assistant_scan["final_action"]
     asst_entities = assistant_scan["entities"]
-    asst_matches = compact_matches(
-        assistant_scan["matches"], final_action=str(asst_final).lower()
-    )
+    asst_matches = assistant_scan["matches"]
 
     asst_blocked = asst_final == RuleAction.block
 
@@ -263,6 +237,7 @@ async def append_user_message_async(
         "entities": [entity_to_dict(e) for e in asst_entities],
         "signals": assistant_scan["signals"],
         "matched_rules": [rulematch_to_dict(m) for m in asst_matches],
+        "timing_ms_by_stage": assistant_scan.get("timing_ms_by_stage") or {},
     }
     asst_matched_rule_ids = [str(m.rule_id) for m in asst_matches]
 
@@ -301,10 +276,6 @@ def append_user_message(
     content: str,
     input_type: MessageInputType = MessageInputType.user_input,
 ) -> Message:
-    """
-    Sync wrapper: chỉ dùng cho script/CLI hoặc chỗ nào chắc chắn KHÔNG đang ở event loop.
-    FastAPI async route -> gọi append_user_message_async() trực tiếp.
-    """
     user_msg, _ = anyio.run(
         append_user_message_async,
         session=session,

@@ -41,10 +41,50 @@ class ScanEngineLocal:
             )
         )
 
+    def _is_strong_spoken_signal(self, spoken_entities: list[Any]) -> bool:
+        if not spoken_entities:
+            return False
+        for e in spoken_entities:
+            etype = str(getattr(e, "type", "") or "")
+            score = float(getattr(e, "score", 0.0) or 0.0)
+            if etype not in {"PHONE", "CCCD", "TAX_ID"}:
+                return False
+            if score < 0.82:
+                return False
+        return True
+
+    def _should_run_presidio(
+        self,
+        *,
+        text: str,
+        sec_decision: str,
+        regex_entities: list[Any],
+        spoken_entities: list[Any],
+    ) -> bool:
+        if regex_entities or spoken_entities:
+            return False
+
+        if sec_decision == "BLOCK":
+            return False
+
+        raw = text or ""
+        lower = raw.lower()
+
+        if "@" in raw or "http://" in lower or "https://" in lower:
+            return True
+
+        letters = [ch for ch in raw if ch.isalpha()]
+        if not letters:
+            return False
+        ascii_letters = sum(1 for ch in letters if ord(ch) < 128)
+        ascii_ratio = ascii_letters / float(len(letters))
+        return ascii_ratio >= 0.85
+
     def _should_call_rag(
         self,
         *,
         sec_decision: str,
+        sec_score: float,
         persona: Optional[str],
         context_keywords: list[str],
         entities: list[Any],
@@ -56,13 +96,29 @@ class ScanEngineLocal:
         if sec_decision == "REVIEW":
             return True
 
-        if spoken_entities:
-            return True
+        has_high_conf_api_secret = any(
+            str(getattr(e, "type", "") or "") == "API_SECRET"
+            and float(getattr(e, "score", 0.0) or 0.0) >= 0.90
+            for e in entities
+        )
+        if has_high_conf_api_secret:
+            # Keep RAG when persona is not clearly dev to reduce false negatives.
+            return persona != "dev"
 
-        dev_kws = {"api key", "apikey", "token", "secret", "bearer", ".env"}
-        if persona == "dev" and any(k in dev_kws for k in context_keywords):
-            has_secret = any(getattr(e, "type", "") == "API_SECRET" for e in entities)
-            if not has_secret:
+        if spoken_entities:
+            return not self._is_strong_spoken_signal(spoken_entities)
+
+        dev_kws = {"api key", "apikey", "token", "secret", "bearer", ".env", "authorization"}
+        lowered_kws = {str(k or "").lower() for k in context_keywords}
+        if persona == "dev" and (lowered_kws & dev_kws):
+            has_secret = any(
+                str(getattr(e, "type", "") or "") == "API_SECRET"
+                and float(getattr(e, "score", 0.0) or 0.0) >= 0.85
+                for e in entities
+            )
+            if has_secret:
+                return False
+            if float(sec_score) >= 0.25:
                 return True
 
         return False
@@ -71,37 +127,61 @@ class ScanEngineLocal:
         self, *, session: Session, text: str, company_id: Optional[UUID]
     ) -> dict[str, Any]:
         t0 = time.perf_counter()
+        timing_ms_by_stage: dict[str, int] = {}
+
+        ts = time.perf_counter()
         overrides = load_context_runtime_overrides(
             session=session,
             company_id=company_id,
         )
+        timing_ms_by_stage["overrides"] = int((time.perf_counter() - ts) * 1000)
 
-        # 1) entities
+        ts = time.perf_counter()
         regex_entities = self.local.scan(
             text,
             context_hints_by_entity=overrides.regex_hints,
         )
-        spoken_entities = self.spoken.scan(text)
-        presidio_entities = self.presidio.scan(text)
+        timing_ms_by_stage["detect_regex"] = int((time.perf_counter() - ts) * 1000)
 
-        # 2) normalize
+        ts = time.perf_counter()
+        spoken_entities = self.spoken.scan(text)
+        timing_ms_by_stage["detect_spoken"] = int((time.perf_counter() - ts) * 1000)
+
+        ts = time.perf_counter()
+        sec = self.security.scan(text)
+        timing_ms_by_stage["detect_security"] = int((time.perf_counter() - ts) * 1000)
+
+        ts = time.perf_counter()
+        if self._should_run_presidio(
+            text=text,
+            sec_decision=str(sec.decision),
+            regex_entities=regex_entities,
+            spoken_entities=spoken_entities,
+        ):
+            presidio_entities = self.presidio.scan(text)
+        else:
+            presidio_entities = []
+        timing_ms_by_stage["detect_presidio"] = int((time.perf_counter() - ts) * 1000)
+
+        ts = time.perf_counter()
         for e in regex_entities + spoken_entities + presidio_entities:
             e.type = self.type_norm.normalize(getattr(e, "type", ""))
+        timing_ms_by_stage["normalize_entities"] = int((time.perf_counter() - ts) * 1000)
 
-        # 3) merge
+        ts = time.perf_counter()
         entities = self.merger.merge(
             regex_entities + spoken_entities + presidio_entities
         )
+        timing_ms_by_stage["merge_entities"] = int((time.perf_counter() - ts) * 1000)
 
-        # 4) context
+        ts = time.perf_counter()
         ctx = self.context.score(
             text,
             persona_keywords_override=overrides.persona_keywords,
         )
         signals = self.context.to_signals_dict(ctx)
+        timing_ms_by_stage["context_score"] = int((time.perf_counter() - ts) * 1000)
 
-        # 5) security
-        sec = self.security.scan(text)
         signals["security"] = {
             "decision": sec.decision,
             "score": sec.score,
@@ -111,16 +191,18 @@ class ScanEngineLocal:
             "prompt_injection_suspected": sec.decision in ("REVIEW", "BLOCK"),
         }
 
-        # 6) gating
+        ts = time.perf_counter()
         should_rag = self._should_call_rag(
             sec_decision=str(sec.decision),
+            sec_score=float(sec.score),
             persona=signals.get("persona"),
             context_keywords=list(signals.get("context_keywords") or []),
             entities=entities,
             spoken_entities=spoken_entities,
         )
+        timing_ms_by_stage["gate_rag"] = int((time.perf_counter() - ts) * 1000)
 
-        # 7) RAG only when needed
+        ts = time.perf_counter()
         if should_rag:
             rag_out = await self.rag.decide(
                 session=session,
@@ -129,29 +211,37 @@ class ScanEngineLocal:
                 message_id=None,
             )
             signals["rag"] = {
-                "decision": rag_out.decision,  # ALLOW/MASK/BLOCK
+                "decision": rag_out.decision,
                 "confidence": rag_out.confidence,
                 "rule_keys": rag_out.rule_keys,
                 "rationale": rag_out.rationale,
             }
         else:
             signals.pop("rag", None)
+        timing_ms_by_stage["rag"] = int((time.perf_counter() - ts) * 1000)
 
-        # 8) rules
+        ts = time.perf_counter()
         matches = self.rule_engine.evaluate(
             session=session,
             company_id=company_id,
             entities=entities,
             signals=signals,
         )
-        decision = self.resolver.resolve(matches)
+        timing_ms_by_stage["rule_eval"] = int((time.perf_counter() - ts) * 1000)
 
-        # ✅ compact log (fix "mask 2 lần" trong matched_rules)
+        ts = time.perf_counter()
+        decision = self.resolver.resolve(matches)
+        timing_ms_by_stage["resolve"] = int((time.perf_counter() - ts) * 1000)
+
+        ts = time.perf_counter()
         matches = compact_matches(
             matches, final_action=str(decision.final_action).lower()
         )
+        timing_ms_by_stage["compact_matches"] = int((time.perf_counter() - ts) * 1000)
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
+        timing_ms_by_stage["total"] = latency_ms
+
         max_entity = max(
             [float(getattr(e, "score", 0.0)) for e in entities], default=0.0
         )
@@ -163,6 +253,7 @@ class ScanEngineLocal:
             "matches": matches,
             "final_action": decision.final_action,
             "latency_ms": latency_ms,
+            "timing_ms_by_stage": timing_ms_by_stage,
             "risk_score": risk_score,
             "ambiguous": should_rag,
         }

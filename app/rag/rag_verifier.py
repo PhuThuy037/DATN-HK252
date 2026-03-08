@@ -68,6 +68,7 @@ class RagVerifier:
                 company_id=company_id,
                 message_id=message_id,
                 top_k=self.retriever.top_k,
+                log=False,
             )
         except Exception:
             return RagDecision(
@@ -77,7 +78,14 @@ class RagVerifier:
                 rationale="rag_retrieval_failed",
             )
 
-        contexts = [c.content for c in chunks]
+        contexts = [str(c.content or "").strip() for c in chunks if str(c.content or "").strip()]
+        if not contexts:
+            return RagDecision(
+                decision="ALLOW",
+                confidence=0.6,
+                rule_keys=[],
+                rationale="no_policy_context",
+            )
         prompt = self._build_prompt(user_text=user_text, contexts=contexts)
 
         llm_out: LlmTextResult
@@ -161,11 +169,13 @@ class RagVerifier:
         return out
 
     async def _call_llm(self, prompt: str) -> LlmTextResult:
+        timeout_s = min(6.0, float(self.settings.non_embedding_llm_timeout_seconds))
         return await generate_text_async(
             prompt=prompt,
             provider=self.llm_provider,
             model_name=self.llm_model,
-            timeout_s=self.settings.non_embedding_llm_timeout_seconds,
+            timeout_s=timeout_s,
+            fast_fallback=True,
         )
 
     def _build_prompt(self, *, user_text: str, contexts: list[str]) -> str:
@@ -195,3 +205,4 @@ USER MESSAGE:
             if start != -1 and end != -1 and end > start:
                 return json.loads(raw[start : end + 1])
             raise
+

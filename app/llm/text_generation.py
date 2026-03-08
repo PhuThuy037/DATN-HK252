@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
+import logging
+import re
+import time
 from typing import Any
 
 import httpx
@@ -9,6 +13,7 @@ from app.core.config import get_settings
 
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -47,6 +52,46 @@ def _extract_gemini_text(data: dict[str, Any]) -> str:
     if not out:
         raise RuntimeError(f"Gemini empty text: {data}")
     return out
+
+
+def _parse_seconds(text: str) -> float | None:
+    m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*s", str(text or "").lower())
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except Exception:
+        return None
+
+
+def _extract_retry_delay_seconds(error_payload: Any) -> float | None:
+    try:
+        err = error_payload.get("error") if isinstance(error_payload, dict) else None
+        details = list((err or {}).get("details") or [])
+        for d in details:
+            if not isinstance(d, dict):
+                continue
+            t = str(d.get("@type") or "")
+            if "RetryInfo" not in t:
+                continue
+            delay = d.get("retryDelay")
+            if isinstance(delay, str):
+                parsed = _parse_seconds(delay)
+                if parsed is not None:
+                    return parsed
+        msg = str((err or {}).get("message") or "")
+        parsed = _parse_seconds(msg)
+        if parsed is not None:
+            return parsed
+    except Exception:
+        return None
+    return None
+
+
+def _bounded_retry_delay_s(v: float | None, *, default_s: float = 3.0) -> float:
+    if v is None:
+        return default_s
+    return max(0.5, min(20.0, float(v)))
 
 
 def _build_attempt_chain(preferred: str, *, gemini_available: bool) -> list[str]:
@@ -98,6 +143,7 @@ def _call_gemini_sync(
     system_prompt: str | None,
     model_name: str | None,
     timeout_s: float,
+    fast_fallback: bool = False,
 ) -> tuple[str, str]:
     settings = get_settings()
     model = (model_name or settings.gemini_model).strip()
@@ -110,17 +156,48 @@ def _call_gemini_sync(
         contents.append({"role": "user", "parts": [{"text": (system_prompt or "").strip()}]})
     contents.append({"role": "user", "parts": [{"text": prompt.strip()}]})
 
+    max_attempts = 1 if fast_fallback else 2
     with httpx.Client(timeout=timeout_s) as client:
-        r = client.post(
-            f"{GEMINI_BASE_URL}/models/{model}:generateContent",
-            params={"key": key},
-            json={
-                "contents": contents,
-                "generationConfig": {"temperature": 0},
-            },
-        )
-        r.raise_for_status()
-        data: dict[str, Any] = r.json()
+        for attempt in range(1, max_attempts + 1):
+            try:
+                r = client.post(
+                    f"{GEMINI_BASE_URL}/models/{model}:generateContent",
+                    params={"key": key},
+                    json={
+                        "contents": contents,
+                        "generationConfig": {"temperature": 0},
+                    },
+                )
+                if r.status_code == 429 and attempt < max_attempts:
+                    retry_hint = None
+                    try:
+                        retry_hint = _extract_retry_delay_seconds(r.json())
+                    except Exception:
+                        retry_hint = None
+                    delay_s = _bounded_retry_delay_s(retry_hint)
+                    logger.warning(
+                        "llm.gemini.sync.rate_limited model=%s attempt=%s retry_after_s=%.2f",
+                        model,
+                        attempt,
+                        delay_s,
+                    )
+                    time.sleep(delay_s)
+                    continue
+                r.raise_for_status()
+                data: dict[str, Any] = r.json()
+                break
+            except httpx.ReadTimeout:
+                if attempt < max_attempts:
+                    logger.warning(
+                        "llm.gemini.sync.read_timeout model=%s attempt=%s retry_after_s=1.00",
+                        model,
+                        attempt,
+                    )
+                    time.sleep(1.0)
+                    continue
+                raise
+        else:
+            raise RuntimeError("Gemini request failed after retries")
     return _extract_gemini_text(data), model
 
 
@@ -165,6 +242,7 @@ async def _call_gemini_async(
     system_prompt: str | None,
     model_name: str | None,
     timeout_s: float,
+    fast_fallback: bool = False,
 ) -> tuple[str, str]:
     settings = get_settings()
     model = (model_name or settings.gemini_model).strip()
@@ -177,17 +255,48 @@ async def _call_gemini_async(
         contents.append({"role": "user", "parts": [{"text": (system_prompt or "").strip()}]})
     contents.append({"role": "user", "parts": [{"text": prompt.strip()}]})
 
+    max_attempts = 1 if fast_fallback else 2
     async with httpx.AsyncClient(timeout=timeout_s) as client:
-        r = await client.post(
-            f"{GEMINI_BASE_URL}/models/{model}:generateContent",
-            params={"key": key},
-            json={
-                "contents": contents,
-                "generationConfig": {"temperature": 0},
-            },
-        )
-        r.raise_for_status()
-        data: dict[str, Any] = r.json()
+        for attempt in range(1, max_attempts + 1):
+            try:
+                r = await client.post(
+                    f"{GEMINI_BASE_URL}/models/{model}:generateContent",
+                    params={"key": key},
+                    json={
+                        "contents": contents,
+                        "generationConfig": {"temperature": 0},
+                    },
+                )
+                if r.status_code == 429 and attempt < max_attempts:
+                    retry_hint = None
+                    try:
+                        retry_hint = _extract_retry_delay_seconds(r.json())
+                    except Exception:
+                        retry_hint = None
+                    delay_s = _bounded_retry_delay_s(retry_hint)
+                    logger.warning(
+                        "llm.gemini.async.rate_limited model=%s attempt=%s retry_after_s=%.2f",
+                        model,
+                        attempt,
+                        delay_s,
+                    )
+                    await asyncio.sleep(delay_s)
+                    continue
+                r.raise_for_status()
+                data: dict[str, Any] = r.json()
+                break
+            except httpx.ReadTimeout:
+                if attempt < max_attempts:
+                    logger.warning(
+                        "llm.gemini.async.read_timeout model=%s attempt=%s retry_after_s=1.00",
+                        model,
+                        attempt,
+                    )
+                    await asyncio.sleep(1.0)
+                    continue
+                raise
+        else:
+            raise RuntimeError("Gemini async request failed after retries")
     return _extract_gemini_text(data), model
 
 
@@ -198,6 +307,7 @@ def generate_text_sync(
     provider: str | None = None,
     model_name: str | None = None,
     timeout_s: float | None = None,
+    fast_fallback: bool = False,
 ) -> LlmTextResult:
     settings = get_settings()
     preferred = _normalize_provider(provider or settings.non_embedding_llm_provider)
@@ -217,6 +327,7 @@ def generate_text_sync(
                     system_prompt=system_prompt,
                     model_name=model_for_attempt,
                     timeout_s=timeout_value,
+                    fast_fallback=fast_fallback,
                 )
             else:
                 text, model = _call_ollama_sync(
@@ -225,6 +336,13 @@ def generate_text_sync(
                     model_name=model_for_attempt,
                     timeout_s=timeout_value,
                 )
+            logger.info(
+                "llm.generate.sync.success provider=%s model=%s fallback_used=%s preferred=%s",
+                p,
+                model,
+                idx > 0,
+                preferred,
+            )
             return LlmTextResult(
                 text=text,
                 provider=p,
@@ -232,6 +350,12 @@ def generate_text_sync(
                 fallback_used=idx > 0,
             )
         except Exception as e:
+            logger.warning(
+                "llm.generate.sync.attempt_failed provider=%s preferred=%s error=%s",
+                p,
+                preferred,
+                e.__class__.__name__,
+            )
             last_exc = e
             continue
 
@@ -245,6 +369,7 @@ async def generate_text_async(
     provider: str | None = None,
     model_name: str | None = None,
     timeout_s: float | None = None,
+    fast_fallback: bool = False,
 ) -> LlmTextResult:
     settings = get_settings()
     preferred = _normalize_provider(provider or settings.non_embedding_llm_provider)
@@ -264,6 +389,7 @@ async def generate_text_async(
                     system_prompt=system_prompt,
                     model_name=model_for_attempt,
                     timeout_s=timeout_value,
+                    fast_fallback=fast_fallback,
                 )
             else:
                 text, model = await _call_ollama_async(
@@ -272,6 +398,13 @@ async def generate_text_async(
                     model_name=model_for_attempt,
                     timeout_s=timeout_value,
                 )
+            logger.info(
+                "llm.generate.async.success provider=%s model=%s fallback_used=%s preferred=%s",
+                p,
+                model,
+                idx > 0,
+                preferred,
+            )
             return LlmTextResult(
                 text=text,
                 provider=p,
@@ -279,6 +412,12 @@ async def generate_text_async(
                 fallback_used=idx > 0,
             )
         except Exception as e:
+            logger.warning(
+                "llm.generate.async.attempt_failed provider=%s preferred=%s error=%s",
+                p,
+                preferred,
+                e.__class__.__name__,
+            )
             last_exc = e
             continue
 
