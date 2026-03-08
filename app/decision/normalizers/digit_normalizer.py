@@ -66,6 +66,7 @@ class VietnameseAdapter:
 
     _map = {
         "không": "0",
+        "khong": "0",
         "ko": "0",
         "một": "1",
         "mot": "1",
@@ -245,3 +246,4 @@ class DigitNormalizer:
                 i += 1
 
         return candidates
+
