@@ -102,6 +102,9 @@ class RuleDuplicateCheckOut(BaseModel):
     exact_threshold: float
     near_threshold: float
     source: str
+    llm_provider: Optional[str] = None
+    llm_model: Optional[str] = None
+    llm_fallback_used: bool = False
 
 
 class RuleSuggestionOut(BaseModel):

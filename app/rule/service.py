@@ -12,6 +12,7 @@ from app.common.enums import MemberRole
 from app.company.model import Company
 from app.permissions.core import forbid, not_found
 from app.permissions.loaders.conversation import load_company_member_active_or_403
+from app.rule.engine import RuleEngine
 from app.rule.model import Rule
 from app.rule.schemas import (
     CompanyRuleCreateIn,
@@ -373,6 +374,7 @@ def create_company_custom_rule(
     )
     session.commit()
     session.refresh(row)
+    RuleEngine.invalidate_cache(company_id)
     return _to_rule_out(rule=row, origin=RuleOrigin.company_custom)
 
 
@@ -463,6 +465,7 @@ def update_company_rule(
     )
     session.commit()
     session.refresh(row)
+    RuleEngine.invalidate_cache(company_id)
     return _to_rule_out(rule=row, origin=origin)
 
 
@@ -502,6 +505,7 @@ def soft_delete_company_rule(
     )
     session.commit()
     session.refresh(row)
+    RuleEngine.invalidate_cache(company_id)
     return _to_rule_out(rule=row, origin=origin)
 
 
@@ -569,4 +573,5 @@ def toggle_global_rule_for_company(
     )
     session.commit()
     session.refresh(override)
+    RuleEngine.invalidate_cache(company_id)
     return _to_rule_out(rule=override, origin=RuleOrigin.company_override)

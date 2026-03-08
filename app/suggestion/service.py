@@ -23,6 +23,7 @@ from app.suggestion.models.rule_suggestion import RuleSuggestion
 from app.suggestion.models.rule_suggestion_log import RuleSuggestionLog
 from app.suggestion.duplicate_checker import build_duplicate_check
 from app.suggestion.schemas import (
+    DuplicateDecision,
     RuleSuggestionApplyIn,
     RuleSuggestionApplyOut,
     RuleSuggestionConfirmIn,
@@ -379,11 +380,53 @@ def _draft_to_json(payload: RuleSuggestionDraftPayload) -> dict[str, Any]:
     return payload.model_dump(mode="json")
 
 
+def _canonical_rule_for_dedupe(rule: RuleSuggestionDraftRule) -> dict[str, Any]:
+    return {
+        "scope": rule.scope.value,
+        "conditions": rule.conditions,
+        "action": rule.action.value,
+        "severity": rule.severity.value,
+        "priority": int(rule.priority),
+        "rag_mode": rule.rag_mode.value,
+        "enabled": bool(rule.enabled),
+    }
+
+
+def _canonical_terms_for_dedupe(
+    terms: list[RuleSuggestionDraftContextTerm],
+) -> list[dict[str, Any]]:
+    out = [
+        {
+            "entity_type": t.entity_type,
+            "term": t.term,
+            "lang": t.lang,
+            "weight": float(t.weight),
+            "window_1": int(t.window_1),
+            "window_2": int(t.window_2),
+            "enabled": bool(t.enabled),
+        }
+        for t in terms
+    ]
+    out.sort(
+        key=lambda x: (
+            str(x["entity_type"]),
+            str(x["term"]),
+            str(x["lang"]),
+            float(x["weight"]),
+            int(x["window_1"]),
+            int(x["window_2"]),
+            bool(x["enabled"]),
+        )
+    )
+    return out
+
+
 def _dedupe_key(*, company_id: UUID, payload: RuleSuggestionDraftPayload) -> str:
     body = {
         "company_id": str(company_id),
         "type": "rule_with_context",
-        "draft": _draft_to_json(payload),
+        "rule": _canonical_rule_for_dedupe(payload.rule),
+        "context_terms": _canonical_terms_for_dedupe(payload.context_terms),
     }
     raw = json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -555,6 +598,76 @@ def _contains_entity_leaf(conditions: Any) -> bool:
     return False
 
 
+def _contains_entity_type(conditions: Any, entity_types: set[str]) -> bool:
+    wanted = {str(x or "").strip().upper() for x in entity_types if str(x or "").strip()}
+    if not wanted:
+        return False
+    if isinstance(conditions, dict):
+        if "entity_type" in conditions:
+            raw = str(conditions.get("entity_type") or "").upper()
+            parts = [x.strip() for x in re.split(r"[|,;/]+", raw) if x.strip()]
+            if any(part in wanted for part in parts):
+                return True
+        return any(_contains_entity_type(v, wanted) for v in conditions.values())
+    if isinstance(conditions, list):
+        return any(_contains_entity_type(x, wanted) for x in conditions)
+    return False
+
+
+def _has_signal_persona(conditions: Any, persona: str) -> bool:
+    wanted = str(persona or "").strip().lower()
+    if not wanted:
+        return False
+    if isinstance(conditions, dict):
+        signal = conditions.get("signal")
+        if isinstance(signal, dict):
+            field_name = str(signal.get("field") or "").strip().lower()
+            if field_name == "persona":
+                if str(signal.get("equals") or "").strip().lower() == wanted:
+                    return True
+                raw_any = signal.get("any_of")
+                if isinstance(raw_any, list):
+                    values = {str(x or "").strip().lower() for x in raw_any}
+                    if wanted in values:
+                        return True
+        return any(_has_signal_persona(v, wanted) for v in conditions.values())
+    if isinstance(conditions, list):
+        return any(_has_signal_persona(x, wanted) for x in conditions)
+    return False
+
+
+def _is_finance_prompt(prompt: str) -> bool:
+    p = (prompt or "").lower()
+    finance_keys = [
+        "tai chinh",
+        "bao cao tai chinh",
+        "doanh thu",
+        "loi nhuan",
+        "ke toan",
+        "financial",
+        "finance",
+        "revenue",
+        "profit",
+        "p&l",
+    ]
+    return _has_any(p, finance_keys)
+
+
+def _mentions_tax_id(prompt: str) -> bool:
+    p = (prompt or "").lower()
+    return _has_any(
+        p,
+        [
+            "tax",
+            "tax id",
+            "tax code",
+            "mst",
+            "ma so thue",
+            "tin",
+        ],
+    )
+
+
 def _build_persona_signal_draft(
     *,
     prompt: str,
@@ -564,13 +677,21 @@ def _build_persona_signal_draft(
     stable_suffix: str,
 ) -> RuleSuggestionDraftPayload:
     stable_key = f"company.custom.suggested.{stable_suffix}"
-    rule_name = (
-        f"Suggested office context {action.value}"
-        if persona == "office"
-        else f"Suggested dev context {action.value}"
-    )
-    priority = 105 if action == RuleAction.block else 95
-    risk_threshold = 0.10 if persona == "office" else 0.15
+    if persona == "office":
+        rule_name = f"Suggested office context {action.value}"
+        risk_threshold = 0.10
+        priority = 105 if action == RuleAction.block else 95
+        ctx_entity = "PERSONA_OFFICE"
+    elif persona == "dev":
+        rule_name = f"Suggested dev context {action.value}"
+        risk_threshold = 0.15
+        priority = 105 if action == RuleAction.block else 95
+        ctx_entity = "PERSONA_DEV"
+    else:
+        rule_name = f"Suggested finance context {action.value}"
+        risk_threshold = 0.20
+        priority = 130 if action == RuleAction.block else 110
+        ctx_entity = "PERSONA_FINANCE"
     keyword_values = keywords[:6] or ["context"]
 
     rule = RuleSuggestionDraftRule(
@@ -592,7 +713,6 @@ def _build_persona_signal_draft(
         enabled=True,
     )
 
-    ctx_entity = "PERSONA_OFFICE" if persona == "office" else "PERSONA_DEV"
     ctx_terms = [
         RuleSuggestionDraftContextTerm(entity_type=ctx_entity, term=k, lang="vi")
         for k in keyword_values[:3]
@@ -615,6 +735,15 @@ def _fallback_generate(prompt: str) -> RuleSuggestionDraftPayload:
         "hr",
     ]
     dev_infra_keys = ["docker", "kubernetes", "github", "helm", "ci cd", "devops"]
+    finance_keys = [
+        "tai chinh",
+        "bao cao tai chinh",
+        "doanh thu",
+        "loi nhuan",
+        "ke toan",
+        "revenue",
+        "profit",
+    ]
 
     if _has_any(p, office_hr_keys):
         matched = [k for k in office_hr_keys if k in p][:4]
@@ -632,6 +761,16 @@ def _fallback_generate(prompt: str) -> RuleSuggestionDraftPayload:
             prompt=prompt,
             persona="dev",
             keywords=matched or ["docker", "kubernetes", "github"],
+            action=action,
+            stable_suffix=h,
+        )
+
+    if _is_finance_prompt(p) and (not _mentions_tax_id(p)):
+        matched = [k for k in finance_keys if k in p][:4]
+        return _build_persona_signal_draft(
+            prompt=prompt,
+            persona="finance",
+            keywords=matched or ["bao cao tai chinh", "doanh thu", "loi nhuan"],
             action=action,
             stable_suffix=h,
         )
@@ -689,10 +828,158 @@ def _align_draft_with_prompt(
                 stable_suffix=h,
             )
 
+    if _is_finance_prompt(p) and (not _mentions_tax_id(p)):
+        if _contains_entity_leaf(draft.rule.conditions) or (
+            not _has_signal_persona(draft.rule.conditions, "finance")
+        ):
+            return _build_persona_signal_draft(
+                prompt=prompt,
+                persona="finance",
+                keywords=["bao cao tai chinh", "doanh thu", "loi nhuan"],
+                action=draft.rule.action,
+                stable_suffix=h,
+            )
+
     return draft
 
 
-def _generate_with_llm(prompt: str) -> RuleSuggestionDraftPayload:
+def _enforce_prompt_semantic_guard(
+    prompt: str, draft: RuleSuggestionDraftPayload
+) -> RuleSuggestionDraftPayload:
+    p = prompt.lower()
+    if (not _is_finance_prompt(p)) or _mentions_tax_id(p):
+        return draft
+
+    if _contains_entity_type(draft.rule.conditions, {"TAX_ID"}):
+        h = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
+        return _build_persona_signal_draft(
+            prompt=prompt,
+            persona="finance",
+            keywords=["bao cao tai chinh", "doanh thu", "loi nhuan"],
+            action=draft.rule.action,
+            stable_suffix=h,
+        )
+
+    if not _has_signal_persona(draft.rule.conditions, "finance"):
+        h = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
+        return _build_persona_signal_draft(
+            prompt=prompt,
+            persona="finance",
+            keywords=["bao cao tai chinh", "doanh thu", "loi nhuan"],
+            action=draft.rule.action,
+            stable_suffix=h,
+        )
+
+    return draft
+
+
+def _tokenize_for_score(text: str) -> set[str]:
+    parts = re.split(r"[^a-zA-Z0-9_]+", (text or "").lower())
+    return {p for p in parts if p}
+
+
+def _jaccard_score(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 0.0
+    inter = len(a & b)
+    union = len(a | b)
+    if union <= 0:
+        return 0.0
+    return float(inter / union)
+
+
+def _rule_reference_text(rule: Rule) -> str:
+    return "\n".join(
+        [
+            f"stable_key: {rule.stable_key}",
+            f"name: {rule.name}",
+            f"description: {rule.description or ''}",
+            f"scope: {rule.scope.value}",
+            f"action: {rule.action.value}",
+            f"severity: {rule.severity.value}",
+            f"priority: {int(rule.priority)}",
+            f"rag_mode: {rule.rag_mode.value}",
+            f"conditions: {json.dumps(rule.conditions, sort_keys=True, ensure_ascii=False)}",
+        ]
+    )
+
+
+def _build_rule_references(
+    *,
+    session: Session,
+    company_id: UUID,
+    prompt: str,
+    limit: int = 8,
+) -> list[dict[str, Any]]:
+    safe_limit = max(1, min(int(limit), 20))
+    rows = list(
+        session.exec(
+            select(Rule)
+            .where((Rule.company_id.is_(None)) | (Rule.company_id == company_id))
+            .where(Rule.enabled.is_(True))
+        ).all()
+    )
+    prompt_tokens = _tokenize_for_score(prompt)
+
+    scored: list[tuple[float, int, Rule]] = []
+    for row in rows:
+        score = _jaccard_score(prompt_tokens, _tokenize_for_score(_rule_reference_text(row)))
+        if score <= 0.0:
+            continue
+        scored.append((score, int(row.priority), row))
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+
+    out: list[dict[str, Any]] = []
+    for score, _priority, row in scored[:safe_limit]:
+        out.append(
+            {
+                "stable_key": row.stable_key,
+                "name": row.name,
+                "description": row.description,
+                "scope": row.scope.value,
+                "action": row.action.value,
+                "severity": row.severity.value,
+                "priority": int(row.priority),
+                "rag_mode": row.rag_mode.value,
+                "conditions": row.conditions,
+                "origin": "global_default" if row.company_id is None else "company_rule",
+                "prompt_overlap_score": round(float(score), 4),
+            }
+        )
+    return out
+
+
+def _ensure_company_stable_key(
+    *,
+    prompt: str,
+    draft: RuleSuggestionDraftPayload,
+) -> RuleSuggestionDraftPayload:
+    h = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:10]
+    stable_key = str(draft.rule.stable_key or "").strip().lower()
+    stable_key = re.sub(r"[^a-z0-9._-]+", ".", stable_key)
+    stable_key = re.sub(r"\.+", ".", stable_key).strip(".")
+
+    if not stable_key or stable_key.startswith("global."):
+        slug = ".".join(sorted(_tokenize_for_score(prompt)))[:60].strip(".")
+        if not slug:
+            slug = f"suggested.{h}"
+        stable_key = f"company.custom.{slug}.{h}"
+    elif not stable_key.startswith("company."):
+        stable_key = f"company.custom.{stable_key}"
+
+    stable_key = stable_key[:200].strip(".")
+    if not stable_key:
+        stable_key = f"company.custom.suggested.{h}"
+
+    rule = draft.rule.model_copy(update={"stable_key": stable_key})
+    return draft.model_copy(update={"rule": rule})
+
+
+def _generate_with_llm(
+    prompt: str,
+    *,
+    rule_references: list[dict[str, Any]],
+) -> tuple[RuleSuggestionDraftPayload, dict[str, Any]]:
     system_prompt = """
 You generate security rule drafts in strict JSON.
 Output ONLY one JSON object with this schema:
@@ -724,24 +1011,78 @@ Output ONLY one JSON object with this schema:
 Return valid JSON only.
 """.strip()
 
+    references_json = json.dumps(rule_references[:8], ensure_ascii=False)
+    prompt_input = (
+        f"User input:\n{prompt}\n\n"
+        "Reference rules (closest enabled global/company rules):\n"
+        f"{references_json}\n\n"
+        "Requirements:\n"
+        "1) Prefer rule conditions consistent with existing rule DSL.\n"
+        "2) stable_key must be company-specific, never global.*.\n"
+        "3) If reference contains same policy intent, keep naming and conditions style close to that reference.\n"
+        "4) Avoid generating redundant duplicate policy when a reference already covers it.\n"
+    )
+
     llm_out = generate_text_sync(
-        prompt=f"User input:\n{prompt}",
+        prompt=prompt_input,
         system_prompt=system_prompt,
         provider=get_settings().non_embedding_llm_provider,
     )
     raw = llm_out.text
     obj = _parse_json_object(raw)
-    return RuleSuggestionDraftPayload.model_validate(obj)
+    return RuleSuggestionDraftPayload.model_validate(obj), {
+        "source": "llm",
+        "provider": str(llm_out.provider),
+        "model": str(llm_out.model),
+        "fallback_used": bool(llm_out.fallback_used),
+    }
 
 
-def _generate_draft_from_prompt(prompt: str) -> RuleSuggestionDraftPayload:
+def _generate_draft_from_prompt(
+    *,
+    session: Session,
+    company_id: UUID,
+    prompt: str,
+) -> tuple[RuleSuggestionDraftPayload, dict[str, Any]]:
     normalized_prompt = _normalize_non_empty(value=prompt, field="prompt")
+    rule_references = _build_rule_references(
+        session=session,
+        company_id=company_id,
+        prompt=normalized_prompt,
+        limit=8,
+    )
+
     try:
-        draft = _generate_with_llm(normalized_prompt)
+        draft, meta = _generate_with_llm(
+            normalized_prompt,
+            rule_references=rule_references,
+        )
     except Exception:
         draft = _fallback_generate(normalized_prompt)
+        meta = {
+            "source": "fallback_generator",
+            "provider": "none",
+            "model": "none",
+            "fallback_used": False,
+        }
+
+    draft = _ensure_company_stable_key(prompt=normalized_prompt, draft=draft)
     draft = _align_draft_with_prompt(normalized_prompt, draft)
-    return _normalize_draft(draft)
+    draft = _enforce_prompt_semantic_guard(normalized_prompt, draft)
+    try:
+        return _normalize_draft(draft), meta
+    except Exception:
+        # Last-resort fallback for malformed LLM draft.
+        fb = _fallback_generate(normalized_prompt)
+        fb = _ensure_company_stable_key(prompt=normalized_prompt, draft=fb)
+        fb = _align_draft_with_prompt(normalized_prompt, fb)
+        fb = _enforce_prompt_semantic_guard(normalized_prompt, fb)
+        return _normalize_draft(fb), {
+            "source": "fallback_generator_after_normalize_error",
+            "provider": "none",
+            "model": "none",
+            "fallback_used": False,
+        }
 
 
 def _load_suggestion_or_404(
@@ -763,13 +1104,26 @@ def generate_rule_suggestion(
     _load_company_or_404(session=session, company_id=company_id)
     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
 
-    draft = _generate_draft_from_prompt(payload.prompt)
+    draft, generation_meta = _generate_draft_from_prompt(
+        session=session,
+        company_id=company_id,
+        prompt=payload.prompt,
+    )
     duplicate_check = build_duplicate_check(
         session=session,
         company_id=company_id,
         draft_rule=draft.rule,
     )
     key = _dedupe_key(company_id=company_id, payload=draft)
+    duplicate_meta = {
+        "decision": duplicate_check.decision.value,
+        "source": str(duplicate_check.source),
+        "llm_provider": duplicate_check.llm_provider,
+        "llm_model": duplicate_check.llm_model,
+        "llm_fallback_used": bool(duplicate_check.llm_fallback_used),
+        "rationale": str(duplicate_check.rationale),
+        "confidence": float(duplicate_check.confidence),
+    }
 
     existed = _find_active_duplicate(
         session=session,
@@ -786,6 +1140,24 @@ def generate_rule_suggestion(
             reason="dedupe_key_matched_active_suggestion",
             before_json=None,
             after_json=_snapshot_suggestion(existed),
+        )
+        _append_log(
+            session=session,
+            suggestion_id=existed.id,
+            company_id=company_id,
+            actor_user_id=actor_user_id,
+            action="suggestion.generate.telemetry",
+            reason=(
+                f"draft_source={generation_meta.get('source')} "
+                f"draft_provider={generation_meta.get('provider')} "
+                f"duplicate_source={duplicate_meta['source']} "
+                f"duplicate_provider={duplicate_meta.get('llm_provider') or 'none'}"
+            ),
+            before_json=None,
+            after_json={
+                "draft_generation": generation_meta,
+                "duplicate_check": duplicate_meta,
+            },
         )
         session.commit()
         session.refresh(existed)
@@ -815,6 +1187,24 @@ def generate_rule_suggestion(
         action="suggestion.create",
         before_json=None,
         after_json=_snapshot_suggestion(row),
+    )
+    _append_log(
+        session=session,
+        suggestion_id=row.id,
+        company_id=company_id,
+        actor_user_id=actor_user_id,
+        action="suggestion.generate.telemetry",
+        reason=(
+            f"draft_source={generation_meta.get('source')} "
+            f"draft_provider={generation_meta.get('provider')} "
+            f"duplicate_source={duplicate_meta['source']} "
+            f"duplicate_provider={duplicate_meta.get('llm_provider') or 'none'}"
+        ),
+        before_json=None,
+        after_json={
+            "draft_generation": generation_meta,
+            "duplicate_check": duplicate_meta,
+        },
     )
     session.commit()
     session.refresh(row)
@@ -975,6 +1365,33 @@ def confirm_rule_suggestion(
         current_version=int(row.version),
         expected_version=payload.expected_version,
     )
+
+    draft = _normalize_draft(RuleSuggestionDraftPayload.model_validate(row.draft_json))
+    duplicate_check = build_duplicate_check(
+        session=session,
+        company_id=company_id,
+        draft_rule=draft.rule,
+    )
+    if (
+        duplicate_check.decision == DuplicateDecision.exact_duplicate
+        and duplicate_check.matched_rule_ids
+        and duplicate_check.rationale != "stable_key_conflict"
+    ):
+        raise AppError(
+            409,
+            ErrorCode.CONFLICT,
+            "Suggestion duplicates existing rule",
+            details=[
+                {
+                    "field": "draft.rule",
+                    "reason": "exact_duplicate_rule",
+                    "extra": {
+                        "matched_rule_ids": [str(x) for x in duplicate_check.matched_rule_ids],
+                        "duplicate_rationale": duplicate_check.rationale,
+                    },
+                }
+            ],
+        )
 
     before_json = _snapshot_suggestion(row)
     row.status = SuggestionStatus.approved.value
@@ -1227,3 +1644,4 @@ def apply_rule_suggestion(
         rule_id=rule_row.id,
         context_term_ids=context_term_ids,
     )
+

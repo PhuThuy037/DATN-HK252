@@ -33,7 +33,22 @@ class _Candidate:
     origin: str
     similarity: float
     lexical_score: float
+    hybrid_score: float
     signature_hash: str
+    semantic_hash: str
+    scope: str
+    action: str
+    severity: str
+    rag_mode: str
+    priority: int
+    conditions: dict[str, Any]
+
+
+@dataclass(slots=True)
+class _LlmMeta:
+    provider: str
+    model: str
+    fallback_used: bool
 
 
 def _normalize_conditions(conditions: dict[str, Any]) -> str:
@@ -56,6 +71,31 @@ def _rule_signature_hash(
             "action": action,
             "severity": severity,
             "rag_mode": rag_mode,
+            "conditions": json.loads(_normalize_conditions(conditions)),
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _rule_semantic_hash(
+    *,
+    scope: str,
+    action: str,
+    severity: str,
+    rag_mode: str,
+    priority: int,
+    conditions: dict[str, Any],
+) -> str:
+    raw = json.dumps(
+        {
+            "scope": scope,
+            "action": action,
+            "severity": severity,
+            "rag_mode": rag_mode,
+            "priority": int(priority),
             "conditions": json.loads(_normalize_conditions(conditions)),
         },
         sort_keys=True,
@@ -151,6 +191,186 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return float(sum(a[i] * b[i] for i in range(n)))
 
 
+def _hybrid_score(*, similarity: float, lexical_score: float) -> float:
+    # Weighted score to reduce false negatives when one signal is weak.
+    return (0.78 * float(similarity)) + (0.22 * float(lexical_score))
+
+
+def _clamp01(v: float) -> float:
+    return max(0.0, min(1.0, float(v)))
+
+
+def _extract_entity_types(node: Any) -> set[str]:
+    out: set[str] = set()
+    if isinstance(node, dict):
+        if "entity_type" in node:
+            value = str(node.get("entity_type") or "").strip().upper()
+            if value:
+                out.add(value)
+        for v in node.values():
+            out.update(_extract_entity_types(v))
+        return out
+    if isinstance(node, list):
+        for item in node:
+            out.update(_extract_entity_types(item))
+    return out
+
+
+def _extract_signal_fields(node: Any) -> set[str]:
+    out: set[str] = set()
+    if isinstance(node, dict):
+        signal = node.get("signal")
+        if isinstance(signal, dict):
+            field = str(signal.get("field") or "").strip().lower()
+            if field:
+                out.add(field)
+        for v in node.values():
+            out.update(_extract_signal_fields(v))
+        return out
+    if isinstance(node, list):
+        for item in node:
+            out.update(_extract_signal_fields(item))
+    return out
+
+
+def _top_signal_family(fields: set[str]) -> str:
+    if "persona" in fields:
+        return "persona"
+    if "rag" in fields:
+        return "rag"
+    if "security" in fields:
+        return "security"
+    if "risk_boost" in fields:
+        return "risk"
+    if fields:
+        return sorted(fields)[0]
+    return ""
+
+
+def _is_candidate_intent_compatible(
+    *,
+    draft_rule: RuleSuggestionDraftRule,
+    candidate: _Candidate,
+) -> bool:
+    if str(candidate.scope) != str(draft_rule.scope.value):
+        return False
+    if str(candidate.action) != str(draft_rule.action.value):
+        return False
+
+    draft_entities = _extract_entity_types(draft_rule.conditions)
+    cand_entities = _extract_entity_types(candidate.conditions)
+    if draft_entities:
+        if not cand_entities:
+            return False
+        if not (draft_entities & cand_entities):
+            return False
+    elif cand_entities:
+        return False
+
+    draft_signals = _extract_signal_fields(draft_rule.conditions)
+    cand_signals = _extract_signal_fields(candidate.conditions)
+    if draft_signals:
+        if not cand_signals:
+            return False
+        draft_family = _top_signal_family(draft_signals)
+        cand_family = _top_signal_family(cand_signals)
+        if draft_family and cand_family and draft_family != cand_family:
+            return False
+    elif cand_signals:
+        return False
+
+    return True
+
+
+def _structural_similarity(
+    *,
+    draft_rule: RuleSuggestionDraftRule,
+    candidate: _Candidate,
+) -> float:
+    score = 0.0
+    if candidate.scope == draft_rule.scope.value:
+        score += 0.25
+    if candidate.action == draft_rule.action.value:
+        score += 0.25
+    if candidate.rag_mode == draft_rule.rag_mode.value:
+        score += 0.10
+    if candidate.severity == draft_rule.severity.value:
+        score += 0.10
+
+    draft_entities = _extract_entity_types(draft_rule.conditions)
+    cand_entities = _extract_entity_types(candidate.conditions)
+    if draft_entities and cand_entities:
+        inter = len(draft_entities & cand_entities)
+        union = len(draft_entities | cand_entities)
+        if union > 0:
+            score += 0.30 * (inter / union)
+    return _clamp01(score)
+
+
+def _adjust_hybrid_score(
+    *,
+    base_hybrid: float,
+    structural_score: float,
+    draft_rule: RuleSuggestionDraftRule,
+    rule: Rule,
+) -> float:
+    adjusted = float(base_hybrid)
+    adjusted += 0.18 * structural_score
+
+    draft_entities = _extract_entity_types(draft_rule.conditions)
+    rule_entities = _extract_entity_types(rule.conditions)
+    if draft_entities and rule_entities:
+        if draft_entities & rule_entities:
+            adjusted += 0.06
+        else:
+            adjusted -= 0.14
+
+    if str(rule.action.value) != str(draft_rule.action.value):
+        adjusted -= 0.05
+
+    if (
+        str(rule.stable_key).startswith("global.security.rag.")
+        and len(_extract_entity_types(draft_rule.conditions)) > 0
+    ):
+        adjusted -= 0.08
+
+    if rule.company_id is not None:
+        adjusted += 0.03
+
+    return _clamp01(adjusted)
+
+
+def _should_call_llm_for_duplicate(
+    *,
+    draft_rule: RuleSuggestionDraftRule,
+    candidates: list[_Candidate],
+    near_threshold: float,
+) -> bool:
+    if not candidates:
+        return False
+    best = candidates[0]
+    structural = _structural_similarity(draft_rule=draft_rule, candidate=best)
+
+    if best.hybrid_score >= max(0.78, near_threshold * 0.95):
+        return True
+    if structural >= 0.72 and best.hybrid_score >= 0.60:
+        return True
+    if best.similarity >= max(0.78, near_threshold * 0.97) and best.lexical_score >= 0.55:
+        return True
+    return False
+
+
+def _to_candidate_out(c: _Candidate) -> RuleDuplicateCandidateOut:
+    return RuleDuplicateCandidateOut(
+        rule_id=c.rule_id,
+        stable_key=c.stable_key,
+        name=c.name,
+        origin=c.origin,
+        similarity=float(c.similarity),
+        lexical_score=float(c.lexical_score),
+    )
+
+
 def _ensure_rule_embedding(
     *,
     session: Session,
@@ -199,9 +419,17 @@ def _llm_classify_duplicate(
     *,
     draft_rule: RuleSuggestionDraftRule,
     candidates: list[_Candidate],
-) -> tuple[DuplicateDecision, list[UUID], float, str]:
+    exact_threshold: float,
+    near_threshold: float,
+) -> tuple[DuplicateDecision, list[UUID], float, str, _LlmMeta]:
     if not candidates:
-        return DuplicateDecision.different, [], 0.0, "no_candidates"
+        return (
+            DuplicateDecision.different,
+            [],
+            0.0,
+            "no_candidates",
+            _LlmMeta(provider="none", model="none", fallback_used=False),
+        )
     settings = get_settings()
 
     candidate_payload = [
@@ -212,6 +440,13 @@ def _llm_classify_duplicate(
             "origin": c.origin,
             "similarity": round(c.similarity, 6),
             "lexical_score": round(c.lexical_score, 6),
+            "hybrid_score": round(c.hybrid_score, 6),
+            "scope": c.scope,
+            "action": c.action,
+            "severity": c.severity,
+            "rag_mode": c.rag_mode,
+            "priority": int(c.priority),
+            "conditions": c.conditions,
         }
         for c in candidates
     ]
@@ -220,16 +455,19 @@ def _llm_classify_duplicate(
         "You are a strict duplicate-rule classifier.\n"
         "Classify draft rule against candidates and output ONLY JSON.\n"
         "decision must be EXACT_DUPLICATE or NEAR_DUPLICATE or DIFFERENT.\n"
+        "EXACT_DUPLICATE only when policy intent and execution behavior are effectively the same.\n"
         "Schema: {\"decision\":str,\"matched_rule_ids\":[str],\"confidence\":0..1,\"rationale\":str}\n\n"
+        f"Thresholds: exact={float(exact_threshold):.3f}, near={float(near_threshold):.3f}\n\n"
         f"Draft rule:\n{json.dumps(draft_rule.model_dump(mode='json'), ensure_ascii=False)}\n\n"
         f"Candidates:\n{json.dumps(candidate_payload, ensure_ascii=False)}\n"
     )
 
-    raw = generate_text_sync(
+    llm_out = generate_text_sync(
         prompt=prompt,
         provider=settings.non_embedding_llm_provider,
         timeout_s=settings.non_embedding_llm_timeout_seconds,
-    ).text
+    )
+    raw = llm_out.text
 
     try:
         parsed = json.loads(raw)
@@ -255,11 +493,22 @@ def _llm_classify_duplicate(
     confidence = max(0.0, min(1.0, confidence))
     rationale = str(parsed.get("rationale") or "").strip()[:1000] or "llm_result"
 
-    return DuplicateDecision(decision_raw), matched_ids, confidence, rationale
+    return (
+        DuplicateDecision(decision_raw),
+        matched_ids,
+        confidence,
+        rationale,
+        _LlmMeta(
+            provider=str(llm_out.provider),
+            model=str(llm_out.model),
+            fallback_used=bool(llm_out.fallback_used),
+        ),
+    )
 
 
 def _fallback_decision(
     *,
+    draft_rule: RuleSuggestionDraftRule,
     candidates: list[_Candidate],
     exact_threshold: float,
     near_threshold: float,
@@ -268,21 +517,41 @@ def _fallback_decision(
         return DuplicateDecision.different, [], 0.0, "no_candidates"
 
     best = candidates[0]
-    if best.similarity >= exact_threshold:
+    if (best.similarity >= exact_threshold) or (
+        best.hybrid_score >= exact_threshold and best.lexical_score >= 0.65
+    ):
         return (
             DuplicateDecision.exact_duplicate,
             [best.rule_id],
-            min(1.0, best.similarity),
-            "similarity_above_exact_threshold",
+            min(1.0, max(best.similarity, best.hybrid_score)),
+            "hybrid_above_exact_threshold",
         )
-    if best.similarity >= near_threshold:
+    if (
+        best.similarity >= near_threshold
+        or best.hybrid_score >= near_threshold
+        or best.lexical_score >= 0.78
+    ):
         return (
             DuplicateDecision.near_duplicate,
             [best.rule_id],
-            min(1.0, best.similarity),
-            "similarity_above_near_threshold",
+            min(1.0, max(best.similarity, best.hybrid_score)),
+            "hybrid_above_near_threshold",
         )
-    return DuplicateDecision.different, [], 1.0 - best.similarity, "below_threshold"
+
+    structural = _structural_similarity(draft_rule=draft_rule, candidate=best)
+    if structural >= 0.72 and best.hybrid_score >= 0.58:
+        return (
+            DuplicateDecision.near_duplicate,
+            [best.rule_id],
+            _clamp01((best.hybrid_score + structural) / 2.0),
+            "structural_near_duplicate",
+        )
+    return (
+        DuplicateDecision.different,
+        [],
+        max(0.0, 1.0 - max(best.similarity, best.hybrid_score)),
+        "below_threshold",
+    )
 
 
 def build_duplicate_check(
@@ -305,6 +574,14 @@ def build_duplicate_check(
         action=draft_rule.action.value,
         severity=draft_rule.severity.value,
         rag_mode=draft_rule.rag_mode.value,
+        conditions=draft_rule.conditions,
+    )
+    draft_semantic = _rule_semantic_hash(
+        scope=draft_rule.scope.value,
+        action=draft_rule.action.value,
+        severity=draft_rule.severity.value,
+        rag_mode=draft_rule.rag_mode.value,
+        priority=int(draft_rule.priority),
         conditions=draft_rule.conditions,
     )
 
@@ -340,6 +617,38 @@ def build_duplicate_check(
             rag_mode=r.rag_mode.value,
             conditions=r.conditions,
         )
+        semantic = _rule_semantic_hash(
+            scope=r.scope.value,
+            action=r.action.value,
+            severity=r.severity.value,
+            rag_mode=r.rag_mode.value,
+            priority=int(r.priority),
+            conditions=r.conditions,
+        )
+        hybrid = _hybrid_score(similarity=sim, lexical_score=lex)
+        structural = _structural_similarity(draft_rule=draft_rule, candidate=_Candidate(
+            rule_id=r.id,
+            stable_key=r.stable_key,
+            name=r.name,
+            origin="global_default" if r.company_id is None else "company_rule",
+            similarity=sim,
+            lexical_score=lex,
+            hybrid_score=hybrid,
+            signature_hash=sig,
+            semantic_hash=semantic,
+            scope=r.scope.value,
+            action=r.action.value,
+            severity=r.severity.value,
+            rag_mode=r.rag_mode.value,
+            priority=int(r.priority),
+            conditions=r.conditions,
+        ))
+        hybrid = _adjust_hybrid_score(
+            base_hybrid=hybrid,
+            structural_score=structural,
+            draft_rule=draft_rule,
+            rule=r,
+        )
         scored.append(
             _Candidate(
                 rule_id=r.id,
@@ -348,15 +657,32 @@ def build_duplicate_check(
                 origin="global_default" if r.company_id is None else "company_rule",
                 similarity=sim,
                 lexical_score=lex,
+                hybrid_score=hybrid,
                 signature_hash=sig,
+                semantic_hash=semantic,
+                scope=r.scope.value,
+                action=r.action.value,
+                severity=r.severity.value,
+                rag_mode=r.rag_mode.value,
+                priority=int(r.priority),
+                conditions=r.conditions,
             )
         )
 
-    scored.sort(key=lambda x: (x.similarity, x.lexical_score), reverse=True)
-    top = scored[:top_k]
+    scored.sort(
+        key=lambda x: (x.hybrid_score, x.similarity, x.lexical_score),
+        reverse=True,
+    )
+    compatible = [
+        c
+        for c in scored
+        if _is_candidate_intent_compatible(draft_rule=draft_rule, candidate=c)
+    ]
+    ranking_pool = compatible
+    top = ranking_pool[:top_k]
 
-    # Hard deterministic checks first.
-    same_key = [c for c in top if c.stable_key == draft_rule.stable_key]
+    # Hard deterministic checks first, evaluated on full candidate set.
+    same_key = [c for c in scored if c.stable_key == draft_rule.stable_key]
     if same_key:
         c = same_key[0]
         return RuleDuplicateCheckOut(
@@ -364,24 +690,14 @@ def build_duplicate_check(
             confidence=1.0,
             rationale="stable_key_conflict",
             matched_rule_ids=[c.rule_id],
-            candidates=[
-                RuleDuplicateCandidateOut(
-                    rule_id=x.rule_id,
-                    stable_key=x.stable_key,
-                    name=x.name,
-                    origin=x.origin,
-                    similarity=float(x.similarity),
-                    lexical_score=float(x.lexical_score),
-                )
-                for x in top
-            ],
+            candidates=[_to_candidate_out(x) for x in top],
             top_k=top_k,
             exact_threshold=exact_th,
             near_threshold=near_th,
             source="hard_deterministic",
         )
 
-    same_sig = [c for c in top if c.signature_hash == draft_sig]
+    same_sig = [c for c in scored if c.signature_hash == draft_sig]
     if same_sig:
         c = same_sig[0]
         return RuleDuplicateCheckOut(
@@ -389,55 +705,76 @@ def build_duplicate_check(
             confidence=1.0,
             rationale="normalized_signature_match",
             matched_rule_ids=[c.rule_id],
-            candidates=[
-                RuleDuplicateCandidateOut(
-                    rule_id=x.rule_id,
-                    stable_key=x.stable_key,
-                    name=x.name,
-                    origin=x.origin,
-                    similarity=float(x.similarity),
-                    lexical_score=float(x.lexical_score),
-                )
-                for x in top
-            ],
+            candidates=[_to_candidate_out(x) for x in top],
             top_k=top_k,
             exact_threshold=exact_th,
             near_threshold=near_th,
             source="hard_deterministic",
         )
 
-    try:
-        decision, matched_ids, conf, rationale = _llm_classify_duplicate(
-            draft_rule=draft_rule,
-            candidates=top,
+    same_semantic = [c for c in scored if c.semantic_hash == draft_semantic]
+    if same_semantic:
+        c = same_semantic[0]
+        return RuleDuplicateCheckOut(
+            decision=DuplicateDecision.exact_duplicate,
+            confidence=min(1.0, max(c.similarity, c.hybrid_score)),
+            rationale="semantic_signature_match",
+            matched_rule_ids=[c.rule_id],
+            candidates=[_to_candidate_out(x) for x in top],
+            top_k=top_k,
+            exact_threshold=exact_th,
+            near_threshold=near_th,
+            source="hard_deterministic",
         )
-        source = "llm"
-    except Exception:
+
+    if _should_call_llm_for_duplicate(
+        draft_rule=draft_rule,
+        candidates=top,
+        near_threshold=near_th,
+    ):
+        try:
+            decision, matched_ids, conf, rationale, llm_meta = _llm_classify_duplicate(
+                draft_rule=draft_rule,
+                candidates=top,
+                exact_threshold=exact_th,
+                near_threshold=near_th,
+            )
+            source = "llm"
+        except Exception:
+            decision, matched_ids, conf, rationale = _fallback_decision(
+                draft_rule=draft_rule,
+                candidates=top,
+                exact_threshold=exact_th,
+                near_threshold=near_th,
+            )
+            llm_meta = _LlmMeta(provider="none", model="none", fallback_used=False)
+            source = "fallback_similarity"
+    else:
         decision, matched_ids, conf, rationale = _fallback_decision(
+            draft_rule=draft_rule,
             candidates=top,
             exact_threshold=exact_th,
             near_threshold=near_th,
         )
-        source = "fallback_similarity"
+        llm_meta = _LlmMeta(provider="none", model="none", fallback_used=False)
+        source = "hybrid_fastpath"
+
+    top_ids = {x.rule_id for x in top}
+    matched_ids = [x for x in matched_ids if x in top_ids]
+    if decision != DuplicateDecision.different and not matched_ids and top:
+        matched_ids = [top[0].rule_id]
 
     return RuleDuplicateCheckOut(
         decision=decision,
         confidence=conf,
         rationale=rationale,
         matched_rule_ids=matched_ids,
-        candidates=[
-            RuleDuplicateCandidateOut(
-                rule_id=x.rule_id,
-                stable_key=x.stable_key,
-                name=x.name,
-                origin=x.origin,
-                similarity=float(x.similarity),
-                lexical_score=float(x.lexical_score),
-            )
-            for x in top
-        ],
+        candidates=[_to_candidate_out(x) for x in top],
         top_k=top_k,
         exact_threshold=exact_th,
         near_threshold=near_th,
         source=source,
+        llm_provider=llm_meta.provider if source == "llm" else None,
+        llm_model=llm_meta.model if source == "llm" else None,
+        llm_fallback_used=bool(llm_meta.fallback_used) if source == "llm" else False,
     )

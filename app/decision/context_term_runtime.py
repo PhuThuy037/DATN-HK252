@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import time
+from threading import RLock
 from typing import Optional
 from uuid import UUID
 
@@ -16,11 +18,44 @@ class ContextRuntimeOverrides:
     persona_keywords: dict[str, list[str]]
 
 
+_CACHE_TTL_SECONDS = 5.0
+_cache_lock = RLock()
+_cache: dict[Optional[UUID], tuple[float, ContextRuntimeOverrides]] = {}
+
+
+def _clone_overrides(data: ContextRuntimeOverrides) -> ContextRuntimeOverrides:
+    return ContextRuntimeOverrides(
+        regex_hints={k: list(v) for k, v in data.regex_hints.items()},
+        persona_keywords={k: list(v) for k, v in data.persona_keywords.items()},
+    )
+
+
+def _get_cached(company_id: Optional[UUID]) -> ContextRuntimeOverrides | None:
+    with _cache_lock:
+        entry = _cache.get(company_id)
+        if not entry:
+            return None
+        expires_at, data = entry
+        if expires_at <= time.monotonic():
+            _cache.pop(company_id, None)
+            return None
+        return _clone_overrides(data)
+
+
+def _set_cached(company_id: Optional[UUID], data: ContextRuntimeOverrides) -> None:
+    with _cache_lock:
+        _cache[company_id] = (time.monotonic() + _CACHE_TTL_SECONDS, data)
+
+
 def load_context_runtime_overrides(
     *,
     session: Session,
     company_id: Optional[UUID],
 ) -> ContextRuntimeOverrides:
+    cached = _get_cached(company_id)
+    if cached is not None:
+        return cached
+
     stmt = select(ContextTerm).where(ContextTerm.enabled.is_(True))
     if company_id is None:
         stmt = stmt.where(ContextTerm.company_id.is_(None))
@@ -28,6 +63,8 @@ def load_context_runtime_overrides(
         stmt = stmt.where(
             (ContextTerm.company_id.is_(None)) | (ContextTerm.company_id == company_id)
         )
+    # Make "latest wins" deterministic for dedup assignment below.
+    stmt = stmt.order_by(ContextTerm.created_at.asc(), ContextTerm.id.asc())
 
     rows = list(session.exec(stmt).all())
 
@@ -65,7 +102,14 @@ def load_context_runtime_overrides(
                 continue
             persona_keywords.setdefault(persona, []).append(term)
 
-    return ContextRuntimeOverrides(
+    for hints in regex_hints.values():
+        hints.sort(key=lambda h: h.term)
+    for kws in persona_keywords.values():
+        kws.sort()
+
+    out = ContextRuntimeOverrides(
         regex_hints=regex_hints,
         persona_keywords=persona_keywords,
     )
+    _set_cached(company_id, out)
+    return _clone_overrides(out)

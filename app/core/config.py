@@ -13,9 +13,9 @@ class Settings(BaseSettings):
     rule_duplicate_embed_model: str = "local-hash-1536-v1"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b"
-    gemini_model: str = "gemini-3-flash-preview"
+    gemini_model: str = "gemini-3.1-flash-lite-preview"
     non_embedding_llm_provider: str = "gemini"  # gemini | ollama
-    non_embedding_llm_timeout_seconds: float = 4.0
+    non_embedding_llm_timeout_seconds: float = 12.0
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60

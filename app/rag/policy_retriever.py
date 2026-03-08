@@ -80,15 +80,16 @@ class PolicyRetriever:
         t0 = time.perf_counter()
 
         q_emb = await self._embed(query)
+        dist_expr = PolicyChunkEmbedding.embedding.cosine_distance(q_emb)  # type: ignore
 
         stmt = (
-            select(PolicyChunk, PolicyChunkEmbedding)
+            select(PolicyChunk, PolicyChunkEmbedding, dist_expr)
             .join(PolicyDocument, PolicyDocument.id == PolicyChunk.document_id)
             .join(PolicyChunkEmbedding, PolicyChunkEmbedding.chunk_id == PolicyChunk.id)
             .where(PolicyChunkEmbedding.model_name == self.embed_model)
             .where(PolicyDocument.enabled.is_(True))
             .where(PolicyDocument.deleted_at.is_(None))
-            .order_by(PolicyChunkEmbedding.embedding.cosine_distance(q_emb))  # type: ignore
+            .order_by(dist_expr)
             .limit(k)
         )
 
@@ -112,13 +113,7 @@ class PolicyRetriever:
         out: list[RetrievedChunk] = []
         results_json: list[dict[str, Any]] = []
 
-        for chunk, emb_row in rows:
-            dist = session.exec(
-                select(PolicyChunkEmbedding.embedding.cosine_distance(q_emb)).where(  # type: ignore
-                    PolicyChunkEmbedding.id == emb_row.id
-                )
-            ).one()
-
+        for chunk, _emb_row, dist in rows:
             dist_f = float(dist)
             sim = 1.0 - dist_f
 
