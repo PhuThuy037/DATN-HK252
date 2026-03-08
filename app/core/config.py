@@ -24,6 +24,15 @@ class Settings(BaseSettings):
     chat_provider: str = "gemini"  # gemini | ollama
     default_system_prompt: str | None = "You are a helpful assistant."
 
+    # CORS: comma-separated values; use * only when you do not need credentials.
+    cors_allowed_origins: str = (
+        "http://localhost:3000,http://127.0.0.1:3000,"
+        "http://localhost:5173,http://127.0.0.1:5173"
+    )
+    cors_allow_credentials: bool = True
+    cors_allow_methods: str = "*"
+    cors_allow_headers: str = "*"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,
