@@ -22,6 +22,11 @@ from app.rule.engine import RuleEngine
 
 
 class ScanEngineLocal:
+    _RAG_BLOCK_KEY = "global.security.rag.block"
+    _RAG_MASK_KEY = "global.security.rag.mask"
+    _RAG_KEY_PREFIX = "global.security.rag."
+    _SIMPLE_PII_TYPES = {"PHONE", "EMAIL", "TAX_ID", "CCCD", "CREDIT_CARD"}
+
     def __init__(self, *, context_yaml_path: str):
         self.local = LocalRegexDetector()
         self.presidio = PresidioDetector()
@@ -108,7 +113,15 @@ class ScanEngineLocal:
         if spoken_entities:
             return not self._is_strong_spoken_signal(spoken_entities)
 
-        dev_kws = {"api key", "apikey", "token", "secret", "bearer", ".env", "authorization"}
+        dev_kws = {
+            "api key",
+            "apikey",
+            "token",
+            "secret",
+            "bearer",
+            ".env",
+            "authorization",
+        }
         lowered_kws = {str(k or "").lower() for k in context_keywords}
         if persona == "dev" and (lowered_kws & dev_kws):
             has_secret = any(
@@ -118,13 +131,57 @@ class ScanEngineLocal:
             )
             if has_secret:
                 return False
-            if float(sec_score) >= 0.25:
-                return True
+            # Developer context mentioning key/token/secret should be reviewed by RAG.
+            return True
 
         return False
 
+    def _is_rag_rule_key(self, stable_key: Any) -> bool:
+        key = str(stable_key or "").strip().lower()
+        return key.startswith(self._RAG_KEY_PREFIX)
+
+    def _action_name(self, action: Any) -> str:
+        if hasattr(action, "value"):
+            return str(getattr(action, "value") or "").strip().lower()
+        return str(action or "").strip().lower()
+
+    def _is_simple_pii_only(self, entities: list[Any]) -> bool:
+        if not entities:
+            return False
+
+        has_supported = False
+        for e in entities:
+            etype = str(getattr(e, "type", "") or "").strip().upper()
+            if not etype:
+                continue
+            has_supported = True
+            if etype not in self._SIMPLE_PII_TYPES:
+                return False
+
+        return has_supported
+
+    def _get_effective_rag_toggles(
+        self,
+        *,
+        session: Session,
+        company_id: Optional[UUID],
+        user_id: Optional[UUID],
+    ) -> tuple[bool, bool]:
+        runtime_rules = self.rule_engine.load_rules(
+            session=session,
+            company_id=company_id,
+            user_id=user_id,
+        )
+        keys = {str(r.stable_key) for r in runtime_rules}
+        return (self._RAG_BLOCK_KEY in keys, self._RAG_MASK_KEY in keys)
+
     async def scan(
-        self, *, session: Session, text: str, company_id: Optional[UUID]
+        self,
+        *,
+        session: Session,
+        text: str,
+        company_id: Optional[UUID],
+        user_id: Optional[UUID] = None,
     ) -> dict[str, Any]:
         t0 = time.perf_counter()
         timing_ms_by_stage: dict[str, int] = {}
@@ -166,7 +223,9 @@ class ScanEngineLocal:
         ts = time.perf_counter()
         for e in regex_entities + spoken_entities + presidio_entities:
             e.type = self.type_norm.normalize(getattr(e, "type", ""))
-        timing_ms_by_stage["normalize_entities"] = int((time.perf_counter() - ts) * 1000)
+        timing_ms_by_stage["normalize_entities"] = int(
+            (time.perf_counter() - ts) * 1000
+        )
 
         ts = time.perf_counter()
         entities = self.merger.merge(
@@ -192,7 +251,7 @@ class ScanEngineLocal:
         }
 
         ts = time.perf_counter()
-        should_rag = self._should_call_rag(
+        should_rag_gate = self._should_call_rag(
             sec_decision=str(sec.decision),
             sec_score=float(sec.score),
             persona=signals.get("persona"),
@@ -202,16 +261,98 @@ class ScanEngineLocal:
         )
         timing_ms_by_stage["gate_rag"] = int((time.perf_counter() - ts) * 1000)
 
+        # Phase 1: evaluate local/policy rules without rag.* rules.
         ts = time.perf_counter()
-        if should_rag:
+        phase1_matches = self.rule_engine.evaluate(
+            session=session,
+            company_id=company_id,
+            user_id=user_id,
+            entities=entities,
+            signals=signals,
+        )
+        phase1_matches = [
+            m for m in phase1_matches if not self._is_rag_rule_key(m.stable_key)
+        ]
+        timing_ms_by_stage["rule_eval_phase1"] = int((time.perf_counter() - ts) * 1000)
+
+        ts = time.perf_counter()
+        phase1_decision = self.resolver.resolve(phase1_matches)
+        timing_ms_by_stage["resolve_phase1"] = int((time.perf_counter() - ts) * 1000)
+
+        if self._action_name(phase1_decision.final_action) != "allow":
+            signals.pop("rag", None)
+            ts = time.perf_counter()
+            phase1_matches = compact_matches(
+                phase1_matches,
+                final_action=self._action_name(phase1_decision.final_action),
+            )
+            timing_ms_by_stage["compact_matches"] = int(
+                (time.perf_counter() - ts) * 1000
+            )
+            timing_ms_by_stage["rag"] = 0
+            timing_ms_by_stage["rule_eval"] = timing_ms_by_stage["rule_eval_phase1"]
+            timing_ms_by_stage["resolve"] = timing_ms_by_stage["resolve_phase1"]
+
+            latency_ms = int((time.perf_counter() - t0) * 1000)
+            timing_ms_by_stage["total"] = latency_ms
+
+            max_entity = max(
+                [float(getattr(e, "score", 0.0)) for e in entities], default=0.0
+            )
+            risk_score = min(
+                1.0, max_entity + float(signals.get("risk_boost", 0.0) or 0.0)
+            )
+
+            return {
+                "entities": entities,
+                "signals": signals,
+                "matches": phase1_matches,
+                "final_action": phase1_decision.final_action,
+                "latency_ms": latency_ms,
+                "timing_ms_by_stage": timing_ms_by_stage,
+                "risk_score": risk_score,
+                "ambiguous": False,
+            }
+
+        ts = time.perf_counter()
+        rag_block_on, rag_mask_on = self._get_effective_rag_toggles(
+            session=session,
+            company_id=company_id,
+            user_id=user_id,
+        )
+        timing_ms_by_stage["resolve_rag_toggles"] = int(
+            (time.perf_counter() - ts) * 1000
+        )
+
+        simple_pii_guard = bool(
+            (len(phase1_matches) == 0)
+            and (str(sec.decision).upper() == "ALLOW")
+            and self._is_simple_pii_only(entities)
+        )
+
+        should_call_rag = bool(
+            should_rag_gate
+            and (rag_block_on or rag_mask_on)
+            and not simple_pii_guard
+        )
+
+        ts = time.perf_counter()
+        if should_call_rag:
             rag_out = await self.rag.decide(
                 session=session,
                 user_text=text,
                 company_id=company_id,
                 message_id=None,
             )
+            raw_rag_decision = str(rag_out.decision).upper()
+            effective_rag_decision = raw_rag_decision
+            if raw_rag_decision == "BLOCK" and not rag_block_on:
+                effective_rag_decision = "ALLOW"
+            if raw_rag_decision == "MASK" and not rag_mask_on:
+                effective_rag_decision = "ALLOW"
             signals["rag"] = {
-                "decision": rag_out.decision,
+                "decision": effective_rag_decision,
+                "decision_raw": raw_rag_decision,
                 "confidence": rag_out.confidence,
                 "rule_keys": rag_out.rule_keys,
                 "rationale": rag_out.rationale,
@@ -224,6 +365,7 @@ class ScanEngineLocal:
         matches = self.rule_engine.evaluate(
             session=session,
             company_id=company_id,
+            user_id=user_id,
             entities=entities,
             signals=signals,
         )
@@ -234,9 +376,7 @@ class ScanEngineLocal:
         timing_ms_by_stage["resolve"] = int((time.perf_counter() - ts) * 1000)
 
         ts = time.perf_counter()
-        matches = compact_matches(
-            matches, final_action=str(decision.final_action).lower()
-        )
+        matches = compact_matches(matches, final_action=self._action_name(decision.final_action))
         timing_ms_by_stage["compact_matches"] = int((time.perf_counter() - ts) * 1000)
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
@@ -255,5 +395,6 @@ class ScanEngineLocal:
             "latency_ms": latency_ms,
             "timing_ms_by_stage": timing_ms_by_stage,
             "risk_score": risk_score,
-            "ambiguous": should_rag,
+            "ambiguous": should_call_rag,
         }
+
