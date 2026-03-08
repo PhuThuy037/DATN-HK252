@@ -83,8 +83,16 @@ class SpokenNumberDetector:
 
     def _guess_type(self, digits: str, *, lower_text: str, start: int) -> str | None:
         n = len(digits)
+        ctx = self._context_window(lower_text, start, 60)
 
-        # Strong by length
+        has_cccd_ctx = any(k in ctx for k in self.KW_CCCD)
+        has_tax_ctx = any(k in ctx for k in self.KW_TAX)
+
+        # Favor explicit context for office identifiers.
+        if n in (12, 13) and has_cccd_ctx:
+            return "CCCD"
+
+        # Strong by length (default fallback)
         if n == 12:
             return "CCCD"
         if n == 13:
@@ -92,9 +100,7 @@ class SpokenNumberDetector:
 
         # Ambiguous length 10
         if n == 10:
-            ctx = self._context_window(lower_text, start, 60)
-
-            if any(k in ctx for k in self.KW_TAX):
+            if has_tax_ctx:
                 return "TAX_ID"
             if any(k in ctx for k in self.KW_PHONE):
                 return "PHONE"

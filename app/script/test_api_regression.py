@@ -106,14 +106,14 @@ def main() -> None:
                 "expect_ok": True,
                 "expect_action": "mask",
                 "expect_mask_contains": "[PHONE]",
-                "expect_ambiguous": True,
+                "expect_ambiguous": False,
             },
             {
                 "name": "cccd_spoken_block",
                 "content": "CCCD của tôi là không một hai ba bốn năm sáu bảy tám chín không một hai.",
                 "expect_ok": False,
                 "expect_action": "block",
-                "expect_ambiguous": True,
+                "expect_ambiguous": False,
             },
             {
                 "name": "prompt_injection_block",

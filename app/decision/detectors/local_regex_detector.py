@@ -42,6 +42,7 @@ class LocalRegexDetector:
     CCCD_PATTERN = re.compile(r"\b\d{12}\b")
 
     TAX_ID_PATTERN = re.compile(r"\b\d{10}(?:-\d{3})?\b")
+    CREDIT_CARD_CANDIDATE_PATTERN = re.compile(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)")
 
     API_SECRET_PATTERNS = [
         re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
@@ -142,6 +143,26 @@ class LocalRegexDetector:
                 )
             )
 
+        # CREDIT CARD
+        for m in self.CREDIT_CARD_CANDIDATE_PATTERN.finditer(text):
+            raw_value = m.group()
+            digits = re.sub(r"[^\d]", "", raw_value)
+            if len(digits) < 13 or len(digits) > 19:
+                continue
+            if not self._is_valid_credit_card_number(digits):
+                continue
+
+            entities.append(
+                Entity(
+                    type="CREDIT_CARD",
+                    start=m.start(),
+                    end=m.end(),
+                    score=0.92,
+                    source="local_regex",
+                    text=raw_value,
+                    metadata={"normalized": digits, "last4": digits[-4:]},
+                )
+            )
         # API SECRET
         for pattern in self.API_SECRET_PATTERNS:
             for m in pattern.finditer(text):
@@ -158,6 +179,18 @@ class LocalRegexDetector:
                 )
 
         return entities
+
+    def _is_valid_credit_card_number(self, digits: str) -> bool:
+        total = 0
+        reverse_digits = digits[::-1]
+        for idx, ch in enumerate(reverse_digits):
+            n = int(ch)
+            if idx % 2 == 1:
+                n *= 2
+                if n > 9:
+                    n -= 9
+            total += n
+        return total % 10 == 0
 
     def _normalize_phone(self, phone: str) -> str:
         digits = re.sub(r"[^\d]", "", phone)
