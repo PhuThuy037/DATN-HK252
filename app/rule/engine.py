@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-import re
+from copy import deepcopy
 from dataclasses import dataclass
+import re
+import time
+from threading import RLock
 from typing import Any, Optional
+import unicodedata
 from uuid import UUID
 
 from sqlmodel import Session, select
 
-from app.rule.model import Rule
 from app.common.enums import RuleAction
+from app.rule.model import Rule
 
 
 @dataclass(slots=True)
@@ -20,9 +24,19 @@ class RuleMatch:
     priority: int
 
 
+@dataclass(slots=True, frozen=True)
+class RuleRuntime:
+    rule_id: UUID
+    stable_key: str
+    name: str
+    action: RuleAction
+    priority: int
+    conditions: dict[str, Any]
+
+
 class RuleEngine:
     """
-    Match rule theo DSL trong Rule.conditions (JSONB).
+    Match rules from Rule.conditions (JSONB DSL).
 
     Runtime layering:
     - Personal: enabled global rules.
@@ -32,32 +46,74 @@ class RuleEngine:
       3) final resolved rules are sorted by priority DESC
     """
 
-    def load_rules(self, *, session: Session, company_id: Optional[UUID]) -> list[Rule]:
-        # Personal mode: only enabled global rules.
+    _CACHE_TTL_SECONDS = 5.0
+    _cache_lock = RLock()
+    _rules_cache: dict[Optional[UUID], tuple[float, list[RuleRuntime]]] = {}
+
+    @classmethod
+    def invalidate_cache(cls, company_id: Optional[UUID] = None) -> None:
+        with cls._cache_lock:
+            if company_id is None:
+                cls._rules_cache.clear()
+                return
+            cls._rules_cache.pop(company_id, None)
+
+    def _get_cached_rules(self, company_id: Optional[UUID]) -> list[RuleRuntime] | None:
+        with self._cache_lock:
+            entry = self._rules_cache.get(company_id)
+            if not entry:
+                return None
+            expires_at, rules = entry
+            if expires_at <= time.monotonic():
+                self._rules_cache.pop(company_id, None)
+                return None
+            return list(rules)
+
+    def _set_cached_rules(
+        self, company_id: Optional[UUID], rules: list[RuleRuntime]
+    ) -> None:
+        with self._cache_lock:
+            self._rules_cache[company_id] = (
+                time.monotonic() + self._CACHE_TTL_SECONDS,
+                list(rules),
+            )
+
+    def load_rules(
+        self, *, session: Session, company_id: Optional[UUID]
+    ) -> list[RuleRuntime]:
+        cached = self._get_cached_rules(company_id)
+        if cached is not None:
+            return cached
+
+        rules = self._load_rules_uncached(session=session, company_id=company_id)
+        self._set_cached_rules(company_id, rules)
+        return list(rules)
+
+    def _load_rules_uncached(
+        self, *, session: Session, company_id: Optional[UUID]
+    ) -> list[RuleRuntime]:
         if company_id is None:
             stmt = (
                 select(Rule)
                 .where(Rule.company_id.is_(None))
                 .where(Rule.enabled.is_(True))
-                .order_by(Rule.priority.desc())
+                .order_by(Rule.priority.desc(), Rule.created_at.desc(), Rule.id.desc())
             )
-            return list(session.exec(stmt).all())
+            rows = list(session.exec(stmt).all())
+            return [self._to_runtime(r) for r in rows]
 
-        # Company mode precedence:
-        # company override > company custom > global default
-        # and override(enabled=false) disables corresponding global rule for this company.
         global_rows = list(
             session.exec(
                 select(Rule)
                 .where(Rule.company_id.is_(None))
-                .order_by(Rule.created_at.desc())
+                .order_by(Rule.created_at.desc(), Rule.id.desc())
             ).all()
         )
         company_rows = list(
             session.exec(
                 select(Rule)
                 .where(Rule.company_id == company_id)
-                .order_by(Rule.created_at.desc())
+                .order_by(Rule.created_at.desc(), Rule.id.desc())
             ).all()
         )
 
@@ -68,7 +124,6 @@ class RuleEngine:
 
         global_keys = set(global_by_key.keys())
 
-        # Keep the newest company row for each global stable_key as override.
         override_by_key: dict[str, Rule] = {}
         custom_enabled: list[Rule] = []
         for c in company_rows:
@@ -80,7 +135,6 @@ class RuleEngine:
                 custom_enabled.append(c)
 
         resolved: list[Rule] = []
-
         for stable_key, g in global_by_key.items():
             override = override_by_key.get(stable_key)
             if override is None:
@@ -94,7 +148,7 @@ class RuleEngine:
 
         resolved.extend(custom_enabled)
         resolved.sort(key=lambda r: int(r.priority), reverse=True)
-        return resolved
+        return [self._to_runtime(r) for r in resolved]
 
     def evaluate(
         self,
@@ -104,7 +158,6 @@ class RuleEngine:
         entities: list[Any],
         signals: dict[str, Any],
     ) -> list[RuleMatch]:
-        # đảm bảo rag signal luôn có shape chuẩn
         signals = self._normalize_signals(signals)
 
         rules = self.load_rules(session=session, company_id=company_id)
@@ -112,12 +165,10 @@ class RuleEngine:
 
         for r in rules:
             try:
-                if self._match_conditions(
-                    r.conditions or {}, entities=entities, signals=signals
-                ):
+                if self._match_conditions(r.conditions or {}, entities=entities, signals=signals):
                     matches.append(
                         RuleMatch(
-                            rule_id=r.id,
+                            rule_id=r.rule_id,
                             stable_key=r.stable_key,
                             name=r.name,
                             action=r.action,
@@ -125,12 +176,10 @@ class RuleEngine:
                         )
                     )
             except Exception:
-                # MVP production-like: rule nào lỗi conditions thì skip, đừng crash pipeline
                 continue
 
         return matches
 
-    # ---------------- DSL ----------------
     def _match_conditions(
         self,
         node: dict[str, Any],
@@ -138,15 +187,6 @@ class RuleEngine:
         entities: list[Any],
         signals: dict[str, Any],
     ) -> bool:
-        # nodes:
-        # {"any": [node...]}
-        # {"all": [node...]}
-        # {"not": node}
-        # leaf entity:
-        # {"entity_type": "CCCD", "min_score": 0.85, "source": "local_regex" | ["local_regex","spoken_norm"]}
-        # leaf signal:
-        # {"signal": {"field": "persona", "equals": "dev"}}
-
         if not isinstance(node, dict):
             raise ValueError(f"Condition node must be dict, got: {type(node)}")
 
@@ -174,7 +214,7 @@ class RuleEngine:
             min_score = float(node.get("min_score", 0.0))
             max_score = node.get("max_score")
             max_score_f = float(max_score) if max_score is not None else None
-            source = node.get("source")  # str | list[str] | None
+            source = node.get("source")
             return self._has_entity(
                 entities,
                 et,
@@ -191,36 +231,38 @@ class RuleEngine:
             field = str(s.get("field", ""))
             value = self._get_signal(signals, field)
 
-            # exists
             if "exists" in s:
                 want = bool(s["exists"])
                 return (value is not None) if want else (value is None)
 
-            # equals / in
             if "equals" in s:
-                return value == s["equals"]
+                return self._signal_equals(value, s["equals"])
             if "in" in s:
-                return value in (s["in"] or [])
+                return any(
+                    self._signal_equals(value, candidate)
+                    for candidate in (s["in"] or [])
+                )
 
-            # contains / any_of
             if "contains" in s:
                 needle = s["contains"]
                 if isinstance(value, list):
-                    return needle in value
+                    return any(self._signal_equals(item, needle) for item in value)
                 if isinstance(value, str):
-                    return str(needle) in value
+                    return self._contains_text(value, str(needle))
                 return False
 
             if "any_of" in s:
-                # value phải là list/str và chỉ cần match 1 cái trong list
                 needles = s.get("any_of") or []
                 if isinstance(value, list):
-                    return any(n in value for n in needles)
+                    return any(
+                        self._signal_equals(item, needle)
+                        for item in value
+                        for needle in needles
+                    )
                 if isinstance(value, str):
-                    return any(str(n) in value for n in needles)
+                    return any(self._contains_text(value, str(needle)) for needle in needles)
                 return False
 
-            # numeric comparisons
             if "gte" in s:
                 return self._to_float(value) >= float(s["gte"])
             if "lte" in s:
@@ -230,11 +272,11 @@ class RuleEngine:
             if "lt" in s:
                 return self._to_float(value) < float(s["lt"])
 
-            # startswith
             if "startswith" in s:
-                return isinstance(value, str) and value.startswith(str(s["startswith"]))
+                return isinstance(value, str) and self._starts_with_text(
+                    value, str(s["startswith"])
+                )
 
-            # regex (string)
             if "regex" in s:
                 if not isinstance(value, str):
                     return False
@@ -244,6 +286,23 @@ class RuleEngine:
 
         raise ValueError(f"Unsupported condition node: {node}")
 
+    def _fold_text(self, value: str) -> str:
+        raw = str(value or "").lower().replace("\u0111", "d")
+        normalized = unicodedata.normalize("NFKD", raw)
+        no_marks = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+        return re.sub(r"\s+", " ", no_marks).strip()
+
+    def _signal_equals(self, left: Any, right: Any) -> bool:
+        if isinstance(left, str) and isinstance(right, str):
+            return self._fold_text(left) == self._fold_text(right)
+        return left == right
+
+    def _contains_text(self, haystack: str, needle: str) -> bool:
+        return self._fold_text(needle) in self._fold_text(haystack)
+
+    def _starts_with_text(self, value: str, prefix: str) -> bool:
+        return self._fold_text(value).startswith(self._fold_text(prefix))
+
     def _has_entity(
         self,
         entities: list[Any],
@@ -251,7 +310,7 @@ class RuleEngine:
         *,
         min_score: float,
         max_score: Optional[float],
-        source: Any,  # None | str | list[str]
+        source: Any,
     ) -> bool:
         allowed_sources: Optional[set[str]] = None
         if isinstance(source, str):
@@ -278,7 +337,6 @@ class RuleEngine:
         return False
 
     def _get_signal(self, signals: dict[str, Any], field: str) -> Any:
-        # supports dot path: "security.prompt_injection_block", "rag.decision"
         cur: Any = signals
         for part in field.split("."):
             if not isinstance(cur, dict):
@@ -287,7 +345,6 @@ class RuleEngine:
         return cur
 
     def _normalize_signals(self, signals: dict[str, Any]) -> dict[str, Any]:
-        # đảm bảo signals["rag"] luôn có shape nhất quán
         rag = signals.get("rag")
         if not isinstance(rag, dict):
             signals["rag"] = {"decision": "SKIPPED", "confidence": 0.0, "rule_keys": []}
@@ -302,3 +359,13 @@ class RuleEngine:
             return float(v)
         except Exception:
             return 0.0
+
+    def _to_runtime(self, rule: Rule) -> RuleRuntime:
+        return RuleRuntime(
+            rule_id=rule.id,
+            stable_key=str(rule.stable_key),
+            name=str(rule.name),
+            action=rule.action,
+            priority=int(rule.priority),
+            conditions=deepcopy(rule.conditions or {}),
+        )

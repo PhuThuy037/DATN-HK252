@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
+import unicodedata
 from typing import Any, Optional
 
 import yaml
@@ -16,10 +18,7 @@ class ContextSignals:
 
 class ContextScorer:
     """
-    ContextScorer chỉ tạo SIGNALS, KHÔNG tạo span.
-    - persona: "dev" | "office" | None
-    - keyword_hits: keyword hit (top N)
-    - risk_boost: cộng điểm rủi ro
+    Build context signals only (no entity span creation).
     """
 
     def __init__(self, yaml_path: str | Path):
@@ -32,13 +31,28 @@ class ContextScorer:
             for persona, cfg in personas.items()
         }
 
+    def _fold_text(self, text: str) -> str:
+        raw = str(text or "").lower().replace("\u0111", "d")
+        normalized = unicodedata.normalize("NFKD", raw)
+        no_marks = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+        return re.sub(r"\s+", " ", no_marks).strip()
+
+    def _keyword_in_text(self, *, text_raw: str, text_fold: str, keyword: str) -> bool:
+        kw_raw = str(keyword or "").lower().strip()
+        if not kw_raw:
+            return False
+        if kw_raw in text_raw:
+            return True
+        return self._fold_text(kw_raw) in text_fold
+
     def score(
         self,
         text: str,
         *,
         persona_keywords_override: dict[str, list[str]] | None = None,
     ) -> ContextSignals:
-        t = (text or "").lower()
+        text_raw = (text or "").lower()
+        text_fold = self._fold_text(text)
 
         active_keywords: dict[str, list[str]] = {
             k: list(v) for k, v in self.persona_keywords.items()
@@ -53,12 +67,15 @@ class ContextScorer:
         best_hits: list[str] = []
 
         for persona, kws in active_keywords.items():
-            hits = [kw for kw in kws if kw in t]
+            hits = [
+                kw
+                for kw in kws
+                if self._keyword_in_text(text_raw=text_raw, text_fold=text_fold, keyword=kw)
+            ]
             if len(hits) > len(best_hits):
                 best_persona = persona
                 best_hits = hits
 
-        # risk boost MVP (mày chỉnh sau)
         risk_boost = 0.0
         if best_persona == "dev" and best_hits:
             risk_boost = 0.15
