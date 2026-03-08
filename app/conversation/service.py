@@ -35,7 +35,9 @@ def _sha256_hex(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _resolve_system_prompt(*, session: Session, conversation: Conversation) -> str | None:
+def _resolve_system_prompt(
+    *, session: Session, conversation: Conversation
+) -> str | None:
     if conversation.company_id:
         company = session.get(Company, conversation.company_id)
         company_prompt = (company.system_prompt or "").strip() if company else ""
@@ -153,7 +155,12 @@ async def append_user_message_async(
     c.last_sequence_number = (c.last_sequence_number or 0) + 1
     user_seq = c.last_sequence_number
 
-    user_scan = await _scan.scan(session=session, text=content, company_id=c.company_id)
+    user_scan = await _scan.scan(
+        session=session,
+        text=content,
+        company_id=c.company_id,
+        user_id=user_id,
+    )
 
     user_final: RuleAction = user_scan["final_action"]
     user_entities = user_scan["entities"]
@@ -217,6 +224,7 @@ async def append_user_message_async(
         session=session,
         text=assistant_text,
         company_id=c.company_id,
+        user_id=user_id,
     )
 
     # STEP 3: assistant message

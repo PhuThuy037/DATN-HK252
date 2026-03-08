@@ -13,6 +13,7 @@ from sqlmodel import Session, select
 
 from app.common.enums import RuleAction
 from app.rule.model import Rule
+from app.rule.user_rule_override import UserRuleOverride
 
 
 @dataclass(slots=True)
@@ -39,7 +40,7 @@ class RuleEngine:
     Match rules from Rule.conditions (JSONB DSL).
 
     Runtime layering:
-    - Personal: enabled global rules.
+    - Personal: enabled global rules, with optional per-user enabled override.
     - Company:
       1) company override > company custom > global default
       2) override(enabled=false) disables matching global stable_key for that company
@@ -48,59 +49,114 @@ class RuleEngine:
 
     _CACHE_TTL_SECONDS = 5.0
     _cache_lock = RLock()
-    _rules_cache: dict[Optional[UUID], tuple[float, list[RuleRuntime]]] = {}
+    _rules_cache: dict[
+        tuple[Optional[UUID], Optional[UUID]], tuple[float, list[RuleRuntime]]
+    ] = {}
 
     @classmethod
-    def invalidate_cache(cls, company_id: Optional[UUID] = None) -> None:
+    def _cache_key(
+        cls, *, company_id: Optional[UUID], user_id: Optional[UUID]
+    ) -> tuple[Optional[UUID], Optional[UUID]]:
+        # User-level key is only relevant for personal scope.
+        return (company_id, user_id if company_id is None else None)
+
+    @classmethod
+    def invalidate_cache(
+        cls, company_id: Optional[UUID] = None, user_id: Optional[UUID] = None
+    ) -> None:
         with cls._cache_lock:
-            if company_id is None:
+            if company_id is None and user_id is None:
                 cls._rules_cache.clear()
                 return
-            cls._rules_cache.pop(company_id, None)
+            cls._rules_cache.pop(
+                cls._cache_key(company_id=company_id, user_id=user_id), None
+            )
 
-    def _get_cached_rules(self, company_id: Optional[UUID]) -> list[RuleRuntime] | None:
+    def _get_cached_rules(
+        self, *, company_id: Optional[UUID], user_id: Optional[UUID]
+    ) -> list[RuleRuntime] | None:
+        cache_key = self._cache_key(company_id=company_id, user_id=user_id)
         with self._cache_lock:
-            entry = self._rules_cache.get(company_id)
+            entry = self._rules_cache.get(cache_key)
             if not entry:
                 return None
             expires_at, rules = entry
             if expires_at <= time.monotonic():
-                self._rules_cache.pop(company_id, None)
+                self._rules_cache.pop(cache_key, None)
                 return None
             return list(rules)
 
     def _set_cached_rules(
-        self, company_id: Optional[UUID], rules: list[RuleRuntime]
+        self,
+        *,
+        company_id: Optional[UUID],
+        user_id: Optional[UUID],
+        rules: list[RuleRuntime],
     ) -> None:
+        cache_key = self._cache_key(company_id=company_id, user_id=user_id)
         with self._cache_lock:
-            self._rules_cache[company_id] = (
+            self._rules_cache[cache_key] = (
                 time.monotonic() + self._CACHE_TTL_SECONDS,
                 list(rules),
             )
 
     def load_rules(
-        self, *, session: Session, company_id: Optional[UUID]
+        self,
+        *,
+        session: Session,
+        company_id: Optional[UUID],
+        user_id: Optional[UUID] = None,
     ) -> list[RuleRuntime]:
-        cached = self._get_cached_rules(company_id)
+        cached = self._get_cached_rules(company_id=company_id, user_id=user_id)
         if cached is not None:
             return cached
 
-        rules = self._load_rules_uncached(session=session, company_id=company_id)
-        self._set_cached_rules(company_id, rules)
+        rules = self._load_rules_uncached(
+            session=session,
+            company_id=company_id,
+            user_id=user_id,
+        )
+        self._set_cached_rules(company_id=company_id, user_id=user_id, rules=rules)
         return list(rules)
 
     def _load_rules_uncached(
-        self, *, session: Session, company_id: Optional[UUID]
+        self,
+        *,
+        session: Session,
+        company_id: Optional[UUID],
+        user_id: Optional[UUID],
     ) -> list[RuleRuntime]:
         if company_id is None:
             stmt = (
                 select(Rule)
                 .where(Rule.company_id.is_(None))
-                .where(Rule.enabled.is_(True))
                 .order_by(Rule.priority.desc(), Rule.created_at.desc(), Rule.id.desc())
             )
             rows = list(session.exec(stmt).all())
-            return [self._to_runtime(r) for r in rows]
+
+            override_by_key: dict[str, bool] = {}
+            if user_id is not None:
+                overrides = list(
+                    session.exec(
+                        select(UserRuleOverride).where(
+                            UserRuleOverride.user_id == user_id
+                        )
+                    ).all()
+                )
+                override_by_key = {
+                    str(r.stable_key): bool(r.enabled)
+                    for r in overrides
+                    if str(r.stable_key or "").strip()
+                }
+
+            out: list[RuleRuntime] = []
+            for r in rows:
+                effective_enabled = override_by_key.get(
+                    str(r.stable_key), bool(r.enabled)
+                )
+                if effective_enabled:
+                    out.append(self._to_runtime(r))
+            return out
 
         global_rows = list(
             session.exec(
@@ -155,17 +211,20 @@ class RuleEngine:
         *,
         session: Session,
         company_id: Optional[UUID],
+        user_id: Optional[UUID] = None,
         entities: list[Any],
         signals: dict[str, Any],
     ) -> list[RuleMatch]:
         signals = self._normalize_signals(signals)
 
-        rules = self.load_rules(session=session, company_id=company_id)
+        rules = self.load_rules(session=session, company_id=company_id, user_id=user_id)
         matches: list[RuleMatch] = []
 
         for r in rules:
             try:
-                if self._match_conditions(r.conditions or {}, entities=entities, signals=signals):
+                if self._match_conditions(
+                    r.conditions or {}, entities=entities, signals=signals
+                ):
                     matches.append(
                         RuleMatch(
                             rule_id=r.rule_id,
@@ -260,7 +319,9 @@ class RuleEngine:
                         for needle in needles
                     )
                 if isinstance(value, str):
-                    return any(self._contains_text(value, str(needle)) for needle in needles)
+                    return any(
+                        self._contains_text(value, str(needle)) for needle in needles
+                    )
                 return False
 
             if "gte" in s:

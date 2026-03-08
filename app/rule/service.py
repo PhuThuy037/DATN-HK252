@@ -8,8 +8,9 @@ from sqlmodel import Session, select
 
 from app.common.error_codes import ErrorCode
 from app.common.errors import AppError
-from app.common.enums import MemberRole
+from app.common.enums import MemberRole, MemberStatus
 from app.company.model import Company
+from app.company_member.model import CompanyMember
 from app.permissions.core import forbid, not_found
 from app.permissions.loaders.conversation import load_company_member_active_or_403
 from app.rule.engine import RuleEngine
@@ -18,9 +19,11 @@ from app.rule.schemas import (
     CompanyRuleCreateIn,
     CompanyRuleOut,
     CompanyRuleUpdateIn,
+    PersonalRuleOut,
     RuleChangeLogOut,
     RuleOrigin,
 )
+from app.rule.user_rule_override import UserRuleOverride
 from app.rule_change_log.model import RuleChangeLog
 
 
@@ -31,8 +34,20 @@ def _load_company_or_404(*, session: Session, company_id: UUID) -> Company:
     return company
 
 
-def _require_company_admin(*, session: Session, company_id: UUID, user_id: UUID) -> None:
-    member = load_company_member_active_or_403(
+def _require_company_member(
+    *, session: Session, company_id: UUID, user_id: UUID
+) -> CompanyMember:
+    return load_company_member_active_or_403(
+        session=session,
+        company_id=company_id,
+        user_id=user_id,
+    )
+
+
+def _require_company_admin(
+    *, session: Session, company_id: UUID, user_id: UUID
+) -> None:
+    member = _require_company_member(
         session=session,
         company_id=company_id,
         user_id=user_id,
@@ -42,6 +57,25 @@ def _require_company_admin(*, session: Session, company_id: UUID, user_id: UUID)
             "Company admin required",
             field="company_id",
             reason="not_company_admin",
+        )
+
+
+def _has_active_company_membership(*, session: Session, user_id: UUID) -> bool:
+    row = session.exec(
+        select(CompanyMember.id)
+        .where(CompanyMember.user_id == user_id)
+        .where(CompanyMember.status == MemberStatus.active)
+        .limit(1)
+    ).first()
+    return row is not None
+
+
+def _require_no_active_company_membership(*, session: Session, user_id: UUID) -> None:
+    if _has_active_company_membership(session=session, user_id=user_id):
+        raise forbid(
+            "Personal rule management is not allowed for company members",
+            field="user_id",
+            reason="personal_rule_forbidden_for_company_member",
         )
 
 
@@ -158,7 +192,9 @@ def _classify_origin(*, rule: Rule, global_keys: set[str]) -> RuleOrigin:
     return RuleOrigin.company_custom
 
 
-def _to_rule_out(*, rule: Rule, origin: RuleOrigin) -> CompanyRuleOut:
+def _to_rule_out(
+    *, rule: Rule, origin: RuleOrigin, is_admin: bool = True
+) -> CompanyRuleOut:
     return CompanyRuleOut(
         id=rule.id,
         company_id=rule.company_id,
@@ -177,8 +213,38 @@ def _to_rule_out(*, rule: Rule, origin: RuleOrigin) -> CompanyRuleOut:
         created_at=rule.created_at,
         updated_at=rule.updated_at,
         origin=origin,
-        can_edit_action=origin == RuleOrigin.company_custom,
-        can_soft_delete=origin != RuleOrigin.global_default,
+        can_edit_action=is_admin and origin == RuleOrigin.company_custom,
+        can_soft_delete=is_admin and origin != RuleOrigin.global_default,
+    )
+
+
+def _to_personal_rule_out(
+    *,
+    rule: Rule,
+    override_enabled: bool | None,
+    can_toggle_enabled: bool,
+) -> PersonalRuleOut:
+    effective_enabled = (
+        bool(override_enabled) if override_enabled is not None else bool(rule.enabled)
+    )
+    return PersonalRuleOut(
+        id=rule.id,
+        stable_key=rule.stable_key,
+        name=rule.name,
+        description=rule.description,
+        scope=rule.scope,
+        conditions=rule.conditions,
+        conditions_version=rule.conditions_version,
+        action=rule.action,
+        severity=rule.severity,
+        priority=rule.priority,
+        rag_mode=rule.rag_mode,
+        enabled=effective_enabled,
+        default_enabled=bool(rule.enabled),
+        has_override=override_enabled is not None,
+        can_toggle_enabled=can_toggle_enabled,
+        created_at=rule.created_at,
+        updated_at=rule.updated_at,
     )
 
 
@@ -260,20 +326,36 @@ def list_company_rules(
     *, session: Session, company_id: UUID, actor_user_id: UUID
 ) -> list[CompanyRuleOut]:
     _load_company_or_404(session=session, company_id=company_id)
-    _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
-
-    stmt = (
-        select(Rule)
-        .where((Rule.company_id == company_id) | (Rule.company_id.is_(None)))
-        .order_by(Rule.created_at.desc())
+    member = _require_company_member(
+        session=session,
+        company_id=company_id,
+        user_id=actor_user_id,
     )
-    rows = list(session.exec(stmt).all())
+    is_admin = member.role == MemberRole.company_admin
 
+    runtime_rules = RuleEngine().load_rules(session=session, company_id=company_id)
+    rule_ids = [x.rule_id for x in runtime_rules]
+    if not rule_ids:
+        return []
+
+    row_map = {
+        r.id: r for r in session.exec(select(Rule).where(Rule.id.in_(rule_ids))).all()
+    }
     global_keys = _global_stable_keys(session=session)
-    return [
-        _to_rule_out(rule=r, origin=_classify_origin(rule=r, global_keys=global_keys))
-        for r in rows
-    ]
+
+    out: list[CompanyRuleOut] = []
+    for runtime in runtime_rules:
+        row = row_map.get(runtime.rule_id)
+        if row is None:
+            continue
+        out.append(
+            _to_rule_out(
+                rule=row,
+                origin=_classify_origin(rule=row, global_keys=global_keys),
+                is_admin=is_admin,
+            )
+        )
+    return out
 
 
 def list_company_rule_change_logs(
@@ -284,7 +366,9 @@ def list_company_rule_change_logs(
     limit: int,
 ) -> list[RuleChangeLogOut]:
     _load_company_or_404(session=session, company_id=company_id)
-    _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+    _require_company_admin(
+        session=session, company_id=company_id, user_id=actor_user_id
+    )
 
     safe_limit = max(1, min(int(limit), 200))
     rows = list(
@@ -306,7 +390,9 @@ def create_company_custom_rule(
     payload: CompanyRuleCreateIn,
 ) -> CompanyRuleOut:
     _load_company_or_404(session=session, company_id=company_id)
-    _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+    _require_company_admin(
+        session=session, company_id=company_id, user_id=actor_user_id
+    )
 
     stable_key = _normalize_stable_key(stable_key=payload.stable_key)
     name = _normalize_non_empty(value=payload.name, field="name")
@@ -387,7 +473,9 @@ def update_company_rule(
     payload: CompanyRuleUpdateIn,
 ) -> CompanyRuleOut:
     _load_company_or_404(session=session, company_id=company_id)
-    _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+    _require_company_admin(
+        session=session, company_id=company_id, user_id=actor_user_id
+    )
 
     row = session.get(Rule, rule_id)
     if not row:
@@ -477,7 +565,9 @@ def soft_delete_company_rule(
     actor_user_id: UUID,
 ) -> CompanyRuleOut:
     _load_company_or_404(session=session, company_id=company_id)
-    _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+    _require_company_admin(
+        session=session, company_id=company_id, user_id=actor_user_id
+    )
 
     row = session.get(Rule, rule_id)
     if not row:
@@ -518,7 +608,9 @@ def toggle_global_rule_for_company(
     enabled: bool,
 ) -> CompanyRuleOut:
     _load_company_or_404(session=session, company_id=company_id)
-    _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+    _require_company_admin(
+        session=session, company_id=company_id, user_id=actor_user_id
+    )
 
     normalized_key = _normalize_stable_key(stable_key=stable_key)
 
@@ -575,3 +667,97 @@ def toggle_global_rule_for_company(
     session.refresh(override)
     RuleEngine.invalidate_cache(company_id)
     return _to_rule_out(rule=override, origin=RuleOrigin.company_override)
+
+
+def list_personal_rules(
+    *,
+    session: Session,
+    actor_user_id: UUID,
+) -> list[PersonalRuleOut]:
+    _require_no_active_company_membership(session=session, user_id=actor_user_id)
+
+    global_rules = list(
+        session.exec(
+            select(Rule)
+            .where(Rule.company_id.is_(None))
+            .order_by(Rule.priority.desc(), Rule.created_at.desc(), Rule.id.desc())
+        ).all()
+    )
+
+    overrides = list(
+        session.exec(
+            select(UserRuleOverride).where(UserRuleOverride.user_id == actor_user_id)
+        ).all()
+    )
+    override_map = {str(r.stable_key): bool(r.enabled) for r in overrides}
+
+    return [
+        _to_personal_rule_out(
+            rule=r,
+            override_enabled=override_map.get(str(r.stable_key)),
+            can_toggle_enabled=True,
+        )
+        for r in global_rules
+    ]
+
+
+def toggle_personal_rule_enabled(
+    *,
+    session: Session,
+    actor_user_id: UUID,
+    stable_key: str,
+    enabled: bool,
+) -> PersonalRuleOut:
+    _require_no_active_company_membership(session=session, user_id=actor_user_id)
+
+    normalized_key = _normalize_stable_key(stable_key=stable_key)
+
+    global_rule = session.exec(
+        select(Rule)
+        .where(Rule.company_id.is_(None))
+        .where(Rule.stable_key == normalized_key)
+        .order_by(Rule.created_at.desc())
+    ).first()
+    if not global_rule:
+        raise not_found("Global rule not found", field="stable_key")
+
+    override = session.exec(
+        select(UserRuleOverride)
+        .where(UserRuleOverride.user_id == actor_user_id)
+        .where(UserRuleOverride.stable_key == normalized_key)
+        .order_by(UserRuleOverride.created_at.desc())
+    ).first()
+
+    target_enabled = bool(enabled)
+    if target_enabled == bool(global_rule.enabled):
+        # same as default => no override row needed
+        if override is not None:
+            session.delete(override)
+    else:
+        if override is None:
+            override = UserRuleOverride(
+                user_id=actor_user_id,
+                stable_key=normalized_key,
+                enabled=target_enabled,
+            )
+        else:
+            override.enabled = target_enabled
+        session.add(override)
+
+    session.commit()
+    RuleEngine.invalidate_cache(company_id=None, user_id=actor_user_id)
+
+    refreshed_override = session.exec(
+        select(UserRuleOverride)
+        .where(UserRuleOverride.user_id == actor_user_id)
+        .where(UserRuleOverride.stable_key == normalized_key)
+        .order_by(UserRuleOverride.created_at.desc())
+    ).first()
+
+    return _to_personal_rule_out(
+        rule=global_rule,
+        override_enabled=bool(refreshed_override.enabled)
+        if refreshed_override
+        else None,
+        can_toggle_enabled=True,
+    )

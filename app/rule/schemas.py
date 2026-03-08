@@ -67,6 +67,30 @@ class CompanyRuleToggleEnabledIn(BaseModel):
     enabled: bool
 
 
+class PersonalRuleOut(BaseModel):
+    id: UUID
+    stable_key: str
+    name: str
+    description: Optional[str] = None
+    scope: RuleScope
+    conditions: dict[str, Any]
+    conditions_version: int
+    action: RuleAction
+    severity: RuleSeverity
+    priority: int
+    rag_mode: RagMode
+    enabled: bool
+    default_enabled: bool
+    has_override: bool
+    can_toggle_enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class PersonalRuleToggleEnabledIn(BaseModel):
+    enabled: bool
+
+
 class RuleChangeLogOut(BaseModel):
     id: UUID
     company_id: UUID
