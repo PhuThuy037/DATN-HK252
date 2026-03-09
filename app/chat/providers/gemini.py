@@ -13,7 +13,7 @@ class GeminiProvider(ChatProvider):
         settings = get_settings()
         self.api_key = settings.google_api_key
         # default model nếu conversation không truyền model_name
-        self.default_model = "gemini-3-flash-preview"
+        self.default_model = settings.gemini_model
         self.base_url = "https://generativelanguage.googleapis.com/v1beta"
 
     async def generate(

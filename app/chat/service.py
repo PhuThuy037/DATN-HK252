@@ -3,35 +3,77 @@ from __future__ import annotations
 
 from typing import Optional
 
-from app.core.config import get_settings
-from app.chat.providers.ollama import OllamaProvider
+from app.chat.providers.base import ChatProvider
 from app.chat.providers.gemini import GeminiProvider
+from app.chat.providers.groq import GroqProvider
+from app.chat.providers.ollama import OllamaProvider
+from app.core.config import get_settings
 
 
 def _is_gemini_model(name: Optional[str]) -> bool:
-    if not name:
-        return False
-    return name.lower().startswith("gemini-")
+    return bool(name and name.lower().startswith("gemini-"))
+
+
+def _looks_like_groq_model(name: str) -> bool:
+    n = (name or "").strip().lower()
+    return n.startswith(("llama-", "mixtral-", "gemma", "deepseek-", "moonshot-"))
+
+
+def _normalize_chat_provider(value: str | None) -> str:
+    p = (value or "").strip().lower()
+    if p in {"groq", "gemini", "ollama"}:
+        return p
+    return "groq"
+
+
+def _resolve_model_route(model_name: str, default_provider: str) -> tuple[str, str]:
+    raw = (model_name or "").strip()
+    lowered = raw.lower()
+
+    if lowered.startswith("groq/"):
+        return "groq", raw.split("/", 1)[1].strip() or raw
+    if lowered.startswith("gemini/"):
+        return "gemini", raw.split("/", 1)[1].strip() or raw
+    if lowered.startswith("ollama/"):
+        return "ollama", raw.split("/", 1)[1].strip() or raw
+
+    if _is_gemini_model(raw):
+        return "gemini", raw
+    if _looks_like_groq_model(raw):
+        return "groq", raw
+    return default_provider, raw
 
 
 class ChatService:
     def __init__(self) -> None:
         settings = get_settings()
+        self.primary_name = _normalize_chat_provider(getattr(settings, "chat_provider", "groq"))
 
-        provider = getattr(settings, "chat_provider", "gemini")
+        self.providers: dict[str, ChatProvider] = {
+            "groq": GroqProvider(),
+            "gemini": GeminiProvider(),
+            "ollama": OllamaProvider(),
+        }
+        self.fallback_order = [
+            p for p in ("groq", "gemini", "ollama") if p != self.primary_name
+        ]
 
-        self.gemini = GeminiProvider()
-        self.ollama = OllamaProvider()
-
-        if provider == "ollama":
-            self.primary = self.ollama
-            self.fallback = None
-        elif provider == "gemini":
-            self.primary = self.gemini
-            self.fallback = self.ollama
-        else:
-            self.primary = self.ollama
-            self.fallback = None
+    async def _generate_with_provider(
+        self,
+        *,
+        provider_name: str,
+        system_prompt: Optional[str],
+        user_message: str,
+        temperature: float,
+        model_name: Optional[str],
+    ) -> str:
+        provider = self.providers[provider_name]
+        return await provider.generate(
+            system_prompt=system_prompt,
+            user_message=user_message,
+            temperature=temperature,
+            model_name=model_name,
+        )
 
     async def generate_reply(
         self,
@@ -41,48 +83,38 @@ class ChatService:
         temperature: float = 0.7,
         model_name: Optional[str] = None,
     ) -> str:
-        # 1) If client provided model_name => route by model family
         if model_name:
-            chosen = self.gemini if _is_gemini_model(model_name) else self.ollama
-            other = self.ollama if chosen is self.gemini else self.gemini
+            chosen_provider, routed_model = _resolve_model_route(
+                model_name=model_name,
+                default_provider=self.primary_name,
+            )
+            chain = [chosen_provider] + [
+                p for p in [self.primary_name, *self.fallback_order] if p != chosen_provider
+            ]
 
-            # Try chosen with model_name
+            for idx, provider_name in enumerate(chain):
+                try:
+                    return await self._generate_with_provider(
+                        provider_name=provider_name,
+                        system_prompt=system_prompt,
+                        user_message=user_message,
+                        temperature=temperature,
+                        model_name=routed_model if idx == 0 else None,
+                    )
+                except Exception:
+                    continue
+            return "Service temporarily unavailable."
+
+        chain = [self.primary_name, *self.fallback_order]
+        for provider_name in chain:
             try:
-                return await chosen.generate(
+                return await self._generate_with_provider(
+                    provider_name=provider_name,
                     system_prompt=system_prompt,
                     user_message=user_message,
                     temperature=temperature,
-                    model_name=model_name,
+                    model_name=None,
                 )
             except Exception:
-                # Fallback: try other WITHOUT model_name (avoid passing invalid model)
-                try:
-                    return await other.generate(
-                        system_prompt=system_prompt,
-                        user_message=user_message,
-                        temperature=temperature,
-                        model_name=None,
-                    )
-                except Exception:
-                    return "Service temporarily unavailable."
-
-        # 2) No model_name => keep old behavior (primary/fallback from ENV)
-        try:
-            return await self.primary.generate(
-                system_prompt=system_prompt,
-                user_message=user_message,
-                temperature=temperature,
-                model_name=None,
-            )
-        except Exception:
-            if self.fallback:
-                try:
-                    return await self.fallback.generate(
-                        system_prompt=system_prompt,
-                        user_message=user_message,
-                        temperature=temperature,
-                        model_name=None,
-                    )
-                except Exception:
-                    return "Service temporarily unavailable."
-            return "Service temporarily unavailable."
+                continue
+        return "Service temporarily unavailable."

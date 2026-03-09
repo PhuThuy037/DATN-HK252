@@ -37,12 +37,13 @@ class RagVerifier:
         settings = get_settings()
 
         self.settings = settings
-        self.llm_provider = str(settings.non_embedding_llm_provider or "ollama").strip().lower()
-        default_model = (
-            settings.gemini_model
-            if self.llm_provider == "gemini"
-            else settings.ollama_model
-        )
+        self.llm_provider = str(settings.non_embedding_llm_provider or "groq").strip().lower()
+        default_model_by_provider = {
+            "groq": settings.groq_model,
+            "gemini": settings.gemini_model,
+            "ollama": settings.ollama_model,
+        }
+        default_model = default_model_by_provider.get(self.llm_provider, settings.groq_model)
         self.llm_model = llm_model or default_model
 
         self.retriever = PolicyRetriever(
@@ -205,4 +206,3 @@ USER MESSAGE:
             if start != -1 and end != -1 and end > start:
                 return json.loads(raw[start : end + 1])
             raise
-

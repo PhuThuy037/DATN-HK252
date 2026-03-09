@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
@@ -572,16 +573,23 @@ def _assert_expected_version(
         )
 
 
+def _fold_text(value: str) -> str:
+    raw = str(value or "").lower().replace("\u0111", "d")
+    normalized = unicodedata.normalize("NFKD", raw)
+    no_marks = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", no_marks).strip()
+
+
 def _has_any(text: str, keys: list[str]) -> bool:
-    t = text.lower()
-    return any(k in t for k in keys)
+    t = _fold_text(text)
+    return any(_fold_text(k) in t for k in keys if str(k or "").strip())
 
 
 def _action_hint_from_prompt(prompt: str) -> RuleAction:
     p = prompt.lower()
     if _has_any(p, ["allow", "cho phep", "cho phép"]):
         return RuleAction.allow
-    if _has_any(p, ["mask", "che", "ẩn", "an"]):
+    if _has_any(p, ["mask", "che", "che thong tin", "an thong tin", "ẩn thông tin"]):
         return RuleAction.mask
     if _has_any(p, ["block", "chan", "chặn"]):
         return RuleAction.block
@@ -1644,4 +1652,3 @@ def apply_rule_suggestion(
         rule_id=rule_row.id,
         context_term_ids=context_term_ids,
     )
-

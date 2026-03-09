@@ -26,12 +26,12 @@ class LlmTextResult:
 
 def _normalize_provider(value: str | None) -> str:
     p = (value or "").strip().lower()
-    if p in {"gemini", "ollama"}:
+    if p in {"groq", "gemini", "ollama"}:
         return p
-    return "ollama"
+    return "groq"
 
 
-def _has_usable_gemini_key(key: str | None) -> bool:
+def _has_usable_api_key(key: str | None) -> bool:
     v = (key or "").strip()
     if not v:
         return False
@@ -39,6 +39,14 @@ def _has_usable_gemini_key(key: str | None) -> bool:
     if lowered in {"x", "changeme", "change-me", "your_api_key"}:
         return False
     return True
+
+
+def _has_usable_gemini_key(key: str | None) -> bool:
+    return _has_usable_api_key(key)
+
+
+def _has_usable_groq_key(key: str | None) -> bool:
+    return _has_usable_api_key(key)
 
 
 def _extract_gemini_text(data: dict[str, Any]) -> str:
@@ -51,6 +59,33 @@ def _extract_gemini_text(data: dict[str, Any]) -> str:
     out = "\n".join([t for t in texts if t]).strip()
     if not out:
         raise RuntimeError(f"Gemini empty text: {data}")
+    return out
+
+
+def _extract_groq_text(data: dict[str, Any]) -> str:
+    choices = list(data.get("choices") or [])
+    if not choices:
+        raise RuntimeError(f"Groq empty choices: {data}")
+
+    message = choices[0].get("message") or {}
+    content = message.get("content")
+
+    if isinstance(content, list):
+        texts: list[str] = []
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            if str(part.get("type") or "").strip() != "text":
+                continue
+            txt = str(part.get("text") or "").strip()
+            if txt:
+                texts.append(txt)
+        out = "\n".join(texts).strip()
+    else:
+        out = str(content or "").strip()
+
+    if not out:
+        raise RuntimeError(f"Groq empty text: {data}")
     return out
 
 
@@ -88,17 +123,46 @@ def _extract_retry_delay_seconds(error_payload: Any) -> float | None:
     return None
 
 
+def _parse_retry_after_header(value: str | None) -> float | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except Exception:
+        return _parse_seconds(raw)
+
+
 def _bounded_retry_delay_s(v: float | None, *, default_s: float = 3.0) -> float:
     if v is None:
         return default_s
     return max(0.5, min(20.0, float(v)))
 
 
-def _build_attempt_chain(preferred: str, *, gemini_available: bool) -> list[str]:
-    if preferred == "gemini":
+def _build_attempt_chain(
+    preferred: str,
+    *,
+    gemini_available: bool,
+    groq_available: bool,
+) -> list[str]:
+    if preferred == "groq":
+        chain: list[str] = []
+        if groq_available:
+            chain.append("groq")
         if gemini_available:
-            return ["gemini", "ollama"]
-        return ["ollama"]
+            chain.append("gemini")
+        chain.append("ollama")
+        return chain
+
+    if preferred == "gemini":
+        chain = []
+        if gemini_available:
+            chain.append("gemini")
+        if groq_available:
+            chain.append("groq")
+        chain.append("ollama")
+        return chain
+
     return ["ollama"]
 
 
@@ -137,6 +201,75 @@ def _call_ollama_sync(
     return text, model
 
 
+def _call_groq_sync(
+    *,
+    prompt: str,
+    system_prompt: str | None,
+    model_name: str | None,
+    timeout_s: float,
+    fast_fallback: bool = False,
+) -> tuple[str, str]:
+    settings = get_settings()
+    model = (model_name or settings.groq_model).strip()
+    key = (settings.groq_api_key or "").strip()
+    if not _has_usable_groq_key(key):
+        raise RuntimeError("Groq API key missing")
+
+    messages: list[dict[str, Any]] = []
+    if (system_prompt or "").strip():
+        messages.append({"role": "system", "content": (system_prompt or "").strip()})
+    messages.append({"role": "user", "content": prompt.strip()})
+
+    max_attempts = 1 if fast_fallback else 2
+    with httpx.Client(base_url=settings.groq_base_url.rstrip("/"), timeout=timeout_s) as client:
+        for attempt in range(1, max_attempts + 1):
+            try:
+                r = client.post(
+                    "/chat/completions",
+                    headers={"Authorization": f"Bearer {key}"},
+                    json={
+                        "model": model,
+                        "messages": messages,
+                        "temperature": 0,
+                        "stream": False,
+                    },
+                )
+                if r.status_code in {429, 503} and attempt < max_attempts:
+                    retry_hint = _parse_retry_after_header(r.headers.get("retry-after"))
+                    if retry_hint is None:
+                        try:
+                            retry_hint = _extract_retry_delay_seconds(r.json())
+                        except Exception:
+                            retry_hint = None
+                    delay_s = _bounded_retry_delay_s(retry_hint, default_s=2.0)
+                    logger.warning(
+                        "llm.groq.sync.retryable_status model=%s status=%s attempt=%s retry_after_s=%.2f",
+                        model,
+                        r.status_code,
+                        attempt,
+                        delay_s,
+                    )
+                    time.sleep(delay_s)
+                    continue
+                r.raise_for_status()
+                data: dict[str, Any] = r.json()
+                break
+            except httpx.ReadTimeout:
+                if attempt < max_attempts:
+                    logger.warning(
+                        "llm.groq.sync.read_timeout model=%s attempt=%s retry_after_s=1.00",
+                        model,
+                        attempt,
+                    )
+                    time.sleep(1.0)
+                    continue
+                raise
+        else:
+            raise RuntimeError("Groq request failed after retries")
+
+    return _extract_groq_text(data), model
+
+
 def _call_gemini_sync(
     *,
     prompt: str,
@@ -168,16 +301,17 @@ def _call_gemini_sync(
                         "generationConfig": {"temperature": 0},
                     },
                 )
-                if r.status_code == 429 and attempt < max_attempts:
+                if r.status_code in {429, 503} and attempt < max_attempts:
                     retry_hint = None
                     try:
                         retry_hint = _extract_retry_delay_seconds(r.json())
                     except Exception:
                         retry_hint = None
-                    delay_s = _bounded_retry_delay_s(retry_hint)
+                    delay_s = _bounded_retry_delay_s(retry_hint, default_s=3.0)
                     logger.warning(
-                        "llm.gemini.sync.rate_limited model=%s attempt=%s retry_after_s=%.2f",
+                        "llm.gemini.sync.retryable_status model=%s status=%s attempt=%s retry_after_s=%.2f",
                         model,
+                        r.status_code,
                         attempt,
                         delay_s,
                     )
@@ -236,6 +370,78 @@ async def _call_ollama_async(
     return text, model
 
 
+async def _call_groq_async(
+    *,
+    prompt: str,
+    system_prompt: str | None,
+    model_name: str | None,
+    timeout_s: float,
+    fast_fallback: bool = False,
+) -> tuple[str, str]:
+    settings = get_settings()
+    model = (model_name or settings.groq_model).strip()
+    key = (settings.groq_api_key or "").strip()
+    if not _has_usable_groq_key(key):
+        raise RuntimeError("Groq API key missing")
+
+    messages: list[dict[str, Any]] = []
+    if (system_prompt or "").strip():
+        messages.append({"role": "system", "content": (system_prompt or "").strip()})
+    messages.append({"role": "user", "content": prompt.strip()})
+
+    max_attempts = 1 if fast_fallback else 2
+    async with httpx.AsyncClient(
+        base_url=settings.groq_base_url.rstrip("/"),
+        timeout=timeout_s,
+    ) as client:
+        for attempt in range(1, max_attempts + 1):
+            try:
+                r = await client.post(
+                    "/chat/completions",
+                    headers={"Authorization": f"Bearer {key}"},
+                    json={
+                        "model": model,
+                        "messages": messages,
+                        "temperature": 0,
+                        "stream": False,
+                    },
+                )
+                if r.status_code in {429, 503} and attempt < max_attempts:
+                    retry_hint = _parse_retry_after_header(r.headers.get("retry-after"))
+                    if retry_hint is None:
+                        try:
+                            retry_hint = _extract_retry_delay_seconds(r.json())
+                        except Exception:
+                            retry_hint = None
+                    delay_s = _bounded_retry_delay_s(retry_hint, default_s=2.0)
+                    logger.warning(
+                        "llm.groq.async.retryable_status model=%s status=%s attempt=%s retry_after_s=%.2f",
+                        model,
+                        r.status_code,
+                        attempt,
+                        delay_s,
+                    )
+                    await asyncio.sleep(delay_s)
+                    continue
+                r.raise_for_status()
+                data: dict[str, Any] = r.json()
+                break
+            except httpx.ReadTimeout:
+                if attempt < max_attempts:
+                    logger.warning(
+                        "llm.groq.async.read_timeout model=%s attempt=%s retry_after_s=1.00",
+                        model,
+                        attempt,
+                    )
+                    await asyncio.sleep(1.0)
+                    continue
+                raise
+        else:
+            raise RuntimeError("Groq async request failed after retries")
+
+    return _extract_groq_text(data), model
+
+
 async def _call_gemini_async(
     *,
     prompt: str,
@@ -267,16 +473,17 @@ async def _call_gemini_async(
                         "generationConfig": {"temperature": 0},
                     },
                 )
-                if r.status_code == 429 and attempt < max_attempts:
+                if r.status_code in {429, 503} and attempt < max_attempts:
                     retry_hint = None
                     try:
                         retry_hint = _extract_retry_delay_seconds(r.json())
                     except Exception:
                         retry_hint = None
-                    delay_s = _bounded_retry_delay_s(retry_hint)
+                    delay_s = _bounded_retry_delay_s(retry_hint, default_s=3.0)
                     logger.warning(
-                        "llm.gemini.async.rate_limited model=%s attempt=%s retry_after_s=%.2f",
+                        "llm.gemini.async.retryable_status model=%s status=%s attempt=%s retry_after_s=%.2f",
                         model,
+                        r.status_code,
                         attempt,
                         delay_s,
                     )
@@ -314,6 +521,7 @@ def generate_text_sync(
     chain = _build_attempt_chain(
         preferred,
         gemini_available=_has_usable_gemini_key(settings.google_api_key),
+        groq_available=_has_usable_groq_key(settings.groq_api_key),
     )
     timeout_value = float(timeout_s or settings.non_embedding_llm_timeout_seconds)
 
@@ -323,6 +531,14 @@ def generate_text_sync(
         try:
             if p == "gemini":
                 text, model = _call_gemini_sync(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    model_name=model_for_attempt,
+                    timeout_s=timeout_value,
+                    fast_fallback=fast_fallback,
+                )
+            elif p == "groq":
+                text, model = _call_groq_sync(
                     prompt=prompt,
                     system_prompt=system_prompt,
                     model_name=model_for_attempt,
@@ -376,6 +592,7 @@ async def generate_text_async(
     chain = _build_attempt_chain(
         preferred,
         gemini_available=_has_usable_gemini_key(settings.google_api_key),
+        groq_available=_has_usable_groq_key(settings.groq_api_key),
     )
     timeout_value = float(timeout_s or settings.non_embedding_llm_timeout_seconds)
 
@@ -385,6 +602,14 @@ async def generate_text_async(
         try:
             if p == "gemini":
                 text, model = await _call_gemini_async(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    model_name=model_for_attempt,
+                    timeout_s=timeout_value,
+                    fast_fallback=fast_fallback,
+                )
+            elif p == "groq":
+                text, model = await _call_groq_async(
                     prompt=prompt,
                     system_prompt=system_prompt,
                     model_name=model_for_attempt,
