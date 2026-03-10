@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import time
@@ -43,28 +43,28 @@ def login(client: httpx.Client) -> str:
     return token
 
 
-def create_company(client: httpx.Client, token: str) -> str:
+def create_rule_set(client: httpx.Client, token: str) -> str:
     r = client.post(
-        f"{V1}/companies",
+        f"{V1}/rule-sets",
         json={"name": f"Suggestion Hardening Co {int(time.time())}"},
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
-        fail(f"create company failed: HTTP {r.status_code}\n{r.text}")
+        fail(f"create rule set failed: HTTP {r.status_code}\n{r.text}")
     cid = str((r.json().get("data") or {}).get("id") or "")
     if not cid:
-        fail("company id missing")
+        fail("rule_set id missing")
     return cid
 
 
 def generate(
     client: httpx.Client,
     token: str,
-    company_id: str,
+    rule_set_id: str,
     prompt: str,
 ) -> dict[str, Any]:
     r = client.post(
-        f"{V1}/companies/{company_id}/rule-suggestions/generate",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/generate",
         json={"prompt": prompt},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -76,11 +76,11 @@ def generate(
 def get_logs(
     client: httpx.Client,
     token: str,
-    company_id: str,
+    rule_set_id: str,
     suggestion_id: str,
 ) -> list[dict[str, Any]]:
     r = client.get(
-        f"{V1}/companies/{company_id}/rule-suggestions/{suggestion_id}/logs",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}/logs",
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
@@ -91,14 +91,14 @@ def get_logs(
 def patch_edit(
     client: httpx.Client,
     token: str,
-    company_id: str,
+    rule_set_id: str,
     suggestion_id: str,
     draft: dict[str, Any],
     expected_version: int,
     expected_status: int = 200,
 ) -> tuple[int, dict[str, Any]]:
     r = client.patch(
-        f"{V1}/companies/{company_id}/rule-suggestions/{suggestion_id}",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}",
         json={"draft": draft, "expected_version": expected_version},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -111,13 +111,13 @@ def patch_edit(
 def confirm(
     client: httpx.Client,
     token: str,
-    company_id: str,
+    rule_set_id: str,
     suggestion_id: str,
     expected_version: int,
     expected_status: int = 200,
 ) -> tuple[int, dict[str, Any]]:
     r = client.post(
-        f"{V1}/companies/{company_id}/rule-suggestions/{suggestion_id}/confirm",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}/confirm",
         json={"reason": "phase3_confirm", "expected_version": expected_version},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -130,13 +130,13 @@ def confirm(
 def reject(
     client: httpx.Client,
     token: str,
-    company_id: str,
+    rule_set_id: str,
     suggestion_id: str,
     expected_version: int,
     expected_status: int,
 ) -> tuple[int, dict[str, Any]]:
     r = client.post(
-        f"{V1}/companies/{company_id}/rule-suggestions/{suggestion_id}/reject",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}/reject",
         json={"reason": "phase3_reject", "expected_version": expected_version},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -149,14 +149,14 @@ def reject(
 def apply_suggestion(
     client: httpx.Client,
     token: str,
-    company_id: str,
+    rule_set_id: str,
     suggestion_id: str,
     expected_version: int | None,
     expected_status: int = 200,
 ) -> tuple[int, dict[str, Any]]:
     payload = {"expected_version": expected_version} if expected_version is not None else None
     r = client.post(
-        f"{V1}/companies/{company_id}/rule-suggestions/{suggestion_id}/apply",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}/apply",
         json=payload,
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -169,12 +169,12 @@ def apply_suggestion(
 def full_scan(
     client: httpx.Client,
     token: str,
-    company_id: str,
+    rule_set_id: str,
     text: str,
 ) -> dict[str, Any]:
     r = client.post(
         f"{V1}/debug/full-scan",
-        json={"company_id": company_id, "text": text},
+        json={"rule_set_id": rule_set_id, "text": text},
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
@@ -184,28 +184,28 @@ def full_scan(
 
 def main() -> None:
     with httpx.Client(timeout=API_TIMEOUT_SECONDS) as client:
-        print("[1/10] register/login + create company")
+        print("[1/10] register/login + create rule set")
         register_if_needed(client)
         token = login(client)
-        company_id = create_company(client, token)
-        print(f"company_id={company_id}")
+        rule_set_id = create_rule_set(client, token)
+        print(f"rule_set_id={rule_set_id}")
 
         print("[2/10] duplicate generate should return same suggestion id")
         dup_prompt = "Tao rule block API secret noi bo cho dev"
-        dup_1 = generate(client, token, company_id, dup_prompt)
-        dup_2 = generate(client, token, company_id, dup_prompt)
+        dup_1 = generate(client, token, rule_set_id, dup_prompt)
+        dup_2 = generate(client, token, rule_set_id, dup_prompt)
         dup_id_1 = str(dup_1.get("id") or "")
         dup_id_2 = str(dup_2.get("id") or "")
         if dup_id_1 != dup_id_2:
             fail(f"duplicate generate should reuse id, got {dup_id_1} vs {dup_id_2}")
 
         print("[3/10] duplicate-hit action should be logged")
-        dup_logs = get_logs(client, token, company_id, dup_id_1)
+        dup_logs = get_logs(client, token, rule_set_id, dup_id_1)
         if not any(str(x.get("action") or "") == "suggestion.generate.duplicate_hit" for x in dup_logs):
             fail(f"duplicate_hit log not found: {dup_logs}")
 
         print("[4/10] generate editable suggestion")
-        base = generate(client, token, company_id, "Tao rule mask thong tin lien he")
+        base = generate(client, token, rule_set_id, "Tao rule mask thong tin lien he")
         suggestion_id = str(base.get("id") or "")
         version_1 = int(base.get("version") or 1)
         if not suggestion_id:
@@ -215,7 +215,7 @@ def main() -> None:
         _, stale_edit_body = patch_edit(
             client,
             token,
-            company_id,
+            rule_set_id,
             suggestion_id,
             draft=base.get("draft") or {},
             expected_version=version_1 + 99,
@@ -247,7 +247,7 @@ def main() -> None:
         _, edit_body = patch_edit(
             client,
             token,
-            company_id,
+            rule_set_id,
             suggestion_id,
             draft=draft,
             expected_version=version_1,
@@ -271,7 +271,7 @@ def main() -> None:
         _, stale_confirm_body = confirm(
             client,
             token,
-            company_id,
+            rule_set_id,
             suggestion_id,
             expected_version=version_2 - 1,
             expected_status=409,
@@ -282,7 +282,7 @@ def main() -> None:
         _, confirm_body = confirm(
             client,
             token,
-            company_id,
+            rule_set_id,
             suggestion_id,
             expected_version=version_2,
             expected_status=200,
@@ -298,7 +298,7 @@ def main() -> None:
         _, stale_apply_body = apply_suggestion(
             client,
             token,
-            company_id,
+            rule_set_id,
             suggestion_id,
             expected_version=version_3 - 1,
             expected_status=409,
@@ -309,7 +309,7 @@ def main() -> None:
         _, apply_body = apply_suggestion(
             client,
             token,
-            company_id,
+            rule_set_id,
             suggestion_id,
             expected_version=version_3,
             expected_status=200,
@@ -322,7 +322,7 @@ def main() -> None:
         _, apply_again_body = apply_suggestion(
             client,
             token,
-            company_id,
+            rule_set_id,
             suggestion_id,
             expected_version=None,
             expected_status=200,
@@ -335,7 +335,7 @@ def main() -> None:
         _, reject_body = reject(
             client,
             token,
-            company_id,
+            rule_set_id,
             suggestion_id,
             expected_version=version_3 + 1,
             expected_status=422,
@@ -344,7 +344,7 @@ def main() -> None:
             fail(f"reject-after-applied should be VALIDATION_ERROR: {reject_body}")
 
         print("[10/10] full-scan should match applied rule")
-        scan = full_scan(client, token, company_id, "Lien he hotline 0901234567 de duoc ho tro")
+        scan = full_scan(client, token, rule_set_id, "Lien he hotline 0901234567 de duoc ho tro")
         matched = list(scan.get("matched_rules") or [])
         if not any(str(x.get("rule_id") or "") == rule_id for x in matched):
             fail(f"full-scan did not match applied rule_id={rule_id}: {scan}")
@@ -356,3 +356,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+

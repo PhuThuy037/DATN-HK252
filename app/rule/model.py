@@ -104,3 +104,5 @@ class Rule(TimestampMixin, SQLModel, table=True):
     company: Optional["Company"] = Relationship(back_populates="rules")
     creator: "User" = Relationship(back_populates="created_rules")
     embeddings: list["RuleEmbedding"] = Relationship(back_populates="rule")
+
+

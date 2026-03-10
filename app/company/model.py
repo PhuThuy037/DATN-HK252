@@ -36,3 +36,5 @@ class Company(TimestampMixin, SQLModel, table=True):
     members: list["CompanyMember"] = Relationship(back_populates="company")
     rules: list["Rule"] = Relationship(back_populates="company")
     conversations: list["Conversation"] = Relationship(back_populates="company")
+
+

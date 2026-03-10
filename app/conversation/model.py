@@ -48,3 +48,5 @@ class Conversation(TimestampMixin, SQLModel, table=True):
     user: "User" = Relationship(back_populates="conversations")
     company: Optional["Company"] = Relationship(back_populates="conversations")
     messages: list["Message"] = Relationship(back_populates="conversation")
+
+

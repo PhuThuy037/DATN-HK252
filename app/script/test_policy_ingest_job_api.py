@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import time
@@ -46,22 +46,22 @@ def login(client: httpx.Client) -> str:
     return token
 
 
-def create_company(client: httpx.Client, token: str) -> str:
+def create_rule_set(client: httpx.Client, token: str) -> str:
     r = client.post(
-        f"{V1}/companies",
+        f"{V1}/rule-sets",
         json={"name": f"Policy Ingest Co {int(time.time())}"},
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
-        fail(f"create company failed: HTTP {r.status_code}\n{r.text}")
+        fail(f"create rule set failed: HTTP {r.status_code}\n{r.text}")
     body = r.json()
-    company_id = str((body.get("data") or {}).get("id") or "")
-    if not company_id:
-        fail("create company did not return company id")
-    return company_id
+    rule_set_id = str((body.get("data") or {}).get("id") or "")
+    if not rule_set_id:
+        fail("create rule set did not return rule_set id")
+    return rule_set_id
 
 
-def create_job(client: httpx.Client, token: str, company_id: str, content: str) -> str:
+def create_job(client: httpx.Client, token: str, rule_set_id: str, content: str) -> str:
     payload = {
         "items": [
             {
@@ -74,7 +74,7 @@ def create_job(client: httpx.Client, token: str, company_id: str, content: str) 
         ]
     }
     r = client.post(
-        f"{V1}/companies/{company_id}/policy-ingest-jobs",
+        f"{V1}/rule-sets/{rule_set_id}/policy-ingest-jobs",
         json=payload,
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -88,12 +88,12 @@ def create_job(client: httpx.Client, token: str, company_id: str, content: str) 
 
 
 def wait_job_done(
-    client: httpx.Client, token: str, company_id: str, job_id: str, timeout_sec: float = 20.0
+    client: httpx.Client, token: str, rule_set_id: str, job_id: str, timeout_sec: float = 20.0
 ) -> dict[str, Any]:
     started = time.time()
     while time.time() - started <= timeout_sec:
         r = client.get(
-            f"{V1}/companies/{company_id}/policy-ingest-jobs/{job_id}",
+            f"{V1}/rule-sets/{rule_set_id}/policy-ingest-jobs/{job_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
         if r.status_code != 200:
@@ -107,9 +107,9 @@ def wait_job_done(
     fail("timeout waiting policy ingest job to finish")
 
 
-def list_docs(client: httpx.Client, token: str, company_id: str) -> list[dict[str, Any]]:
+def list_docs(client: httpx.Client, token: str, rule_set_id: str) -> list[dict[str, Any]]:
     r = client.get(
-        f"{V1}/companies/{company_id}/policy-documents",
+        f"{V1}/rule-sets/{rule_set_id}/policy-documents",
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
@@ -124,34 +124,34 @@ def main() -> None:
         register_if_needed(client)
         token = login(client)
 
-        print("[2/6] create company")
-        company_id = create_company(client, token)
-        print(f"company_id={company_id}")
+        print("[2/6] create rule set")
+        rule_set_id = create_rule_set(client, token)
+        print(f"rule_set_id={rule_set_id}")
 
         print("[3/6] create ingest job #1 (new doc)")
-        job1 = create_job(client, token, company_id, "alpha short policy text")
-        detail1 = wait_job_done(client, token, company_id, job1)
+        job1 = create_job(client, token, rule_set_id, "alpha short policy text")
+        detail1 = wait_job_done(client, token, rule_set_id, job1)
         if detail1.get("status") != "success":
             fail(f"job1 expected success, got {detail1.get('status')}\n{detail1}")
 
         print("[4/6] create ingest job #2 (same hash -> skipped)")
-        job2 = create_job(client, token, company_id, "alpha short policy text")
-        detail2 = wait_job_done(client, token, company_id, job2)
+        job2 = create_job(client, token, rule_set_id, "alpha short policy text")
+        detail2 = wait_job_done(client, token, rule_set_id, job2)
         if detail2.get("status") != "success":
             fail(f"job2 expected success, got {detail2.get('status')}\n{detail2}")
         if int(detail2.get("skipped_items") or 0) < 1:
             fail(f"job2 expected skipped_items >= 1, got {detail2}")
 
         print("[5/6] create ingest job #3 (same key, new hash -> update)")
-        job3 = create_job(client, token, company_id, "alpha short policy text v2")
-        detail3 = wait_job_done(client, token, company_id, job3)
+        job3 = create_job(client, token, rule_set_id, "alpha short policy text v2")
+        detail3 = wait_job_done(client, token, rule_set_id, job3)
         if detail3.get("status") != "success":
             fail(f"job3 expected success, got {detail3.get('status')}\n{detail3}")
         if int(detail3.get("success_items") or 0) < 1:
             fail(f"job3 expected success_items >= 1, got {detail3}")
 
         print("[6/6] verify document version moved to 2")
-        docs = list_docs(client, token, company_id)
+        docs = list_docs(client, token, rule_set_id)
         target = [d for d in docs if d.get("stable_key") == "company.policy.test.alpha"]
         if len(target) != 1:
             fail(f"expected exactly 1 target doc, got={len(target)} docs={docs}")
@@ -163,3 +163,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import time
@@ -44,23 +44,23 @@ def login(client: httpx.Client) -> str:
     return token
 
 
-def create_company(client: httpx.Client, token: str) -> str:
+def create_rule_set(client: httpx.Client, token: str) -> str:
     r = client.post(
-        f"{V1}/companies",
+        f"{V1}/rule-sets",
         json={"name": f"Suggestion Co {int(time.time())}"},
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
-        fail(f"create company failed: HTTP {r.status_code}\n{r.text}")
-    company_id = str((r.json().get("data") or {}).get("id") or "")
-    if not company_id:
-        fail("create company did not return id")
-    return company_id
+        fail(f"create rule set failed: HTTP {r.status_code}\n{r.text}")
+    rule_set_id = str((r.json().get("data") or {}).get("id") or "")
+    if not rule_set_id:
+        fail("create rule set did not return id")
+    return rule_set_id
 
 
-def generate(client: httpx.Client, token: str, company_id: str, prompt: str) -> dict[str, Any]:
+def generate(client: httpx.Client, token: str, rule_set_id: str, prompt: str) -> dict[str, Any]:
     r = client.post(
-        f"{V1}/companies/{company_id}/rule-suggestions/generate",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/generate",
         json={"prompt": prompt},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -70,10 +70,10 @@ def generate(client: httpx.Client, token: str, company_id: str, prompt: str) -> 
 
 
 def patch_edit(
-    client: httpx.Client, token: str, company_id: str, suggestion_id: str, draft: dict[str, Any], expected_version: int
+    client: httpx.Client, token: str, rule_set_id: str, suggestion_id: str, draft: dict[str, Any], expected_version: int
 ) -> dict[str, Any]:
     r = client.patch(
-        f"{V1}/companies/{company_id}/rule-suggestions/{suggestion_id}",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}",
         json={"draft": draft, "expected_version": expected_version},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -83,10 +83,10 @@ def patch_edit(
 
 
 def confirm(
-    client: httpx.Client, token: str, company_id: str, suggestion_id: str
+    client: httpx.Client, token: str, rule_set_id: str, suggestion_id: str
 ) -> dict[str, Any]:
     r = client.post(
-        f"{V1}/companies/{company_id}/rule-suggestions/{suggestion_id}/confirm",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}/confirm",
         json={"reason": "looks good"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -96,10 +96,10 @@ def confirm(
 
 
 def apply(
-    client: httpx.Client, token: str, company_id: str, suggestion_id: str
+    client: httpx.Client, token: str, rule_set_id: str, suggestion_id: str
 ) -> dict[str, Any]:
     r = client.post(
-        f"{V1}/companies/{company_id}/rule-suggestions/{suggestion_id}/apply",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}/apply",
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
@@ -107,9 +107,9 @@ def apply(
     return r.json().get("data") or {}
 
 
-def list_rules(client: httpx.Client, token: str, company_id: str) -> list[dict[str, Any]]:
+def list_rules(client: httpx.Client, token: str, rule_set_id: str) -> list[dict[str, Any]]:
     r = client.get(
-        f"{V1}/companies/{company_id}/rules",
+        f"{V1}/rule-sets/{rule_set_id}/rules",
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
@@ -118,10 +118,10 @@ def list_rules(client: httpx.Client, token: str, company_id: str) -> list[dict[s
 
 
 def list_logs(
-    client: httpx.Client, token: str, company_id: str, suggestion_id: str
+    client: httpx.Client, token: str, rule_set_id: str, suggestion_id: str
 ) -> list[dict[str, Any]]:
     r = client.get(
-        f"{V1}/companies/{company_id}/rule-suggestions/{suggestion_id}/logs",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}/logs",
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
@@ -135,13 +135,13 @@ def main() -> None:
         register_if_needed(client)
         token = login(client)
 
-        print("[2/8] create company")
-        company_id = create_company(client, token)
-        print(f"company_id={company_id}")
+        print("[2/8] create rule set")
+        rule_set_id = create_rule_set(client, token)
+        print(f"rule_set_id={rule_set_id}")
 
         prompt = "Hay tao rule chan so dien thoai va bo sung context hotline"
         print("[3/8] generate suggestion")
-        s1 = generate(client, token, company_id, prompt)
+        s1 = generate(client, token, rule_set_id, prompt)
         suggestion_id = str(s1.get("id") or "")
         if not suggestion_id:
             fail(f"generate did not return suggestion id: {s1}")
@@ -149,7 +149,7 @@ def main() -> None:
             fail(f"suggestion should be draft: {s1}")
 
         print("[4/8] generate same prompt should dedupe to same suggestion")
-        s2 = generate(client, token, company_id, prompt)
+        s2 = generate(client, token, rule_set_id, prompt)
         if str(s2.get("id") or "") != suggestion_id:
             fail(f"dedupe failed: first={suggestion_id}, second={s2.get('id')}")
 
@@ -161,7 +161,7 @@ def main() -> None:
         edited = patch_edit(
             client,
             token,
-            company_id,
+            rule_set_id,
             suggestion_id,
             draft,
             expected_version=int(s1.get("version") or 1),
@@ -170,22 +170,22 @@ def main() -> None:
             fail(f"expected version=2 after edit, got {edited.get('version')}")
 
         print("[6/8] confirm")
-        confirmed = confirm(client, token, company_id, suggestion_id)
+        confirmed = confirm(client, token, rule_set_id, suggestion_id)
         if confirmed.get("status") != "approved":
             fail(f"confirm should set approved: {confirmed}")
 
         print("[7/8] apply")
-        applied = apply(client, token, company_id, suggestion_id)
+        applied = apply(client, token, rule_set_id, suggestion_id)
         rule_id = str(applied.get("rule_id") or "")
         if not rule_id:
             fail(f"apply should return rule_id: {applied}")
 
         print("[8/8] verify applied rule exists + logs captured")
-        rules = list_rules(client, token, company_id)
+        rules = list_rules(client, token, rule_set_id)
         stable_key = (((confirmed.get("draft") or {}).get("rule") or {}).get("stable_key")) or ""
         if not any(str(r.get("stable_key") or "") == stable_key for r in rules):
-            fail(f"applied stable_key not found in company rules: {stable_key}")
-        logs = list_logs(client, token, company_id, suggestion_id)
+            fail(f"applied stable_key not found in rule-set rules: {stable_key}")
+        logs = list_logs(client, token, rule_set_id, suggestion_id)
         if len(logs) < 3:
             fail(f"expected >=3 logs (create/edit/confirm/apply), got {len(logs)}")
 
@@ -194,3 +194,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+

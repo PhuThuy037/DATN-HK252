@@ -18,7 +18,7 @@ class PolicyIngestStatus(str, Enum):
 
 class PolicyDocumentOut(BaseModel):
     id: UUID
-    company_id: Optional[UUID]
+    rule_set_id: Optional[UUID]
     stable_key: str
     title: str
     doc_type: str
@@ -64,7 +64,7 @@ class PolicyIngestJobItemOut(BaseModel):
 
 class PolicyIngestJobOut(BaseModel):
     id: UUID
-    company_id: UUID
+    rule_set_id: UUID
     requested_by: UUID
     retry_of_job_id: Optional[UUID]
     status: PolicyIngestStatus

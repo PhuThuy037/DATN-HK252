@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from app.db import all_models
 import hashlib
 from dataclasses import dataclass
@@ -20,7 +20,7 @@ def sha256_hex(text: str) -> str:
 
 
 def normalize_text(s: str) -> str:
-    # MVP: strip nhẹ, tránh hash khác nhau vì whitespace thừa
+    # MVP: strip nháº¹, trÃ¡nh hash khÃ¡c nhau vÃ¬ whitespace thá»«a
     return (s or "").strip()
 
 
@@ -53,10 +53,10 @@ def chunk_text(text: str, cfg: ChunkConfig) -> list[str]:
         if end >= n:
             break
 
-        # trượt cửa sổ với overlap
+        # trÆ°á»£t cá»­a sá»• vá»›i overlap
         start = max(0, end - overlap)
 
-        # chống loop vô hạn (cực hiếm)
+        # chá»‘ng loop vÃ´ háº¡n (cá»±c hiáº¿m)
         if start >= end:
             start = end
 
@@ -75,8 +75,8 @@ def upsert_chunks_for_document(
     """
     Upsert policy_chunks cho 1 document:
     - Unique(order): (document_id, chunk_index)
-    - De-dup theo content_hash (nếu muốn tránh lưu trùng giữa docs thì dùng unique global,
-      nhưng DB mày đang index content_hash thôi, không unique => ta upsert theo order là chính).
+    - De-dup theo content_hash (náº¿u muá»‘n trÃ¡nh lÆ°u trÃ¹ng giá»¯a docs thÃ¬ dÃ¹ng unique global,
+      nhÆ°ng DB mÃ y Ä‘ang index content_hash thÃ´i, khÃ´ng unique => ta upsert theo order lÃ  chÃ­nh).
     """
     chunks = chunk_text(doc.content, cfg)
     if not chunks:
@@ -84,7 +84,7 @@ def upsert_chunks_for_document(
 
     upserted = 0
 
-    # load existing by doc_id (để update nếu thay content)
+    # load existing by doc_id (Ä‘á»ƒ update náº¿u thay content)
     existing_rows = session.exec(
         select(PolicyChunk).where(PolicyChunk.document_id == doc.id)
     ).all()
@@ -95,17 +95,17 @@ def upsert_chunks_for_document(
 
         row = existing_by_index.get(idx)
         if row:
-            # update nếu content thay đổi
+            # update náº¿u content thay Ä‘á»•i
             if row.content_hash != h or row.content != content:
                 row.content = content
                 row.content_hash = h
-                # giữ company_id, document_id
+                # giá»¯ rule_set_id, document_id
                 upserted += 1
         else:
             session.add(
                 PolicyChunk(
                     document_id=doc.id,
-                    company_id=doc.company_id,
+                    rule_set_id=doc.rule_set_id,
                     chunk_index=idx,
                     content=content,
                     content_hash=h,
@@ -113,7 +113,7 @@ def upsert_chunks_for_document(
             )
             upserted += 1
 
-    # nếu doc content bị shorten => chunks cũ dư index lớn hơn
+    # náº¿u doc content bá»‹ shorten => chunks cÅ© dÆ° index lá»›n hÆ¡n
     max_idx = len(chunks) - 1
     stale = [c for c in existing_rows if c.chunk_index > max_idx]
     for c in stale:
@@ -126,14 +126,14 @@ def upsert_chunks_for_document(
 def iter_documents(
     *,
     session: Session,
-    company_id: Optional[UUID] = None,
+    rule_set_id: Optional[UUID] = None,
     doc_type: Optional[str] = None,
 ) -> Iterable[PolicyDocument]:
     stmt = select(PolicyDocument).where(PolicyDocument.enabled == True)  # noqa: E712
-    if company_id is None:
-        stmt = stmt.where(PolicyDocument.company_id.is_(None))
+    if rule_set_id is None:
+        stmt = stmt.where(PolicyDocument.rule_set_id.is_(None))
     else:
-        stmt = stmt.where(PolicyDocument.company_id == company_id)
+        stmt = stmt.where(PolicyDocument.rule_set_id == rule_set_id)
     if doc_type:
         stmt = stmt.where(PolicyDocument.doc_type == doc_type)
     return session.exec(stmt).all()
@@ -146,7 +146,7 @@ def main():
     cfg = ChunkConfig(chunk_size=400, overlap=80, min_chunk_len=50)
 
     with Session(engine) as session:
-        docs = list(iter_documents(session=session, company_id=None, doc_type=None))
+        docs = list(iter_documents(session=session, rule_set_id=None, doc_type=None))
         if not docs:
             print("[seed_policy_chunks] no enabled policy_documents found")
             return

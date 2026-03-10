@@ -63,3 +63,5 @@ class PolicyDocument(SQLModel, table=True):
         default=None,
         sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True),
     )
+
+

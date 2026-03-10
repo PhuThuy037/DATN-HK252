@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import time
@@ -42,33 +42,33 @@ def login(client: httpx.Client) -> str:
     return token
 
 
-def create_company(client: httpx.Client, token: str) -> str:
+def create_rule_set(client: httpx.Client, token: str) -> str:
     r = client.post(
-        f"{V1}/companies",
+        f"{V1}/rule-sets",
         json={"name": f"Suggestion Office Co {int(time.time())}"},
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
-        fail(f"create company failed: HTTP {r.status_code}\n{r.text}")
+        fail(f"create rule set failed: HTTP {r.status_code}\n{r.text}")
     cid = str((r.json().get("data") or {}).get("id") or "")
     if not cid:
-        fail("company id missing")
+        fail("rule_set id missing")
     return cid
 
 
 def main() -> None:
     with httpx.Client(timeout=API_TIMEOUT_SECONDS) as client:
-        print("[1/3] register/login + create company")
+        print("[1/3] register/login + create rule set")
         register_if_needed(client)
         token = login(client)
-        company_id = create_company(client, token)
+        rule_set_id = create_rule_set(client, token)
 
         print("[2/3] generate office/hr prompt")
         payload = {
-            "prompt": "Tạo rule block nội dung HR nội bộ liên quan lương, hợp đồng, nhân sự trong ngữ cảnh office"
+            "prompt": "Táº¡o rule block ná»™i dung HR ná»™i bá»™ liÃªn quan lÆ°Æ¡ng, há»£p Ä‘á»“ng, nhÃ¢n sá»± trong ngá»¯ cáº£nh office"
         }
         r = client.post(
-            f"{V1}/companies/{company_id}/rule-suggestions/generate",
+            f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/generate",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -90,3 +90,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+

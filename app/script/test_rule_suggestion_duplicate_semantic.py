@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import time
@@ -43,22 +43,22 @@ def login(client: httpx.Client) -> str:
     return token
 
 
-def create_company(client: httpx.Client, token: str) -> str:
+def create_rule_set(client: httpx.Client, token: str) -> str:
     r = client.post(
-        f"{V1}/companies",
+        f"{V1}/rule-sets",
         json={"name": f"Suggestion Semantic Co {int(time.time())}"},
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
-        fail(f"create company failed: HTTP {r.status_code}\n{r.text}")
+        fail(f"create rule set failed: HTTP {r.status_code}\n{r.text}")
     cid = str((r.json().get("data") or {}).get("id") or "")
     if not cid:
-        fail("company id missing")
+        fail("rule_set id missing")
     return cid
 
 
-def create_company_rule(
-    client: httpx.Client, token: str, company_id: str, stable_key: str
+def create_rule_set_rule(
+    client: httpx.Client, token: str, rule_set_id: str, stable_key: str
 ) -> dict[str, Any]:
     payload = {
         "stable_key": stable_key,
@@ -73,18 +73,18 @@ def create_company_rule(
         "enabled": True,
     }
     r = client.post(
-        f"{V1}/companies/{company_id}/rules",
+        f"{V1}/rule-sets/{rule_set_id}/rules",
         json=payload,
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
-        fail(f"create company rule failed: HTTP {r.status_code}\n{r.text}")
+        fail(f"create rule set rule failed: HTTP {r.status_code}\n{r.text}")
     return r.json().get("data") or {}
 
 
-def generate(client: httpx.Client, token: str, company_id: str, prompt: str) -> dict[str, Any]:
+def generate(client: httpx.Client, token: str, rule_set_id: str, prompt: str) -> dict[str, Any]:
     r = client.post(
-        f"{V1}/companies/{company_id}/rule-suggestions/generate",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/generate",
         json={"prompt": prompt},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -99,10 +99,10 @@ def main() -> None:
         register_if_needed(client)
         token = login(client)
 
-        print("[2/4] create company and baseline rule")
-        company_id = create_company(client, token)
+        print("[2/4] create rule set and baseline rule")
+        rule_set_id = create_rule_set(client, token)
         stable_key = "company.custom.phone.block.semantic"
-        baseline = create_company_rule(client, token, company_id, stable_key)
+        baseline = create_rule_set_rule(client, token, rule_set_id, stable_key)
         if str(baseline.get("stable_key") or "") != stable_key:
             fail(f"unexpected baseline stable_key: {baseline}")
 
@@ -110,7 +110,7 @@ def main() -> None:
         out = generate(
             client,
             token,
-            company_id,
+            rule_set_id,
             "Tao rule block so dien thoai, uu tien cao, bo sung context hotline",
         )
         duplicate_check = out.get("duplicate_check") or {}
@@ -146,3 +146,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+

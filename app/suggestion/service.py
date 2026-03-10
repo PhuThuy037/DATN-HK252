@@ -484,7 +484,7 @@ def _append_log(
 def _to_out(row: RuleSuggestion) -> RuleSuggestionOut:
     return RuleSuggestionOut(
         id=row.id,
-        company_id=row.company_id,
+        rule_set_id=row.company_id,
         created_by=row.created_by,
         status=SuggestionStatus(row.status),
         type=row.type,
@@ -503,7 +503,7 @@ def _to_log_out(row: RuleSuggestionLog) -> RuleSuggestionLogOut:
     return RuleSuggestionLogOut(
         id=row.id,
         suggestion_id=row.suggestion_id,
-        company_id=row.company_id,
+        rule_set_id=row.company_id,
         actor_user_id=row.actor_user_id,
         action=row.action,
         reason=row.reason,
@@ -1652,3 +1652,4 @@ def apply_rule_suggestion(
         rule_id=rule_row.id,
         context_term_ids=context_term_ids,
     )
+

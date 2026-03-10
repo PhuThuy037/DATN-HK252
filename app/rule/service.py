@@ -197,7 +197,7 @@ def _to_rule_out(
 ) -> CompanyRuleOut:
     return CompanyRuleOut(
         id=rule.id,
-        company_id=rule.company_id,
+        rule_set_id=rule.company_id,
         stable_key=rule.stable_key,
         name=rule.name,
         description=rule.description,
@@ -251,7 +251,7 @@ def _to_personal_rule_out(
 def _to_rule_change_out(*, row: RuleChangeLog) -> RuleChangeLogOut:
     return RuleChangeLogOut(
         id=row.id,
-        company_id=row.company_id,
+        rule_set_id=row.company_id,
         rule_id=row.rule_id,
         actor_user_id=row.actor_user_id,
         action=row.action,
@@ -326,12 +326,12 @@ def list_company_rules(
     *, session: Session, company_id: UUID, actor_user_id: UUID
 ) -> list[CompanyRuleOut]:
     _load_company_or_404(session=session, company_id=company_id)
-    member = _require_company_member(
+    _require_company_admin(
         session=session,
         company_id=company_id,
         user_id=actor_user_id,
     )
-    is_admin = member.role == MemberRole.company_admin
+    is_admin = True
 
     runtime_rules = RuleEngine().load_rules(session=session, company_id=company_id)
     rule_ids = [x.rule_id for x in runtime_rules]
@@ -761,3 +761,5 @@ def toggle_personal_rule_enabled(
         else None,
         can_toggle_enabled=True,
     )
+
+

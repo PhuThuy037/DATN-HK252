@@ -9,11 +9,11 @@ from pydantic import BaseModel, EmailStr, Field as PydanticField
 from app.common.enums import CompanyStatus, MemberRole, MemberStatus
 
 
-class CompanyCreateIn(BaseModel):
+class RuleSetCreateIn(BaseModel):
     name: str = PydanticField(min_length=1, max_length=200)
 
 
-class CompanyOut(BaseModel):
+class RuleSetOut(BaseModel):
     id: UUID
     name: str
     status: CompanyStatus
@@ -41,10 +41,16 @@ class CompanyMemberOut(BaseModel):
     removed_at: Optional[datetime] = None
 
 
-class CompanySystemPromptOut(BaseModel):
-    company_id: UUID
+class RuleSetSystemPromptOut(BaseModel):
+    rule_set_id: UUID
     system_prompt: Optional[str] = None
 
 
 class CompanySystemPromptUpdateIn(BaseModel):
     system_prompt: Optional[str] = PydanticField(default=None, max_length=4000)
+
+
+# Backward-compatible aliases to keep internal imports stable.
+CompanyCreateIn = RuleSetCreateIn
+CompanyOut = RuleSetOut
+CompanySystemPromptOut = RuleSetSystemPromptOut

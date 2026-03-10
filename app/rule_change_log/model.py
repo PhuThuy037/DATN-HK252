@@ -45,3 +45,5 @@ class RuleChangeLog(SQLModel, table=True):
             index=True,
         )
     )
+
+

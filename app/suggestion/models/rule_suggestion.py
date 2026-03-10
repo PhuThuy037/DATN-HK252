@@ -83,3 +83,5 @@ class RuleSuggestion(SQLModel, table=True):
             onupdate=sa.func.now(),
         )
     )
+
+

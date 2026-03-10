@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import hashlib
@@ -57,14 +57,14 @@ def _create_company(session: Session, name: str) -> Company:
 def _create_doc(
     session: Session,
     *,
-    company_id: UUID | None,
+    rule_set_id: UUID | None,
     stable_key: str,
     title: str,
     enabled: bool,
     content: str,
 ) -> PolicyDocument:
     d = PolicyDocument(
-        company_id=company_id,
+        rule_set_id=rule_set_id,
         stable_key=stable_key,
         title=title,
         content=content,
@@ -87,7 +87,7 @@ def _create_chunk_with_embedding(
 ) -> PolicyChunk:
     chunk = PolicyChunk(
         document_id=doc.id,
-        company_id=doc.company_id,
+        rule_set_id=doc.rule_set_id,
         chunk_index=0,
         content=content,
         content_hash=_sha256_hex(content),
@@ -121,7 +121,7 @@ def _seed_test_data() -> SeededCtx:
 
         doc_g_on = _create_doc(
             session,
-            company_id=None,
+            rule_set_id=None,
             stable_key=f"test.global.on.{marker}",
             title=f"G ON {marker}",
             enabled=True,
@@ -129,7 +129,7 @@ def _seed_test_data() -> SeededCtx:
         )
         doc_a_on = _create_doc(
             session,
-            company_id=a.id,
+            rule_set_id=a.id,
             stable_key=f"test.a.on.{marker}",
             title=f"A ON {marker}",
             enabled=True,
@@ -137,7 +137,7 @@ def _seed_test_data() -> SeededCtx:
         )
         doc_b_on = _create_doc(
             session,
-            company_id=b.id,
+            rule_set_id=b.id,
             stable_key=f"test.b.on.{marker}",
             title=f"B ON {marker}",
             enabled=True,
@@ -145,7 +145,7 @@ def _seed_test_data() -> SeededCtx:
         )
         doc_g_off = _create_doc(
             session,
-            company_id=None,
+            rule_set_id=None,
             stable_key=f"test.global.off.{marker}",
             title=f"G OFF {marker}",
             enabled=False,
@@ -153,7 +153,7 @@ def _seed_test_data() -> SeededCtx:
         )
         doc_a_off = _create_doc(
             session,
-            company_id=a.id,
+            rule_set_id=a.id,
             stable_key=f"test.a.off.{marker}",
             title=f"A OFF {marker}",
             enabled=False,
@@ -183,7 +183,7 @@ def _chunk_company_map(session: Session, chunk_ids: list[UUID]) -> dict[UUID, UU
     if not chunk_ids:
         return {}
     rows = session.exec(select(PolicyChunk).where(PolicyChunk.id.in_(chunk_ids))).all()
-    return {r.id: r.company_id for r in rows}
+    return {r.id: r.rule_set_id for r in rows}
 
 
 def _assert(cond: bool, message: str) -> None:
@@ -204,7 +204,7 @@ async def main_async() -> None:
         a_out = await retriever.retrieve(
             session=session,
             query="tenant isolation",
-            company_id=seeded.company_a_id,
+            rule_set_id=seeded.company_a_id,
             message_id=None,
             top_k=100,
             log=False,
@@ -234,7 +234,7 @@ async def main_async() -> None:
         b_out = await retriever.retrieve(
             session=session,
             query="tenant isolation",
-            company_id=seeded.company_b_id,
+            rule_set_id=seeded.company_b_id,
             message_id=None,
             top_k=100,
             log=False,
@@ -259,7 +259,7 @@ async def main_async() -> None:
         p_out = await retriever.retrieve(
             session=session,
             query="tenant isolation",
-            company_id=None,
+            rule_set_id=None,
             message_id=None,
             top_k=100,
             log=False,
@@ -289,3 +289,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

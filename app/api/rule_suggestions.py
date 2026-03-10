@@ -13,30 +13,30 @@ from app.suggestion.schemas import (
     RuleSuggestionApplyOut,
     RuleSuggestionConfirmIn,
     RuleSuggestionEditIn,
-    RuleSuggestionGenerateOut,
     RuleSuggestionGenerateIn,
+    RuleSuggestionGenerateOut,
     RuleSuggestionLogOut,
     RuleSuggestionOut,
     RuleSuggestionRejectIn,
     SuggestionStatus,
 )
 
-router = APIRouter(prefix="/v1", tags=["rule-suggestions"])
+router = APIRouter(prefix="/v1", tags=["rule-set-suggestions"])
 
 
 @router.post(
-    "/companies/{company_id}/rule-suggestions/generate",
+    "/rule-sets/{rule_set_id}/rule-suggestions/generate",
     response_model=ApiResponse[RuleSuggestionGenerateOut],
 )
 def generate_rule_suggestion(
-    company_id: UUID,
+    rule_set_id: UUID,
     payload: RuleSuggestionGenerateIn,
     session: SessionDep,
     principal: CurrentPrincipal,
 ):
     row = suggestion_service.generate_rule_suggestion(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         actor_user_id=principal.user_id,
         payload=payload,
     )
@@ -44,11 +44,11 @@ def generate_rule_suggestion(
 
 
 @router.get(
-    "/companies/{company_id}/rule-suggestions",
+    "/rule-sets/{rule_set_id}/rule-suggestions",
     response_model=ApiResponse[list[RuleSuggestionOut]],
 )
 def list_rule_suggestions(
-    company_id: UUID,
+    rule_set_id: UUID,
     session: SessionDep,
     principal: CurrentPrincipal,
     status: SuggestionStatus | None = Query(default=None),
@@ -56,7 +56,7 @@ def list_rule_suggestions(
 ):
     rows = suggestion_service.list_rule_suggestions(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         actor_user_id=principal.user_id,
         status=status,
         limit=limit,
@@ -65,18 +65,18 @@ def list_rule_suggestions(
 
 
 @router.get(
-    "/companies/{company_id}/rule-suggestions/{suggestion_id}",
+    "/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}",
     response_model=ApiResponse[RuleSuggestionOut],
 )
 def get_rule_suggestion(
-    company_id: UUID,
+    rule_set_id: UUID,
     suggestion_id: UUID,
     session: SessionDep,
     principal: CurrentPrincipal,
 ):
     row = suggestion_service.get_rule_suggestion(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         suggestion_id=suggestion_id,
         actor_user_id=principal.user_id,
     )
@@ -84,11 +84,11 @@ def get_rule_suggestion(
 
 
 @router.get(
-    "/companies/{company_id}/rule-suggestions/{suggestion_id}/logs",
+    "/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}/logs",
     response_model=ApiResponse[list[RuleSuggestionLogOut]],
 )
 def list_rule_suggestion_logs(
-    company_id: UUID,
+    rule_set_id: UUID,
     suggestion_id: UUID,
     session: SessionDep,
     principal: CurrentPrincipal,
@@ -96,7 +96,7 @@ def list_rule_suggestion_logs(
 ):
     rows = suggestion_service.list_rule_suggestion_logs(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         suggestion_id=suggestion_id,
         actor_user_id=principal.user_id,
         limit=limit,
@@ -105,11 +105,11 @@ def list_rule_suggestion_logs(
 
 
 @router.patch(
-    "/companies/{company_id}/rule-suggestions/{suggestion_id}",
+    "/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}",
     response_model=ApiResponse[RuleSuggestionOut],
 )
 def edit_rule_suggestion(
-    company_id: UUID,
+    rule_set_id: UUID,
     suggestion_id: UUID,
     payload: RuleSuggestionEditIn,
     session: SessionDep,
@@ -117,7 +117,7 @@ def edit_rule_suggestion(
 ):
     row = suggestion_service.edit_rule_suggestion(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         suggestion_id=suggestion_id,
         actor_user_id=principal.user_id,
         payload=payload,
@@ -126,11 +126,11 @@ def edit_rule_suggestion(
 
 
 @router.post(
-    "/companies/{company_id}/rule-suggestions/{suggestion_id}/confirm",
+    "/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}/confirm",
     response_model=ApiResponse[RuleSuggestionOut],
 )
 def confirm_rule_suggestion(
-    company_id: UUID,
+    rule_set_id: UUID,
     suggestion_id: UUID,
     payload: RuleSuggestionConfirmIn,
     session: SessionDep,
@@ -138,7 +138,7 @@ def confirm_rule_suggestion(
 ):
     row = suggestion_service.confirm_rule_suggestion(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         suggestion_id=suggestion_id,
         actor_user_id=principal.user_id,
         payload=payload,
@@ -147,11 +147,11 @@ def confirm_rule_suggestion(
 
 
 @router.post(
-    "/companies/{company_id}/rule-suggestions/{suggestion_id}/reject",
+    "/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}/reject",
     response_model=ApiResponse[RuleSuggestionOut],
 )
 def reject_rule_suggestion(
-    company_id: UUID,
+    rule_set_id: UUID,
     suggestion_id: UUID,
     payload: RuleSuggestionRejectIn,
     session: SessionDep,
@@ -159,7 +159,7 @@ def reject_rule_suggestion(
 ):
     row = suggestion_service.reject_rule_suggestion(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         suggestion_id=suggestion_id,
         actor_user_id=principal.user_id,
         payload=payload,
@@ -168,11 +168,11 @@ def reject_rule_suggestion(
 
 
 @router.post(
-    "/companies/{company_id}/rule-suggestions/{suggestion_id}/apply",
+    "/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}/apply",
     response_model=ApiResponse[RuleSuggestionApplyOut],
 )
 def apply_rule_suggestion(
-    company_id: UUID,
+    rule_set_id: UUID,
     suggestion_id: UUID,
     session: SessionDep,
     principal: CurrentPrincipal,
@@ -180,7 +180,7 @@ def apply_rule_suggestion(
 ):
     row = suggestion_service.apply_rule_suggestion(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         suggestion_id=suggestion_id,
         actor_user_id=principal.user_id,
         payload=payload,

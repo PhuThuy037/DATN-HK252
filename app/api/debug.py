@@ -1,5 +1,5 @@
 from dataclasses import asdict
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -27,7 +27,7 @@ resolver = DecisionResolver()
 
 class FullScanRequest(BaseModel):
     text: str
-    company_id: Optional[UUID] = None
+    rule_set_id: UUID
 
 
 class EntityOut(BaseModel):
@@ -62,28 +62,21 @@ def debug_full_scan(
     session: SessionDep,
     principal: CurrentPrincipal,
 ):
-    if req.company_id is None:
-        raise forbid(
-            "company_id is required for debug full-scan",
-            field="company_id",
-            reason="company_id_required",
-        )
-
     member = load_company_member_active_or_403(
         session=session,
-        company_id=req.company_id,
+        company_id=req.rule_set_id,
         user_id=principal.user_id,
     )
     if member.role != MemberRole.company_admin:
         raise forbid(
-            "Company admin required for debug full-scan",
-            field="company_id",
-            reason="not_company_admin",
+            "Rule set owner required for debug full-scan",
+            field="rule_set_id",
+            reason="not_rule_set_owner",
         )
 
     overrides = load_context_runtime_overrides(
         session=session,
-        company_id=req.company_id,
+        company_id=req.rule_set_id,
     )
 
     # 1) Detect entities
@@ -102,7 +95,7 @@ def debug_full_scan(
     # 3) Rule matching
     matches = rule_engine.evaluate(
         session=session,
-        company_id=req.company_id,
+        company_id=req.rule_set_id,
         entities=entities,
         signals=signals,
     )

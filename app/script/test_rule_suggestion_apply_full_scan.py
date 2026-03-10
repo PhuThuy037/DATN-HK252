@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import time
@@ -43,26 +43,26 @@ def login(client: httpx.Client) -> str:
     return token
 
 
-def create_company(client: httpx.Client, token: str) -> str:
+def create_rule_set(client: httpx.Client, token: str) -> str:
     r = client.post(
-        f"{V1}/companies",
+        f"{V1}/rule-sets",
         json={"name": f"Suggestion Apply FS Co {int(time.time())}"},
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
-        fail(f"create company failed: HTTP {r.status_code}\n{r.text}")
+        fail(f"create rule set failed: HTTP {r.status_code}\n{r.text}")
     cid = str((r.json().get("data") or {}).get("id") or "")
     if not cid:
-        fail("company id missing")
+        fail("rule_set id missing")
     return cid
 
 
-def generate_suggestion(client: httpx.Client, token: str, company_id: str) -> dict[str, Any]:
+def generate_suggestion(client: httpx.Client, token: str, rule_set_id: str) -> dict[str, Any]:
     payload = {
-        "prompt": "Tạo rule block nội dung tài chính nội bộ trong ngữ cảnh office có từ khóa stk"
+        "prompt": "Táº¡o rule block ná»™i dung tÃ i chÃ­nh ná»™i bá»™ trong ngá»¯ cáº£nh office cÃ³ tá»« khÃ³a stk"
     }
     r = client.post(
-        f"{V1}/companies/{company_id}/rule-suggestions/generate",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/generate",
         json=payload,
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -74,7 +74,7 @@ def generate_suggestion(client: httpx.Client, token: str, company_id: str) -> di
 def edit_suggestion(
     client: httpx.Client,
     token: str,
-    company_id: str,
+    rule_set_id: str,
     suggestion_id: str,
     expected_version: int,
 ) -> dict[str, Any]:
@@ -118,7 +118,7 @@ def edit_suggestion(
         },
     }
     r = client.patch(
-        f"{V1}/companies/{company_id}/rule-suggestions/{suggestion_id}",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}",
         json=payload,
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -128,10 +128,10 @@ def edit_suggestion(
 
 
 def confirm_suggestion(
-    client: httpx.Client, token: str, company_id: str, suggestion_id: str
+    client: httpx.Client, token: str, rule_set_id: str, suggestion_id: str
 ) -> dict[str, Any]:
     r = client.post(
-        f"{V1}/companies/{company_id}/rule-suggestions/{suggestion_id}/confirm",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}/confirm",
         json={"reason": "confirm for e2e"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -141,10 +141,10 @@ def confirm_suggestion(
 
 
 def apply_suggestion(
-    client: httpx.Client, token: str, company_id: str, suggestion_id: str
+    client: httpx.Client, token: str, rule_set_id: str, suggestion_id: str
 ) -> dict[str, Any]:
     r = client.post(
-        f"{V1}/companies/{company_id}/rule-suggestions/{suggestion_id}/apply",
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}/apply",
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
@@ -152,22 +152,22 @@ def apply_suggestion(
     return r.json().get("data") or {}
 
 
-def list_company_rules(
-    client: httpx.Client, token: str, company_id: str
+def list_rule_set_rules(
+    client: httpx.Client, token: str, rule_set_id: str
 ) -> list[dict[str, Any]]:
     r = client.get(
-        f"{V1}/companies/{company_id}/rules",
+        f"{V1}/rule-sets/{rule_set_id}/rules",
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
-        fail(f"list company rules failed: HTTP {r.status_code}\n{r.text}")
+        fail(f"list rule-set rules failed: HTTP {r.status_code}\n{r.text}")
     return list(r.json().get("data") or [])
 
 
-def full_scan(client: httpx.Client, token: str, company_id: str, text: str) -> dict[str, Any]:
+def full_scan(client: httpx.Client, token: str, rule_set_id: str, text: str) -> dict[str, Any]:
     r = client.post(
         f"{V1}/debug/full-scan",
-        json={"company_id": company_id, "text": text},
+        json={"rule_set_id": rule_set_id, "text": text},
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 200:
@@ -181,12 +181,12 @@ def main() -> None:
         register_if_needed(client)
         token = login(client)
 
-        print("[2/8] create company")
-        company_id = create_company(client, token)
-        print(f"company_id={company_id}")
+        print("[2/8] create rule set")
+        rule_set_id = create_rule_set(client, token)
+        print(f"rule_set_id={rule_set_id}")
 
         print("[3/8] generate suggestion")
-        generated = generate_suggestion(client, token, company_id)
+        generated = generate_suggestion(client, token, rule_set_id)
         suggestion_id = str(generated.get("id") or "")
         if not suggestion_id:
             fail(f"missing suggestion_id: {generated}")
@@ -195,7 +195,7 @@ def main() -> None:
         edited = edit_suggestion(
             client,
             token,
-            company_id,
+            rule_set_id,
             suggestion_id,
             expected_version=int(generated.get("version") or 1),
         )
@@ -204,16 +204,16 @@ def main() -> None:
             fail(f"missing stable_key after edit: {edited}")
 
         print("[5/8] confirm + apply")
-        confirmed = confirm_suggestion(client, token, company_id, suggestion_id)
+        confirmed = confirm_suggestion(client, token, rule_set_id, suggestion_id)
         if str(confirmed.get("status") or "") != "approved":
             fail(f"suggestion not approved: {confirmed}")
-        applied = apply_suggestion(client, token, company_id, suggestion_id)
+        applied = apply_suggestion(client, token, rule_set_id, suggestion_id)
         rule_id = str(applied.get("rule_id") or "")
         if not rule_id:
             fail(f"missing rule_id from apply: {applied}")
 
-        print("[6/8] verify rule exists in company rules")
-        rules = list_company_rules(client, token, company_id)
+        print("[6/8] verify rule exists in rule-set rules")
+        rules = list_rule_set_rules(client, token, rule_set_id)
         target_rules = [r for r in rules if str(r.get("id") or "") == rule_id]
         if not target_rules:
             fail(f"applied rule_id not found in list rules: {rule_id}")
@@ -227,7 +227,7 @@ def main() -> None:
         pos = full_scan(
             client,
             token,
-            company_id,
+            rule_set_id,
             "Phong ke toan dang cap nhat stk noi bo cho doi soat",
         )
         if str(pos.get("final_action") or "") != "block":
@@ -240,7 +240,7 @@ def main() -> None:
         neg = full_scan(
             client,
             token,
-            company_id,
+            rule_set_id,
             "Hom nay troi dep va team hop sprint planning",
         )
         if str(neg.get("final_action") or "") != "allow":
@@ -251,3 +251,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+

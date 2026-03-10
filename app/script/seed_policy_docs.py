@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from app.db import all_models  # noqa: F401
 import hashlib
 from pathlib import Path
@@ -24,7 +24,7 @@ def _sha256_hex(text: str) -> str:
 def upsert_policy_document(
     *,
     session: Session,
-    company_id: Optional[UUID],
+    rule_set_id: Optional[UUID],
     stable_key: str,
     title: str,
     doc_type: str,
@@ -33,7 +33,7 @@ def upsert_policy_document(
     content_hash = _sha256_hex(content)
     existing = session.exec(
         select(PolicyDocument)
-        .where(PolicyDocument.company_id == company_id)
+        .where(PolicyDocument.rule_set_id == rule_set_id)
         .where(PolicyDocument.stable_key == stable_key)
         .where(PolicyDocument.deleted_at.is_(None))
     ).first()
@@ -50,7 +50,7 @@ def upsert_policy_document(
         return existing
 
     doc = PolicyDocument(
-        company_id=company_id,
+        rule_set_id=rule_set_id,
         stable_key=stable_key,
         title=title,
         content=content,
@@ -72,7 +72,7 @@ def main():
     with Session(engine) as session:
         doc = upsert_policy_document(
             session=session,
-            company_id=None,  # global
+            rule_set_id=None,  # global
             stable_key=DOC_STABLE_KEY,
             title=DOC_TITLE,
             doc_type=DOC_TYPE,
@@ -83,3 +83,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

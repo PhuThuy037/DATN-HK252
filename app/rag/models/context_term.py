@@ -36,3 +36,4 @@ class ContextTerm(SQLModel, table=True):
             server_default=sa.func.now(),
         )
     )
+

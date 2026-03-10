@@ -18,7 +18,7 @@ class RuleOrigin(str, Enum):
 
 class CompanyRuleOut(BaseModel):
     id: UUID
-    company_id: Optional[UUID] = None
+    rule_set_id: Optional[UUID] = None
     stable_key: str
     name: str
     description: Optional[str] = None
@@ -93,7 +93,7 @@ class PersonalRuleToggleEnabledIn(BaseModel):
 
 class RuleChangeLogOut(BaseModel):
     id: UUID
-    company_id: UUID
+    rule_set_id: UUID
     rule_id: UUID
     actor_user_id: UUID
     action: str
@@ -101,3 +101,11 @@ class RuleChangeLogOut(BaseModel):
     before_json: Optional[dict[str, Any]] = None
     after_json: Optional[dict[str, Any]] = None
     created_at: datetime
+
+
+# Backward-compatible aliases for naming migration.
+RuleSetRuleOut = CompanyRuleOut
+RuleSetRuleCreateIn = CompanyRuleCreateIn
+RuleSetRuleUpdateIn = CompanyRuleUpdateIn
+RuleSetRuleToggleEnabledIn = CompanyRuleToggleEnabledIn
+RuleSetRuleChangeLogOut = RuleChangeLogOut

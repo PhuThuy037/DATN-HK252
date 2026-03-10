@@ -6,22 +6,36 @@ from fastapi import APIRouter, Query
 
 from app.api.deps import SessionDep
 from app.auth.deps import CurrentPrincipal
+from app.common.enums import RuleAction
+from app.common.schemas import ApiResponse
+from app.conversation import service as convo_service
 from app.conversation.schemas import (
     ConversationCreatePersonalIn,
-    ConversationCreateCompanyIn,
+    ConversationCreateRuleSetIn,
     ConversationOut,
     MessageCreateIn,
+    MessagePublicOut,
     MessagesPageMeta,
     MessagesPageOut,
-    MessagePublicOut,
     SendMessageOut,
 )
-from app.conversation import service as convo_service
 from app.permissions.deps.conversation import ConversationView
-from app.common.schemas import ApiResponse
-from app.common.enums import RuleAction
 
 router = APIRouter(prefix="/v1", tags=["conversations"])
+
+
+def _conversation_out(c) -> ConversationOut:
+    return ConversationOut(
+        id=c.id,
+        user_id=c.user_id,
+        rule_set_id=c.company_id,
+        title=c.title,
+        model_name=c.model_name,
+        temperature=c.temperature,
+        last_sequence_number=c.last_sequence_number,
+        status=(c.status.value if hasattr(c.status, "value") else str(c.status)),
+        created_at=c.created_at,
+    )
 
 
 @router.post("/conversations/personal", response_model=ApiResponse[ConversationOut])
@@ -37,27 +51,27 @@ def create_personal_conversation(
         model_name=payload.model_name,
         temperature=payload.temperature,
     )
-    return ApiResponse(ok=True, data=c)
+    return ApiResponse(ok=True, data=_conversation_out(c))
 
 
 @router.post(
-    "/companies/{company_id}/conversations", response_model=ApiResponse[ConversationOut]
+    "/rule-sets/{rule_set_id}/conversations", response_model=ApiResponse[ConversationOut]
 )
-def create_company_conversation(
-    company_id: UUID,
-    payload: ConversationCreateCompanyIn,
+def create_rule_set_conversation(
+    rule_set_id: UUID,
+    payload: ConversationCreateRuleSetIn,
     session: SessionDep,
     principal: CurrentPrincipal,
 ):
     c = convo_service.create_company_conversation(
         session=session,
         user_id=principal.user_id,
-        company_id=company_id,
+        company_id=rule_set_id,
         title=payload.title,
         model_name=payload.model_name,
         temperature=payload.temperature,
     )
-    return ApiResponse(ok=True, data=c)
+    return ApiResponse(ok=True, data=_conversation_out(c))
 
 
 @router.post(
@@ -149,3 +163,4 @@ def get_messages(
             ),
         ),
     )
+

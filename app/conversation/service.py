@@ -8,14 +8,15 @@ import anyio
 from sqlmodel import Session, select
 
 from app.chat.service import ChatService
-from app.company.model import Company
 from app.common.enums import (
+    MemberRole,
     MemberStatus,
     MessageInputType,
     MessageRole,
     RuleAction,
     ScanStatus,
 )
+from app.company.model import Company
 from app.company_member.model import CompanyMember
 from app.conversation.model import Conversation
 from app.core.config import get_settings
@@ -86,11 +87,11 @@ def create_company_conversation(
         .where(CompanyMember.status == MemberStatus.active)
     )
     m = session.exec(stmt).first()
-    if not m:
+    if not m or m.role != MemberRole.company_admin:
         raise forbid(
-            "Company membership required",
-            field="company_id",
-            reason="not_company_member",
+            "Rule set owner required",
+            field="rule_set_id",
+            reason="not_rule_set_owner",
         )
 
     c = Conversation(
@@ -144,11 +145,11 @@ async def append_user_message_async(
             .where(CompanyMember.status == MemberStatus.active)
         )
         mem = session.exec(mem_stmt).first()
-        if not mem:
+        if not mem or mem.role != MemberRole.company_admin:
             raise not_found(
                 "Conversation not found",
                 field="conversation_id",
-                reason="not_company_member",
+                reason="not_rule_set_owner",
             )
 
     # STEP 1: user message

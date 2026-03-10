@@ -109,7 +109,7 @@ class RuleDuplicateCheckOut(BaseModel):
 
 class RuleSuggestionOut(BaseModel):
     id: UUID
-    company_id: UUID
+    rule_set_id: UUID
     created_by: UUID
     status: SuggestionStatus
     type: str
@@ -130,7 +130,7 @@ class RuleSuggestionGenerateOut(RuleSuggestionOut):
 class RuleSuggestionLogOut(BaseModel):
     id: UUID
     suggestion_id: UUID
-    company_id: UUID
+    rule_set_id: UUID
     actor_user_id: UUID
     action: str
     reason: Optional[str] = None

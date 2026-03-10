@@ -102,7 +102,7 @@ def _require_company_admin(*, session: Session, company_id: UUID, user_id: UUID)
 def _to_policy_doc_out(*, row: PolicyDocument) -> PolicyDocumentOut:
     return PolicyDocumentOut(
         id=row.id,
-        company_id=row.company_id,
+        rule_set_id=row.company_id,
         stable_key=row.stable_key,
         title=row.title,
         doc_type=row.doc_type,
@@ -119,7 +119,7 @@ def _to_policy_doc_out(*, row: PolicyDocument) -> PolicyDocumentOut:
 def _to_job_out(*, row: PolicyIngestJob) -> PolicyIngestJobOut:
     return PolicyIngestJobOut(
         id=row.id,
-        company_id=row.company_id,
+        rule_set_id=row.company_id,
         requested_by=row.requested_by,
         retry_of_job_id=row.retry_of_job_id,
         status=PolicyIngestStatus(row.status),
@@ -704,3 +704,4 @@ def process_policy_ingest_job(*, session: Session, job_id: UUID) -> None:
     if not job:
         return
     _finalize_job(session=session, job=job)
+

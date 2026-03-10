@@ -16,32 +16,32 @@ from app.policy.schemas import (
     PolicyIngestJobOut,
 )
 
-router = APIRouter(prefix="/v1", tags=["policy-admin"])
+router = APIRouter(prefix="/v1", tags=["rule-set-policy"])
 
 
 @router.get(
-    "/companies/{company_id}/policy-documents",
+    "/rule-sets/{rule_set_id}/policy-documents",
     response_model=ApiResponse[list[PolicyDocumentOut]],
 )
-def list_company_policy_documents(
-    company_id: UUID,
+def list_rule_set_policy_documents(
+    rule_set_id: UUID,
     session: SessionDep,
     principal: CurrentPrincipal,
 ):
     rows = policy_service.list_company_policy_documents(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         actor_user_id=principal.user_id,
     )
     return ApiResponse(ok=True, data=rows)
 
 
 @router.patch(
-    "/companies/{company_id}/policy-documents/{document_id}/enabled",
+    "/rule-sets/{rule_set_id}/policy-documents/{document_id}/enabled",
     response_model=ApiResponse[PolicyDocumentOut],
 )
-def toggle_company_policy_document_enabled(
-    company_id: UUID,
+def toggle_rule_set_policy_document_enabled(
+    rule_set_id: UUID,
     document_id: UUID,
     payload: PolicyDocumentToggleEnabledIn,
     session: SessionDep,
@@ -49,7 +49,7 @@ def toggle_company_policy_document_enabled(
 ):
     row = policy_service.toggle_company_policy_document_enabled(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         document_id=document_id,
         actor_user_id=principal.user_id,
         enabled=payload.enabled,
@@ -58,18 +58,18 @@ def toggle_company_policy_document_enabled(
 
 
 @router.delete(
-    "/companies/{company_id}/policy-documents/{document_id}",
+    "/rule-sets/{rule_set_id}/policy-documents/{document_id}",
     response_model=ApiResponse[PolicyDocumentOut],
 )
-def soft_delete_company_policy_document(
-    company_id: UUID,
+def soft_delete_rule_set_policy_document(
+    rule_set_id: UUID,
     document_id: UUID,
     session: SessionDep,
     principal: CurrentPrincipal,
 ):
     row = policy_service.soft_delete_company_policy_document(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         document_id=document_id,
         actor_user_id=principal.user_id,
     )
@@ -77,18 +77,18 @@ def soft_delete_company_policy_document(
 
 
 @router.post(
-    "/companies/{company_id}/policy-ingest-jobs",
+    "/rule-sets/{rule_set_id}/policy-ingest-jobs",
     response_model=ApiResponse[PolicyIngestJobOut],
 )
 def create_policy_ingest_job(
-    company_id: UUID,
+    rule_set_id: UUID,
     payload: PolicyIngestJobCreateIn,
     session: SessionDep,
     principal: CurrentPrincipal,
 ):
     row = policy_service.create_policy_ingest_job(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         actor_user_id=principal.user_id,
         payload=payload,
     )
@@ -96,18 +96,18 @@ def create_policy_ingest_job(
 
 
 @router.get(
-    "/companies/{company_id}/policy-ingest-jobs",
+    "/rule-sets/{rule_set_id}/policy-ingest-jobs",
     response_model=ApiResponse[list[PolicyIngestJobOut]],
 )
 def list_policy_ingest_jobs(
-    company_id: UUID,
+    rule_set_id: UUID,
     session: SessionDep,
     principal: CurrentPrincipal,
     limit: int = Query(default=50, ge=1, le=200),
 ):
     rows = policy_service.list_policy_ingest_jobs(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         actor_user_id=principal.user_id,
         limit=limit,
     )
@@ -115,18 +115,18 @@ def list_policy_ingest_jobs(
 
 
 @router.get(
-    "/companies/{company_id}/policy-ingest-jobs/{job_id}",
+    "/rule-sets/{rule_set_id}/policy-ingest-jobs/{job_id}",
     response_model=ApiResponse[PolicyIngestJobDetailOut],
 )
 def get_policy_ingest_job_detail(
-    company_id: UUID,
+    rule_set_id: UUID,
     job_id: UUID,
     session: SessionDep,
     principal: CurrentPrincipal,
 ):
     row = policy_service.get_policy_ingest_job_detail(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         actor_user_id=principal.user_id,
         job_id=job_id,
     )
@@ -134,18 +134,18 @@ def get_policy_ingest_job_detail(
 
 
 @router.post(
-    "/companies/{company_id}/policy-ingest-jobs/{job_id}/retry",
+    "/rule-sets/{rule_set_id}/policy-ingest-jobs/{job_id}/retry",
     response_model=ApiResponse[PolicyIngestJobOut],
 )
 def retry_policy_ingest_job(
-    company_id: UUID,
+    rule_set_id: UUID,
     job_id: UUID,
     session: SessionDep,
     principal: CurrentPrincipal,
 ):
     row = policy_service.retry_policy_ingest_job(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         actor_user_id=principal.user_id,
         source_job_id=job_id,
     )

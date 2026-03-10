@@ -58,3 +58,5 @@ class CompanyMember(TimestampMixin, SQLModel, table=True):
     # relationships
     user: "User" = Relationship(back_populates="company_memberships")
     company: "Company" = Relationship(back_populates="members")
+
+

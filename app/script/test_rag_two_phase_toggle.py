@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import time
@@ -97,7 +97,7 @@ def _ensure_seed_rules(session: Session, created_by_user_id: UUID) -> None:
 def _get_global_rule(session: Session, stable_key: str) -> Rule:
     row = session.exec(
         select(Rule)
-        .where(Rule.company_id.is_(None))
+        .where(Rule.rule_set_id.is_(None))
         .where(Rule.stable_key == stable_key)
         .order_by(Rule.created_at.desc())
     ).first()
@@ -109,21 +109,21 @@ def _get_global_rule(session: Session, stable_key: str) -> Rule:
 def _upsert_company_override(
     session: Session,
     *,
-    company_id: UUID,
+    rule_set_id: UUID,
     global_rule: Rule,
     enabled: bool,
     created_by: UUID,
 ) -> Rule:
     row = session.exec(
         select(Rule)
-        .where(Rule.company_id == company_id)
+        .where(Rule.rule_set_id == rule_set_id)
         .where(Rule.stable_key == global_rule.stable_key)
         .order_by(Rule.created_at.desc())
     ).first()
 
     if row is None:
         row = Rule(
-            company_id=company_id,
+            rule_set_id=rule_set_id,
             stable_key=global_rule.stable_key,
             name=global_rule.name,
             description=global_rule.description,
@@ -148,14 +148,14 @@ def _upsert_company_override(
 def _create_or_update_force_mask_rule(
     session: Session,
     *,
-    company_id: UUID,
+    rule_set_id: UUID,
     created_by: UUID,
     stable_key: str,
     enabled: bool,
 ) -> Rule:
     row = session.exec(
         select(Rule)
-        .where(Rule.company_id == company_id)
+        .where(Rule.rule_set_id == rule_set_id)
         .where(Rule.stable_key == stable_key)
         .order_by(Rule.created_at.desc())
     ).first()
@@ -164,7 +164,7 @@ def _create_or_update_force_mask_rule(
 
     if row is None:
         row = Rule(
-            company_id=company_id,
+            rule_set_id=rule_set_id,
             stable_key=stable_key,
             name="Force local mask for two-phase test",
             description="deterministic local mask",
@@ -191,7 +191,7 @@ def _create_or_update_force_mask_rule(
 
 async def _run_scan_case(
     *,
-    company_id: UUID,
+    rule_set_id: UUID,
     user_id: UUID,
     force_key: str,
     rag_decision: str,
@@ -206,14 +206,14 @@ async def _run_scan_case(
         g_mask = _get_global_rule(session, RAG_MASK_KEY)
         _upsert_company_override(
             session,
-            company_id=company_id,
+            rule_set_id=rule_set_id,
             global_rule=g_block,
             enabled=rag_block_enabled,
             created_by=user_id,
         )
         _upsert_company_override(
             session,
-            company_id=company_id,
+            rule_set_id=rule_set_id,
             global_rule=g_mask,
             enabled=rag_mask_enabled,
             created_by=user_id,
@@ -222,21 +222,21 @@ async def _run_scan_case(
             g_phone = _get_global_rule(session, PHONE_MASK_KEY)
             _upsert_company_override(
                 session,
-                company_id=company_id,
+                rule_set_id=rule_set_id,
                 global_rule=g_phone,
                 enabled=bool(phone_mask_enabled),
                 created_by=user_id,
             )
         _create_or_update_force_mask_rule(
             session,
-            company_id=company_id,
+            rule_set_id=rule_set_id,
             created_by=user_id,
             stable_key=force_key,
             enabled=force_enabled,
         )
         session.commit()
 
-    RuleEngine.invalidate_cache(company_id)
+    RuleEngine.invalidate_cache(rule_set_id)
 
     scan = ForcedRagGateScanEngine(context_yaml_path="app/config/context_base.yaml")
     fake_rag = FakeRag(decision=rag_decision)
@@ -246,7 +246,7 @@ async def _run_scan_case(
         out = await scan.scan(
             session=session,
             text=text,
-            company_id=company_id,
+            rule_set_id=rule_set_id,
             user_id=None,
         )
 
@@ -269,13 +269,13 @@ async def main_async() -> None:
         session.add(company)
         session.commit()
         session.refresh(company)
-        company_id = company.id
+        rule_set_id = company.id
 
     force_key = f"company.test.two_phase.force_mask.{marker}"
 
     # Case 1: local phase-1 mask => do not call RAG.
     out1, calls1 = await _run_scan_case(
-        company_id=company_id,
+        rule_set_id=rule_set_id,
         user_id=user_id,
         force_key=force_key,
         rag_decision="BLOCK",
@@ -290,7 +290,7 @@ async def main_async() -> None:
 
     # Case 2: phase-1 allow + rag block/mask both OFF => skip RAG.
     out2, calls2 = await _run_scan_case(
-        company_id=company_id,
+        rule_set_id=rule_set_id,
         user_id=user_id,
         force_key=force_key,
         rag_decision="MASK",
@@ -304,7 +304,7 @@ async def main_async() -> None:
 
     # Case 3: phase-1 allow + only rag.mask ON + RAG returns BLOCK => downgrade to ALLOW.
     out3, calls3 = await _run_scan_case(
-        company_id=company_id,
+        rule_set_id=rule_set_id,
         user_id=user_id,
         force_key=force_key,
         rag_decision="BLOCK",
@@ -322,7 +322,7 @@ async def main_async() -> None:
 
     # Case 4: phase-1 allow + only rag.mask ON + RAG returns MASK => final MASK.
     out4, calls4 = await _run_scan_case(
-        company_id=company_id,
+        rule_set_id=rule_set_id,
         user_id=user_id,
         force_key=force_key,
         rag_decision="MASK",
@@ -337,7 +337,7 @@ async def main_async() -> None:
 
     # Case 5: simple PII only + phase-1 no-match => RAG must not override (Option 1 guard).
     out5, calls5 = await _run_scan_case(
-        company_id=company_id,
+        rule_set_id=rule_set_id,
         user_id=user_id,
         force_key=force_key,
         rag_decision="MASK",
@@ -360,5 +360,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 

@@ -16,39 +16,39 @@ from app.rule.schemas import (
     RuleChangeLogOut,
 )
 
-router = APIRouter(prefix="/v1", tags=["company-rules"])
+router = APIRouter(prefix="/v1", tags=["rule-set-rules"])
 
 
 @router.get(
-    "/companies/{company_id}/rules",
+    "/rule-sets/{rule_set_id}/rules",
     response_model=ApiResponse[list[CompanyRuleOut]],
 )
-def list_company_rules(
-    company_id: UUID,
+def list_rule_set_rules(
+    rule_set_id: UUID,
     session: SessionDep,
     principal: CurrentPrincipal,
 ):
     rows = rule_service.list_company_rules(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         actor_user_id=principal.user_id,
     )
     return ApiResponse(ok=True, data=rows)
 
 
 @router.get(
-    "/companies/{company_id}/rules/change-logs",
+    "/rule-sets/{rule_set_id}/rules/change-logs",
     response_model=ApiResponse[list[RuleChangeLogOut]],
 )
-def list_company_rule_change_logs(
-    company_id: UUID,
+def list_rule_set_rule_change_logs(
+    rule_set_id: UUID,
     session: SessionDep,
     principal: CurrentPrincipal,
     limit: int = Query(default=50, ge=1, le=200),
 ):
     rows = rule_service.list_company_rule_change_logs(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         actor_user_id=principal.user_id,
         limit=limit,
     )
@@ -56,18 +56,18 @@ def list_company_rule_change_logs(
 
 
 @router.post(
-    "/companies/{company_id}/rules",
+    "/rule-sets/{rule_set_id}/rules",
     response_model=ApiResponse[CompanyRuleOut],
 )
-def create_company_rule(
-    company_id: UUID,
+def create_rule_set_rule(
+    rule_set_id: UUID,
     payload: CompanyRuleCreateIn,
     session: SessionDep,
     principal: CurrentPrincipal,
 ):
     row = rule_service.create_company_custom_rule(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         actor_user_id=principal.user_id,
         payload=payload,
     )
@@ -75,11 +75,11 @@ def create_company_rule(
 
 
 @router.patch(
-    "/companies/{company_id}/rules/{rule_id}",
+    "/rule-sets/{rule_set_id}/rules/{rule_id}",
     response_model=ApiResponse[CompanyRuleOut],
 )
-def update_company_rule(
-    company_id: UUID,
+def update_rule_set_rule(
+    rule_set_id: UUID,
     rule_id: UUID,
     payload: CompanyRuleUpdateIn,
     session: SessionDep,
@@ -87,7 +87,7 @@ def update_company_rule(
 ):
     row = rule_service.update_company_rule(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         rule_id=rule_id,
         actor_user_id=principal.user_id,
         payload=payload,
@@ -96,18 +96,18 @@ def update_company_rule(
 
 
 @router.delete(
-    "/companies/{company_id}/rules/{rule_id}",
+    "/rule-sets/{rule_set_id}/rules/{rule_id}",
     response_model=ApiResponse[CompanyRuleOut],
 )
-def soft_delete_company_rule(
-    company_id: UUID,
+def soft_delete_rule_set_rule(
+    rule_set_id: UUID,
     rule_id: UUID,
     session: SessionDep,
     principal: CurrentPrincipal,
 ):
     row = rule_service.soft_delete_company_rule(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         rule_id=rule_id,
         actor_user_id=principal.user_id,
     )
@@ -115,11 +115,11 @@ def soft_delete_company_rule(
 
 
 @router.patch(
-    "/companies/{company_id}/rules/global/{stable_key}/enabled",
+    "/rule-sets/{rule_set_id}/rules/global/{stable_key}/enabled",
     response_model=ApiResponse[CompanyRuleOut],
 )
-def toggle_global_rule_enabled_for_company(
-    company_id: UUID,
+def toggle_global_rule_enabled_for_rule_set(
+    rule_set_id: UUID,
     stable_key: str,
     payload: CompanyRuleToggleEnabledIn,
     session: SessionDep,
@@ -127,7 +127,7 @@ def toggle_global_rule_enabled_for_company(
 ):
     row = rule_service.toggle_global_rule_for_company(
         session=session,
-        company_id=company_id,
+        company_id=rule_set_id,
         actor_user_id=principal.user_id,
         stable_key=stable_key,
         enabled=payload.enabled,

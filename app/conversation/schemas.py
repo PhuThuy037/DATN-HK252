@@ -15,7 +15,7 @@ class ConversationCreatePersonalIn(BaseModel):
     temperature: Optional[float] = None
 
 
-class ConversationCreateCompanyIn(BaseModel):
+class ConversationCreateRuleSetIn(BaseModel):
     title: Optional[str] = None
     model_name: Optional[str] = None
     temperature: Optional[float] = None
@@ -24,7 +24,7 @@ class ConversationCreateCompanyIn(BaseModel):
 class ConversationOut(BaseModel):
     id: UUID
     user_id: UUID
-    company_id: Optional[UUID]
+    rule_set_id: Optional[UUID]
     title: Optional[str]
     model_name: Optional[str]
     temperature: Optional[float]
@@ -90,3 +90,7 @@ class MessagesPageMeta(BaseModel):
 class MessagesPageOut(BaseModel):
     items: list[MessagePublicOut]
     page: MessagesPageMeta
+
+
+class ConversationCreateCompanyIn(ConversationCreateRuleSetIn):
+    pass

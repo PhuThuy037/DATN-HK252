@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 from typing import Iterable, Optional
@@ -17,9 +17,9 @@ CONTEXT_YAML_PATH = Path("app/config/context_base.yaml")
 
 # Base detector contexts migrated to DB-backed context_terms.
 BASE_ENTITY_TERMS: dict[str, list[str]] = {
-    "CCCD": ["cccd", "căn cước", "cmnd"],
-    "TAX_ID": ["mst", "mã số thuế", "tax code"],
-    "PHONE": ["sđt", "số điện thoại", "hotline", "liên hệ", "số"],
+    "CCCD": ["cccd", "cÄƒn cÆ°á»›c", "cmnd"],
+    "TAX_ID": ["mst", "mÃ£ sá»‘ thuáº¿", "tax code"],
+    "PHONE": ["sÄ‘t", "sá»‘ Ä‘iá»‡n thoáº¡i", "hotline", "liÃªn há»‡", "sá»‘"],
 }
 
 
@@ -44,7 +44,7 @@ def _iter_persona_terms_from_yaml() -> Iterable[tuple[str, str]]:
 def _upsert_term(
     *,
     session: Session,
-    company_id: Optional[UUID],
+    rule_set_id: Optional[UUID],
     entity_type: str,
     term: str,
     lang: str = "vi",
@@ -54,7 +54,7 @@ def _upsert_term(
 ) -> bool:
     stmt = (
         select(ContextTerm)
-        .where(ContextTerm.company_id == company_id)
+        .where(ContextTerm.rule_set_id == rule_set_id)
         .where(ContextTerm.entity_type == entity_type)
         .where(ContextTerm.term == term)
         .where(ContextTerm.lang == lang)
@@ -80,7 +80,7 @@ def _upsert_term(
 
     session.add(
         ContextTerm(
-            company_id=company_id,
+            rule_set_id=rule_set_id,
             entity_type=entity_type,
             term=term,
             lang=lang,
@@ -104,7 +104,7 @@ def main() -> None:
                     continue
                 if _upsert_term(
                     session=session,
-                    company_id=None,
+                    rule_set_id=None,
                     entity_type=entity_type,
                     term=term,
                     lang="vi",
@@ -117,7 +117,7 @@ def main() -> None:
         for entity_type, term in _iter_persona_terms_from_yaml():
             if _upsert_term(
                 session=session,
-                company_id=None,
+                rule_set_id=None,
                 entity_type=entity_type,
                 term=term,
                 lang="vi",
@@ -134,3 +134,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
