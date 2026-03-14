@@ -1,0 +1,46 @@
+﻿app/script/test_policy_ingest_job_api.py:68:"stable_key": "company.policy.test.alpha",
+app/script/test_policy_ingest_job_api.py:155:target = [d for d in docs if d.get("stable_key") == "company.policy.test.alpha"]
+app/script/test_rag_two_phase_toggle.py:274:force_key = f"company.test.two_phase.force_mask.{marker}"
+app/script/test_rule_precedence_full_scan.py:136:"stable_key": f"company.test.phone.block.{int(time.time())}",
+app/script/test_rule_suggestion_apply_full_scan.py:85:"stable_key": f"company.custom.office.finance.block.{int(time.time())}",
+app/script/test_rule_suggestion_duplicate_semantic.py:104:stable_key = "company.custom.phone.block.semantic"
+app/script/test_rule_suggestion_feature1_quality_signals.py:15:stable_key="company.custom.test.feature1",
+app/script/test_rule_suggestion_feature1_quality_signals.py:43:stable_key="company.custom.test.abstract",
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:23:def _sample_draft(*, stable_key: str = "company.custom.rag.feature3") -> RuleSuggestionDraftPayload:
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:119:return [{"rule_id": "r_101", "stable_key": "company.custom.existing"}]
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:153:assert captured["rule_references"] == [{"rule_id": "r_101", "stable_key": "company.custom.existing"}]
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:328:return [{"rule_id": "r_777", "stable_key": "company.custom.payroll.guard"}]
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:376:return [{"rule_id": "r_900", "stable_key": "company.custom.sample"}]
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:384:update={"stable_key": "company.custom.after.ensure"}
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:425:assert draft.rule.stable_key == "company.custom.after.ensure"
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:435:draft = _sample_draft(stable_key="company.custom.dup.check")
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:520:llm_bad = _sample_draft(stable_key="company.custom.bad.map")
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:558:llm_bad = _sample_draft(stable_key="company.custom.bad.guard").model_copy(
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:585:bad = _sample_draft(stable_key="company.custom.bad.office.leak").model_copy(
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:648:bad = _sample_draft(stable_key="company.custom.bad.unprompted.anchor").model_copy(
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:716:bad = _sample_draft(stable_key="company.custom.abstract.keyword").model_copy(
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:785:bad_llm = _sample_draft(stable_key="company.custom.bad.customsecret").model_copy(
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:850:bad_llm = _sample_draft(stable_key="company.custom.bad.payroll").model_copy(
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:895:original = _sample_draft(stable_key="company.custom.keep.as.is")
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py:912:draft = _sample_draft(stable_key="company.custom.regular.prompt")
+app/script/test_rule_suggestion_phase3_hardening.py:230:rule["stable_key"] = f"company.custom.phase3.multi.entity.{int(time.time())}"
+app/script/test_rule_suggestion_round1_lifecycle.py:53:stable_key="company.custom.manual.mask_internal_code",
+app/script/test_rule_suggestion_round1_lifecycle.py:91:stable_key="company.custom.manual.mask_internal_code",
+app/script/test_rule_suggestion_round1_lifecycle.py:128:stable_key="company.custom.manual.block_payroll_external_email",
+app/script/test_rule_suggestion_round1_lifecycle.py:164:stable_key="company.custom.manual.mask_personal_email",
+app/script/test_rule_suggestion_round1_lifecycle.py:182:stable_key="company.custom.manual.office_abstract",
+app/script/test_rule_suggestion_round1_lifecycle.py:743:stable_key="company.custom.manual.mask_internal_code",
+app/script/test_rule_suggestion_round1_lifecycle.py:781:stable_key="company.custom.manual.mask_internal_code",
+app/script/test_rule_suggestion_round1_lifecycle.py:884:stable_key="company.custom.manual.mask_internal_code",
+app/script/test_rule_suggestion_round1_lifecycle.py:923:stable_key="company.custom.manual.mask_internal_code",
+app/script/test_rule_suggestion_round1_lifecycle.py:995:stable_key="company.custom.manual.mask_internal_code",
+app/script/test_rule_suggestion_round1_lifecycle.py:1033:stable_key="company.custom.manual.mask_internal_code",
+app/script/test_rule_suggestion_simulate_preview.py:309:draft_stable_key = f"company.custom.simulate.draft.internal_code.{int(time.time())}"
+app/script/test_rule_suggestion_simulate_preview.py:477:approved_stable_key = f"company.custom.simulate.approved.unique.{int(time.time())}"
+app/suggestion/service.py:1446:stable_key=f"company.custom.suggested.{stable_suffix}",
+app/suggestion/service.py:1497:stable_key=f"company.custom.suggested.{stable_suffix}",
+app/suggestion/service.py:1888:stable_key = f"company.custom.suggested.{stable_suffix}"
+app/suggestion/service.py:2012:stable_key = f"company.custom.suggested.{h}"
+app/suggestion/service.py:2331:stable_key = f"company.custom.{slug}.{h}"
+app/suggestion/service.py:2333:stable_key = f"company.custom.{stable_key}"
+app/suggestion/service.py:2337:stable_key = f"company.custom.suggested.{h}"

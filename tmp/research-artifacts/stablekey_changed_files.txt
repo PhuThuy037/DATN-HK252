@@ -1,0 +1,11 @@
+﻿app/script/test_policy_ingest_job_api.py
+app/script/test_rag_two_phase_toggle.py
+app/script/test_rule_precedence_full_scan.py
+app/script/test_rule_suggestion_apply_full_scan.py
+app/script/test_rule_suggestion_duplicate_semantic.py
+app/script/test_rule_suggestion_feature1_quality_signals.py
+app/script/test_rule_suggestion_feature3_rag_assisted_generate.py
+app/script/test_rule_suggestion_phase3_hardening.py
+app/script/test_rule_suggestion_round1_lifecycle.py
+app/script/test_rule_suggestion_simulate_preview.py
+app/suggestion/service.py
