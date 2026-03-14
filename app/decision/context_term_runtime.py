@@ -16,6 +16,7 @@ from app.rag.models.context_term import ContextTerm
 class ContextRuntimeOverrides:
     regex_hints: dict[str, list[ContextHint]]
     persona_keywords: dict[str, list[str]]
+    exact_terms: list[str]
 
 
 _CACHE_TTL_SECONDS = 5.0
@@ -27,6 +28,7 @@ def _clone_overrides(data: ContextRuntimeOverrides) -> ContextRuntimeOverrides:
     return ContextRuntimeOverrides(
         regex_hints={k: list(v) for k, v in data.regex_hints.items()},
         persona_keywords={k: list(v) for k, v in data.persona_keywords.items()},
+        exact_terms=list(data.exact_terms),
     )
 
 
@@ -74,6 +76,7 @@ def load_context_runtime_overrides(
         "TAX_ID": [],
     }
     persona_keywords: dict[str, list[str]] = {}
+    exact_terms: list[str] = []
 
     # Latest rows win for same term to support company-specific override by recency.
     dedup: dict[tuple[str, str], ContextTerm] = {}
@@ -101,15 +104,21 @@ def load_context_runtime_overrides(
             if not persona:
                 continue
             persona_keywords.setdefault(persona, []).append(term)
+            continue
+
+        if et in {"INTERNAL_CODE", "CUSTOM_SECRET", "PROPRIETARY_IDENTIFIER"}:
+            exact_terms.append(term)
 
     for hints in regex_hints.values():
         hints.sort(key=lambda h: h.term)
     for kws in persona_keywords.values():
         kws.sort()
+    exact_terms = sorted({t for t in exact_terms if t})
 
     out = ContextRuntimeOverrides(
         regex_hints=regex_hints,
         persona_keywords=persona_keywords,
+        exact_terms=exact_terms,
     )
     _set_cached(company_id, out)
     return _clone_overrides(out)

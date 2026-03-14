@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from uuid import UUID
 
 import anyio
@@ -30,10 +31,34 @@ _chat = ChatService()
 _scan = ScanEngineLocal(context_yaml_path="app/config/context_base.yaml")
 _mask_service = MaskService()
 _settings = get_settings()
+_CODE_LIKE_TERM_RE = re.compile(r"[A-Za-z0-9]{2,}(?:[-_][A-Za-z0-9]{1,}){1,}")
 
 
 def _sha256_hex(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _extract_code_like_mask_terms(scan_payload: dict) -> list[str]:
+    signals = scan_payload.get("signals") if isinstance(scan_payload, dict) else None
+    if not isinstance(signals, dict):
+        return []
+    context_keywords = signals.get("context_keywords")
+    if not isinstance(context_keywords, list):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in context_keywords:
+        term = str(value or "").strip()
+        if not term:
+            continue
+        if _CODE_LIKE_TERM_RE.search(term) is None:
+            continue
+        lowered = term.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        out.append(term)
+    return out
 
 
 def _resolve_system_prompt(
@@ -171,7 +196,11 @@ async def append_user_message_async(
 
     user_masked = None
     if user_final == RuleAction.mask:
-        user_masked = _mask_service.mask(content, user_entities)
+        user_masked = _mask_service.mask(
+            content,
+            user_entities,
+            extra_terms=_extract_code_like_mask_terms(user_scan),
+        )
 
     user_entities_json = {
         "entities": [entity_to_dict(e) for e in user_entities],
@@ -240,7 +269,11 @@ async def append_user_message_async(
 
     asst_masked = None
     if asst_final == RuleAction.mask:
-        asst_masked = _mask_service.mask(assistant_text, asst_entities)
+        asst_masked = _mask_service.mask(
+            assistant_text,
+            asst_entities,
+            extra_terms=_extract_code_like_mask_terms(assistant_scan),
+        )
 
     asst_entities_json = {
         "entities": [entity_to_dict(e) for e in asst_entities],

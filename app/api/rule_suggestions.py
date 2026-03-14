@@ -15,9 +15,12 @@ from app.suggestion.schemas import (
     RuleSuggestionEditIn,
     RuleSuggestionGenerateIn,
     RuleSuggestionGenerateOut,
+    RuleSuggestionGetOut,
     RuleSuggestionLogOut,
     RuleSuggestionOut,
     RuleSuggestionRejectIn,
+    RuleSuggestionSimulateIn,
+    RuleSuggestionSimulateOut,
     SuggestionStatus,
 )
 
@@ -66,7 +69,7 @@ def list_rule_suggestions(
 
 @router.get(
     "/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}",
-    response_model=ApiResponse[RuleSuggestionOut],
+    response_model=ApiResponse[RuleSuggestionGetOut],
 )
 def get_rule_suggestion(
     rule_set_id: UUID,
@@ -181,6 +184,46 @@ def apply_rule_suggestion(
     row = suggestion_service.apply_rule_suggestion(
         session=session,
         company_id=rule_set_id,
+        suggestion_id=suggestion_id,
+        actor_user_id=principal.user_id,
+        payload=payload,
+    )
+    return ApiResponse(ok=True, data=row)
+
+
+@router.post(
+    "/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}/simulate",
+    response_model=ApiResponse[RuleSuggestionSimulateOut],
+)
+def simulate_rule_suggestion(
+    rule_set_id: UUID,
+    suggestion_id: UUID,
+    session: SessionDep,
+    principal: CurrentPrincipal,
+    payload: RuleSuggestionSimulateIn,
+):
+    row = suggestion_service.simulate_rule_suggestion(
+        session=session,
+        company_id=rule_set_id,
+        suggestion_id=suggestion_id,
+        actor_user_id=principal.user_id,
+        payload=payload,
+    )
+    return ApiResponse(ok=True, data=row)
+
+
+@router.post(
+    "/rule-suggestions/{suggestion_id}/simulate",
+    response_model=ApiResponse[RuleSuggestionSimulateOut],
+)
+def simulate_rule_suggestion_by_id(
+    suggestion_id: UUID,
+    session: SessionDep,
+    principal: CurrentPrincipal,
+    payload: RuleSuggestionSimulateIn,
+):
+    row = suggestion_service.simulate_rule_suggestion_by_id(
+        session=session,
         suggestion_id=suggestion_id,
         actor_user_id=principal.user_id,
         payload=payload,

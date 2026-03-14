@@ -63,11 +63,18 @@ def create_company(*, session: Session, user_id: UUID, name: str) -> tuple[Compa
                 field="user_id",
                 reason="single_user_requires_owner",
             )
-        company = _load_company_or_404(
-            session=session,
-            company_id=existing_membership.company_id,
+        raise AppError(
+            409,
+            ErrorCode.RULE_SET_ALREADY_EXISTS,
+            "User already has an active personal rule set",
+            details=[
+                {
+                    "field": "rule_set_id",
+                    "reason": "already_exists",
+                    "extra": {"existing_rule_set_id": str(existing_membership.company_id)},
+                }
+            ],
         )
-        return company, existing_membership
 
     company = Company(name=normalized_name)
     session.add(company)

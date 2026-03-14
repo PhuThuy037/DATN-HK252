@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+import re
 
 MASKABLE_TYPES = {"PHONE", "EMAIL", "TAX_ID", "CREDIT_CARD", "CCCD"}
+_CODE_LIKE_TERM_RE = re.compile(r"[A-Za-z0-9]{2,}(?:[-_][A-Za-z0-9]{1,}){1,}")
 
 
 @dataclass(slots=True)
@@ -17,9 +18,39 @@ class Span:
 
 
 class MaskService:
-    def mask(self, text: str, entities: list) -> str:
-        if not text or not entities:
+    def _mask_exact_terms(self, text: str, exact_terms: list[str]) -> str:
+        out = text
+        # Mask longer terms first to avoid partial replacement collisions.
+        ordered = sorted(
+            {
+                str(term or "").strip()
+                for term in exact_terms
+                if str(term or "").strip()
+            },
+            key=len,
+            reverse=True,
+        )
+        for term in ordered:
+            pattern = re.compile(re.escape(term), flags=re.IGNORECASE)
+            out = pattern.sub("[INTERNAL_CODE]", out)
+        return out
+
+    def mask(
+        self,
+        text: str,
+        entities: list,
+        *,
+        extra_terms: list[str] | None = None,
+    ) -> str:
+        if not text:
             return text
+
+        raw_extra_terms = list(extra_terms or [])
+        code_like_terms = [
+            term
+            for term in raw_extra_terms
+            if _CODE_LIKE_TERM_RE.search(str(term or "").strip()) is not None
+        ]
 
         spans: list[Span] = []
         n = len(text)
@@ -49,7 +80,9 @@ class MaskService:
             )
 
         if not spans:
-            return text
+            if not code_like_terms:
+                return text
+            return self._mask_exact_terms(text, code_like_terms)
 
         # 1) sort theo start asc, rồi chọn span tốt nhất khi overlap
         spans.sort(key=lambda s: (s.start, -(s.end - s.start), -s.score))
@@ -99,4 +132,6 @@ class MaskService:
             label = f"[{s.type}]"
             out = out[: s.start] + label + out[s.end :]
 
-        return out
+        if not code_like_terms:
+            return out
+        return self._mask_exact_terms(out, code_like_terms)

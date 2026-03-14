@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field as PydanticField
+from pydantic import BaseModel, ConfigDict, Field as PydanticField, field_validator
 
 from app.common.enums import RagMode, RuleAction, RuleScope, RuleSeverity
 
@@ -83,6 +83,44 @@ class RuleSuggestionApplyOut(BaseModel):
     context_term_ids: list[UUID]
 
 
+class RuleSuggestionSimulateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    samples: list[str] = PydanticField(min_length=1, max_length=100)
+    include_examples: bool = True
+
+    @field_validator("samples")
+    @classmethod
+    def _validate_samples(cls, value: list[str]) -> list[str]:
+        out: list[str] = []
+        for idx, raw in enumerate(value):
+            text = str(raw or "").strip()
+            if not text:
+                raise ValueError(f"samples[{idx}] must be non-empty")
+            if len(text) > 2000:
+                raise ValueError(f"samples[{idx}] exceeds 2000 characters")
+            out.append(text)
+        return out
+
+
+class RuleSuggestionSimulateResultOut(BaseModel):
+    content: str
+    matched: bool
+    predicted_action: str
+
+
+class RuleSuggestionSimulateOut(BaseModel):
+    suggestion_id: UUID
+    sample_size: int
+    runtime_usable: bool = True
+    runtime_warnings: list[str] = PydanticField(default_factory=list)
+    matched_count: int
+    action_breakdown: dict[str, int]
+    results: list[RuleSuggestionSimulateResultOut] = PydanticField(
+        default_factory=list
+    )
+
+
 class RuleDuplicateCandidateOut(BaseModel):
     rule_id: UUID
     stable_key: str
@@ -107,6 +145,31 @@ class RuleDuplicateCheckOut(BaseModel):
     llm_fallback_used: bool = False
 
 
+class RuleSuggestionExplanationOut(BaseModel):
+    summary: str
+    detected_intent: str
+    derived_terms: list[str] = PydanticField(default_factory=list)
+    action_reason: str
+
+
+class RuleSuggestionQualitySignalsOut(BaseModel):
+    intent_confidence: float = PydanticField(ge=0.0, le=1.0)
+    duplicate_risk: str
+    conflict_risk: str
+    generation_source: str
+    has_policy_context: bool
+    intent_guard_applied: bool = False
+    intent_mismatch_detected: bool = False
+    runtime_usable: bool = True
+    runtime_warnings: list[str] = PydanticField(default_factory=list)
+
+
+class RuleSuggestionRetrievalContextOut(BaseModel):
+    has_policy_context: bool = False
+    policy_chunk_ids: list[str] = PydanticField(default_factory=list)
+    related_rule_ids: list[str] = PydanticField(default_factory=list)
+
+
 class RuleSuggestionOut(BaseModel):
     id: UUID
     rule_set_id: UUID
@@ -125,6 +188,14 @@ class RuleSuggestionOut(BaseModel):
 
 class RuleSuggestionGenerateOut(RuleSuggestionOut):
     duplicate_check: RuleDuplicateCheckOut
+    explanation: RuleSuggestionExplanationOut
+    quality_signals: RuleSuggestionQualitySignalsOut
+    retrieval_context: RuleSuggestionRetrievalContextOut
+
+
+class RuleSuggestionGetOut(RuleSuggestionOut):
+    explanation: RuleSuggestionExplanationOut
+    quality_signals: RuleSuggestionQualitySignalsOut
 
 
 class RuleSuggestionLogOut(BaseModel):

@@ -1,7 +1,9 @@
 # app/decision/scan_engine_local.py
 from __future__ import annotations
 
+import re
 import time
+import unicodedata
 from typing import Any, Optional
 from uuid import UUID
 
@@ -160,6 +162,63 @@ class ScanEngineLocal:
 
         return has_supported
 
+    def _fold_text(self, text: str) -> str:
+        raw = str(text or "").lower().replace("\u0111", "d")
+        normalized = unicodedata.normalize("NFKD", raw)
+        no_marks = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+        return re.sub(r"\s+", " ", no_marks).strip()
+
+    def _match_exact_terms_in_text(
+        self,
+        *,
+        text: str,
+        exact_terms: list[str],
+        limit: int = 20,
+    ) -> list[str]:
+        if not exact_terms:
+            return []
+
+        raw_text = str(text or "").lower()
+        fold_text = self._fold_text(text)
+        out: list[str] = []
+        seen: set[str] = set()
+        safe_limit = max(1, int(limit))
+
+        for term in exact_terms:
+            normalized_term = str(term or "").strip().lower()
+            if len(normalized_term) < 4:
+                continue
+            if normalized_term in seen:
+                continue
+
+            fold_term = self._fold_text(normalized_term)
+            if normalized_term in raw_text or (fold_term and fold_term in fold_text):
+                seen.add(normalized_term)
+                out.append(normalized_term)
+                if len(out) >= safe_limit:
+                    break
+        return out
+
+    def _merge_context_keywords(
+        self,
+        *,
+        context_keywords: list[str],
+        extra_keywords: list[str],
+        limit: int = 24,
+    ) -> list[str]:
+        out: list[str] = []
+        seen: set[str] = set()
+
+        for value in list(context_keywords) + list(extra_keywords):
+            item = str(value or "").strip().lower()
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            out.append(item)
+            if len(out) >= max(1, int(limit)):
+                break
+        return out
+
     def _get_effective_rag_toggles(
         self,
         *,
@@ -239,6 +298,14 @@ class ScanEngineLocal:
             persona_keywords_override=overrides.persona_keywords,
         )
         signals = self.context.to_signals_dict(ctx)
+        matched_exact_terms = self._match_exact_terms_in_text(
+            text=text,
+            exact_terms=overrides.exact_terms,
+        )
+        signals["context_keywords"] = self._merge_context_keywords(
+            context_keywords=list(signals.get("context_keywords") or []),
+            extra_keywords=matched_exact_terms,
+        )
         timing_ms_by_stage["context_score"] = int((time.perf_counter() - ts) * 1000)
 
         signals["security"] = {
