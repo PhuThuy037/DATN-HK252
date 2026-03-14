@@ -101,7 +101,7 @@ def main() -> None:
 
         print("[2/4] create rule set and baseline rule")
         rule_set_id = create_rule_set(client, token)
-        stable_key = "company.custom.phone.block.semantic"
+        stable_key = "personal.custom.phone.block.semantic"
         baseline = create_rule_set_rule(client, token, rule_set_id, stable_key)
         if str(baseline.get("stable_key") or "") != stable_key:
             fail(f"unexpected baseline stable_key: {baseline}")
@@ -146,6 +146,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
 

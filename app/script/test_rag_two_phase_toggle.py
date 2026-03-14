@@ -271,7 +271,7 @@ async def main_async() -> None:
         session.refresh(company)
         rule_set_id = company.id
 
-    force_key = f"company.test.two_phase.force_mask.{marker}"
+    force_key = f"personal.test.two_phase.force_mask.{marker}"
 
     # Case 1: local phase-1 mask => do not call RAG.
     out1, calls1 = await _run_scan_case(
@@ -360,6 +360,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
 

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import time
@@ -306,7 +306,7 @@ def main() -> None:
             fail(f"missing draft suggestion_id: {draft_generated}")
 
         draft_token = "zxq-thuydt123-1989"
-        draft_stable_key = f"company.custom.simulate.draft.internal_code.{int(time.time())}"
+        draft_stable_key = f"personal.custom.simulate.draft.internal_code.{int(time.time())}"
         draft_edited = edit_suggestion(
             client,
             token,
@@ -474,7 +474,7 @@ def main() -> None:
         if not approved_suggestion_id:
             fail(f"missing approved suggestion_id: {approved_generated}")
 
-        approved_stable_key = f"company.custom.simulate.approved.unique.{int(time.time())}"
+        approved_stable_key = f"personal.custom.simulate.approved.unique.{int(time.time())}"
         approved_edited = edit_suggestion(
             client,
             token,
@@ -574,3 +574,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

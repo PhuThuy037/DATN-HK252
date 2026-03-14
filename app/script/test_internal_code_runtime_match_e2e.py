@@ -112,6 +112,26 @@ def apply_suggestion(client: httpx.Client, token: str, rule_set_id: str, suggest
     return out
 
 
+def simulate_suggestion(
+    client: httpx.Client,
+    token: str,
+    suggestion_id: str,
+    *,
+    samples: list[str],
+) -> dict[str, Any]:
+    r = client.post(
+        f"{V1}/rule-suggestions/{suggestion_id}/simulate",
+        json={"samples": samples, "include_examples": True},
+        headers=auth_headers(token),
+    )
+    if r.status_code != 200:
+        fail(f"simulate suggestion failed: HTTP {r.status_code}\n{r.text}")
+    out = r.json().get("data") or {}
+    if int(out.get("sample_size") or 0) != len(samples):
+        fail(f"simulate sample_size mismatch: expected={len(samples)}, got={out}")
+    return out
+
+
 def create_rule_set_conversation(client: httpx.Client, token: str, rule_set_id: str) -> str:
     r = client.post(
         f"{V1}/rule-sets/{rule_set_id}/conversations",
@@ -169,15 +189,16 @@ def find_rule_id_by_stable_key(rows: list[dict[str, Any]], stable_key: str) -> s
 
 def main() -> None:
     with httpx.Client(timeout=API_TIMEOUT_SECONDS) as client:
-        print("[1/9] register/login fresh user")
+        print("[1/10] register/login fresh user")
         token = register_and_login_fresh_user(client)
 
-        print("[2/9] create rule-set")
+        print("[2/10] create rule-set")
         rule_set_id = create_rule_set(client, token)
         print(f"rule_set_id={rule_set_id}")
 
-        token_term = f"ZXQ-UNSEEN-{int(time.time())}"
-        print("[3/9] generate custom-secret suggestion")
+        # Keep token without digits to avoid accidental overlap with phone regex.
+        token_term = "ZXQ-UNSEEN-ALPHA-TOKEN"
+        print("[3/10] generate custom-secret suggestion")
         generated = generate_custom_secret_suggestion(client, token, rule_set_id, token_term)
         suggestion_id = str(generated.get("id") or "").strip()
         if not suggestion_id:
@@ -188,15 +209,33 @@ def main() -> None:
         if expected_action not in {"mask", "block"}:
             fail(f"custom-secret expected action should be mask/block, got={expected_action}, draft={draft_rule}")
 
-        print("[4/9] confirm + apply suggestion")
+        print("[4/10] confirm suggestion")
         confirm_suggestion(client, token, rule_set_id, suggestion_id)
+
+        print("[5/10] warm runtime caches with simulate before apply (cache regression guard)")
+        simulated = simulate_suggestion(
+            client,
+            token,
+            suggestion_id,
+            samples=[
+                f"Toi co ma don hang {token_term.lower()}",
+                "No sensitive token here",
+            ],
+        )
+        sim_results = list(simulated.get("results") or [])
+        if not sim_results:
+            fail(f"simulate should return results: {simulated}")
+        if str((sim_results[0] or {}).get("predicted_action") or "").strip().upper() == "ALLOW":
+            fail(f"simulate positive sample should not predict ALLOW: {simulated}")
+
+        print("[6/10] apply suggestion")
         applied = apply_suggestion(client, token, rule_set_id, suggestion_id)
         applied_rule_id = str(applied.get("rule_id") or "").strip()
 
-        print("[5/9] create conversation under same rule-set")
+        print("[7/10] create conversation under same rule-set")
         conversation_id = create_rule_set_conversation(client, token, rule_set_id)
 
-        print("[6/9] send exact-token message; runtime must match applied rule")
+        print("[8/10] send exact-token message immediately after apply; runtime must match new rule")
         pos_payload = send_message(
             client,
             token,
@@ -207,6 +246,10 @@ def main() -> None:
         pos_action = str(pos_data.get("final_action") or "").strip().lower()
         if pos_action == "allow":
             fail(f"final_action should not be allow for matched internal code rule: {pos_payload}")
+        if pos_action == "mask":
+            masked = str(pos_data.get("content_masked") or "").strip()
+            if not masked:
+                fail(f"content_masked must be present when final_action=mask: {pos_payload}")
 
         matched_ids = [str(x) for x in (pos_data.get("matched_rule_ids") or []) if str(x)]
         if not matched_ids:
@@ -219,7 +262,7 @@ def main() -> None:
         if token_term.lower() not in kws:
             fail(f"context_keywords should include exact token term: token={token_term.lower()}, kws={kws}")
 
-        print("[7/9] send no-token message; custom internal-code rule must not over-match")
+        print("[9/10] send no-token message; custom internal-code rule must not over-match")
         neg_payload = send_message(
             client,
             token,
@@ -231,7 +274,7 @@ def main() -> None:
         if applied_rule_id in neg_matched_ids:
             fail(f"custom internal-code rule matched bừa on no-token message: {neg_payload}")
 
-        print("[8/9] non-INTERNAL_CODE old rule path should still work (global phone)")
+        print("[10/10] non-INTERNAL_CODE old rule path should still work (global phone)")
         rows = list_rules(client, token, rule_set_id)
         global_phone_rule_id = find_rule_id_by_stable_key(rows, GLOBAL_PHONE_KEY)
         if not global_phone_rule_id:
@@ -250,9 +293,6 @@ def main() -> None:
         if applied_rule_id in pii_matched_ids:
             fail(f"internal-code rule should not match phone-only message: {pii_payload}")
 
-        print("[9/9] final action sanity for positive/negative paths")
-        if expected_action in {"mask", "block"} and pos_action == "allow":
-            fail(f"positive case action should not be allow, got={pos_action}")
         # no-token case should not be forced by custom internal-code rule.
         # It can still be allow/mask/block by other independent rules.
 

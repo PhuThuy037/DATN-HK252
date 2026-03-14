@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -20,7 +20,7 @@ from app.suggestion.schemas import (
 )
 
 
-def _sample_draft(*, stable_key: str = "company.custom.rag.feature3") -> RuleSuggestionDraftPayload:
+def _sample_draft(*, stable_key: str = "personal.custom.rag.feature3") -> RuleSuggestionDraftPayload:
     return RuleSuggestionDraftPayload(
         rule=RuleSuggestionDraftRule(
             stable_key=stable_key,
@@ -116,7 +116,7 @@ def test_feature3_generate_uses_retrieval_context_success(monkeypatch: pytest.Mo
             top_k: int = 3,
         ) -> list[dict[str, object]]:
             _ = (prompt, user_id, top_k)
-            return [{"rule_id": "r_101", "stable_key": "company.custom.existing"}]
+            return [{"rule_id": "r_101", "stable_key": "personal.custom.existing"}]
 
     def _fake_generate_with_llm(
         prompt: str,
@@ -150,7 +150,7 @@ def test_feature3_generate_uses_retrieval_context_success(monkeypatch: pytest.Mo
     assert captured["policy_chunks"] == [
         {"chunk_id": "p_12", "content": "mask personal email", "similarity": 0.91}
     ]
-    assert captured["rule_references"] == [{"rule_id": "r_101", "stable_key": "company.custom.existing"}]
+    assert captured["rule_references"] == [{"rule_id": "r_101", "stable_key": "personal.custom.existing"}]
     assert meta["context_retrieval"]["has_policy_context"] is True
     assert meta["context_retrieval"]["policy_chunk_ids"] == ["p_12"]
     assert meta["context_retrieval"]["related_rule_ids"] == ["r_101"]
@@ -325,7 +325,7 @@ def test_feature3_fallback_heuristic_still_works_with_retrieval_context(
             top_k: int = 3,
         ) -> list[dict[str, object]]:
             _ = (prompt, user_id, top_k)
-            return [{"rule_id": "r_777", "stable_key": "company.custom.payroll.guard"}]
+            return [{"rule_id": "r_777", "stable_key": "personal.custom.payroll.guard"}]
 
     monkeypatch.setattr(suggestion_service, "SuggestionContextRetriever", _FakeRetriever)
     monkeypatch.setattr(
@@ -373,7 +373,7 @@ def test_feature3_generate_draft_keeps_normalize_and_semantic_guard_pipeline(
             top_k: int = 3,
         ) -> list[dict[str, object]]:
             _ = (prompt, user_id, top_k)
-            return [{"rule_id": "r_900", "stable_key": "company.custom.sample"}]
+            return [{"rule_id": "r_900", "stable_key": "personal.custom.sample"}]
 
     def _ensure(*, prompt: str, draft: RuleSuggestionDraftPayload) -> RuleSuggestionDraftPayload:
         _ = prompt
@@ -381,7 +381,7 @@ def test_feature3_generate_draft_keeps_normalize_and_semantic_guard_pipeline(
         return draft.model_copy(
             update={
                 "rule": draft.rule.model_copy(
-                    update={"stable_key": "company.custom.after.ensure"}
+                    update={"stable_key": "personal.custom.after.ensure"}
                 )
             }
         )
@@ -422,7 +422,7 @@ def test_feature3_generate_draft_keeps_normalize_and_semantic_guard_pipeline(
     )
 
     assert calls == ["ensure", "align", "semantic_guard", "normalize"]
-    assert draft.rule.stable_key == "company.custom.after.ensure"
+    assert draft.rule.stable_key == "personal.custom.after.ensure"
     assert meta["context_retrieval"]["policy_chunk_ids"] == ["p_90"]
     assert meta["context_retrieval"]["related_rule_ids"] == ["r_900"]
 
@@ -432,7 +432,7 @@ def test_feature3_generate_keeps_duplicate_check_flow_after_retrieval_context(
 ) -> None:
     company_id = uuid4()
     actor_user_id = uuid4()
-    draft = _sample_draft(stable_key="company.custom.dup.check")
+    draft = _sample_draft(stable_key="personal.custom.dup.check")
     out_payload = _out_payload(company_id=company_id, actor_user_id=actor_user_id, draft=draft)
     duplicate_check = _duplicate_check()
     captured: dict[str, object] = {}
@@ -517,7 +517,7 @@ def test_feature3_payroll_external_email_prompt_not_generic_office_branch() -> N
 
 def test_feature3_align_guard_rewrites_bad_llm_mapping_for_custom_secret() -> None:
     prompt = "Che token nội bộ ALPHA-SECRET-2026"
-    llm_bad = _sample_draft(stable_key="company.custom.bad.map")
+    llm_bad = _sample_draft(stable_key="personal.custom.bad.map")
 
     # Simulate wrong LLM map to common PII.
     llm_bad = llm_bad.model_copy(
@@ -555,7 +555,7 @@ def test_feature3_align_guard_rewrites_bad_llm_mapping_for_custom_secret() -> No
 
 def test_feature3_post_generate_intent_guard_sets_meta_and_quality_flags() -> None:
     prompt = "Block chuoi bi mat PRJ-X-7788"
-    llm_bad = _sample_draft(stable_key="company.custom.bad.guard").model_copy(
+    llm_bad = _sample_draft(stable_key="personal.custom.bad.guard").model_copy(
         update={
             "rule": _sample_draft().rule.model_copy(
                 update={"conditions": {"any": [{"entity_type": "EMAIL"}]}}
@@ -582,7 +582,7 @@ def test_feature3_post_generate_intent_guard_sets_meta_and_quality_flags() -> No
 
 def test_feature3_office_prompt_guard_removes_leaked_token_and_quality_warns() -> None:
     prompt = "Tạo rule mask thông tin hợp đồng nội bộ trong ngữ cảnh office"
-    bad = _sample_draft(stable_key="company.custom.bad.office.leak").model_copy(
+    bad = _sample_draft(stable_key="personal.custom.bad.office.leak").model_copy(
         update={
             "rule": _sample_draft().rule.model_copy(
                 update={
@@ -645,7 +645,7 @@ def test_feature3_office_prompt_guard_removes_leaked_token_and_quality_warns() -
 
 def test_feature3_runtime_usability_flags_unprompted_code_anchor() -> None:
     prompt = "Tạo rule mask thông tin hợp đồng nội bộ trong ngữ cảnh office"
-    bad = _sample_draft(stable_key="company.custom.bad.unprompted.anchor").model_copy(
+    bad = _sample_draft(stable_key="personal.custom.bad.unprompted.anchor").model_copy(
         update={
             "rule": _sample_draft().rule.model_copy(
                 update={
@@ -713,7 +713,7 @@ def test_feature3_quality_confidence_penalized_when_mismatch_unrepaired() -> Non
 
 def test_feature3_custom_secret_guard_repairs_abstract_keyword_condition() -> None:
     prompt = "Tao rule mask ma noi bo ZXQ-UNSEEN-9981"
-    bad = _sample_draft(stable_key="company.custom.abstract.keyword").model_copy(
+    bad = _sample_draft(stable_key="personal.custom.abstract.keyword").model_copy(
         update={
             "rule": _sample_draft().rule.model_copy(
                 update={
@@ -782,7 +782,7 @@ def test_feature3_generate_flow_custom_secret_guard_repairs_bad_llm_draft(
             _ = (prompt, user_id, top_k)
             return []
 
-    bad_llm = _sample_draft(stable_key="company.custom.bad.customsecret").model_copy(
+    bad_llm = _sample_draft(stable_key="personal.custom.bad.customsecret").model_copy(
         update={
             "rule": _sample_draft().rule.model_copy(
                 update={"conditions": {"any": [{"entity_type": "PHONE"}]}}
@@ -847,7 +847,7 @@ def test_feature3_generate_flow_payroll_external_guard_repairs_generic_office_dr
             _ = (prompt, user_id, top_k)
             return []
 
-    bad_llm = _sample_draft(stable_key="company.custom.bad.payroll").model_copy(
+    bad_llm = _sample_draft(stable_key="personal.custom.bad.payroll").model_copy(
         update={
             "rule": _sample_draft().rule.model_copy(
                 update={
@@ -892,7 +892,7 @@ def test_feature3_generate_flow_payroll_external_guard_repairs_generic_office_dr
 
 def test_feature3_post_generate_intent_guard_noop_for_non_target_prompt() -> None:
     prompt = "Mask phone numbers in normal customer support chats"
-    original = _sample_draft(stable_key="company.custom.keep.as.is")
+    original = _sample_draft(stable_key="personal.custom.keep.as.is")
 
     guarded, guard_meta = suggestion_service._post_generate_intent_guard(  # type: ignore[attr-defined]
         prompt=prompt,
@@ -909,7 +909,7 @@ def test_feature3_backward_compat_generate_contract_intact_for_regular_prompt(
 ) -> None:
     company_id = uuid4()
     actor_user_id = uuid4()
-    draft = _sample_draft(stable_key="company.custom.regular.prompt")
+    draft = _sample_draft(stable_key="personal.custom.regular.prompt")
     out_payload = _out_payload(company_id=company_id, actor_user_id=actor_user_id, draft=draft)
 
     generation_meta = {
@@ -962,3 +962,4 @@ def test_feature3_backward_compat_generate_contract_intact_for_regular_prompt(
     assert result.quality_signals.intent_mismatch_detected is False
     assert result.retrieval_context.has_policy_context is False
     assert result.retrieval_context.policy_chunk_ids == []
+

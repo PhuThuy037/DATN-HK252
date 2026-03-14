@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -50,7 +50,7 @@ def _duplicate_check_out() -> RuleDuplicateCheckOut:
 def _draft_custom_secret() -> RuleSuggestionDraftPayload:
     return RuleSuggestionDraftPayload(
         rule=RuleSuggestionDraftRule(
-            stable_key="company.custom.manual.mask_internal_code",
+            stable_key="personal.custom.manual.mask_internal_code",
             name="Mask internal token",
             description="Mask ZXQ-UNSEEN-9981",
             scope=RuleScope.prompt,
@@ -88,7 +88,7 @@ def _draft_internal_code_exact_token(token: str = "zxq-thuydt123-1989") -> RuleS
     normalized = str(token).strip().lower()
     return RuleSuggestionDraftPayload(
         rule=RuleSuggestionDraftRule(
-            stable_key="company.custom.manual.mask_internal_code",
+            stable_key="personal.custom.manual.mask_internal_code",
             name=f"Mask internal token {normalized}",
             description=f"Mask {normalized}",
             scope=RuleScope.prompt,
@@ -125,7 +125,7 @@ def _draft_internal_code_exact_token(token: str = "zxq-thuydt123-1989") -> RuleS
 def _draft_payroll_external_email() -> RuleSuggestionDraftPayload:
     return RuleSuggestionDraftPayload(
         rule=RuleSuggestionDraftRule(
-            stable_key="company.custom.manual.block_payroll_external_email",
+            stable_key="personal.custom.manual.block_payroll_external_email",
             name="Block payroll to personal email",
             description="Block payroll/salary sharing to personal email like gmail",
             scope=RuleScope.prompt,
@@ -161,7 +161,7 @@ def _draft_payroll_external_email() -> RuleSuggestionDraftPayload:
 def _draft_common_pii_email() -> RuleSuggestionDraftPayload:
     return RuleSuggestionDraftPayload(
         rule=RuleSuggestionDraftRule(
-            stable_key="company.custom.manual.mask_personal_email",
+            stable_key="personal.custom.manual.mask_personal_email",
             name="Mask personal email",
             description="Mask EMAIL entity",
             scope=RuleScope.prompt,
@@ -179,7 +179,7 @@ def _draft_common_pii_email() -> RuleSuggestionDraftPayload:
 def _draft_heuristic_abstract() -> RuleSuggestionDraftPayload:
     return RuleSuggestionDraftPayload(
         rule=RuleSuggestionDraftRule(
-            stable_key="company.custom.manual.office_abstract",
+            stable_key="personal.custom.manual.office_abstract",
             name="Office abstract mask",
             description="Heuristic-assisted abstract draft",
             scope=RuleScope.prompt,
@@ -626,6 +626,18 @@ def test_round1_confirm_apply_and_apply_idempotent(monkeypatch: pytest.MonkeyPat
         "_apply_context_terms",
         lambda **_kwargs: list(fake_context_term_ids),
     )
+    invalidated_context_company_ids: list[UUID | None] = []
+    monkeypatch.setattr(
+        suggestion_service,
+        "invalidate_context_runtime_cache",
+        lambda company_id: invalidated_context_company_ids.append(company_id),
+    )
+    invalidated_company_ids: list[UUID | None] = []
+    monkeypatch.setattr(
+        suggestion_service.RuleEngine,
+        "invalidate_cache",
+        lambda company_id=None, user_id=None: invalidated_company_ids.append(company_id),
+    )
 
     applied = suggestion_service.apply_rule_suggestion(
         session=session,  # type: ignore[arg-type]
@@ -641,6 +653,8 @@ def test_round1_confirm_apply_and_apply_idempotent(monkeypatch: pytest.MonkeyPat
     assert row.status == SuggestionStatus.applied.value
     assert isinstance(row.applied_result_json, dict)
     assert str(row.applied_result_json.get("rule_id") or "") == str(fake_rule_id)
+    assert invalidated_context_company_ids == [company_id]
+    assert invalidated_company_ids == [company_id]
 
     applied_again = suggestion_service.apply_rule_suggestion(
         session=session,  # type: ignore[arg-type]
@@ -651,6 +665,8 @@ def test_round1_confirm_apply_and_apply_idempotent(monkeypatch: pytest.MonkeyPat
     )
     assert applied_again.rule_id == fake_rule_id
     assert applied_again.context_term_ids == fake_context_term_ids
+    assert invalidated_context_company_ids == [company_id]
+    assert invalidated_company_ids == [company_id]
 
     negative_generated = suggestion_service.generate_rule_suggestion(
         session=session,  # type: ignore[arg-type]
@@ -740,7 +756,7 @@ def test_round1_simulate_contract_for_draft_and_approved(monkeypatch: pytest.Mon
         lambda **_kwargs: [
             suggestion_service.RuleRuntime(
                 rule_id=uuid4(),
-                stable_key="company.custom.manual.mask_internal_code",
+                stable_key="personal.custom.manual.mask_internal_code",
                 name="simulate runtime rule",
                 action=RuleAction.mask,
                 priority=100,
@@ -778,7 +794,7 @@ def test_round1_simulate_contract_for_draft_and_approved(monkeypatch: pytest.Mon
         return [
             suggestion_service.RuleMatch(
                 rule_id=uuid4(),
-                stable_key="company.custom.manual.mask_internal_code",
+                stable_key="personal.custom.manual.mask_internal_code",
                 name="simulate runtime rule",
                 action=RuleAction.mask,
                 priority=100,
@@ -881,7 +897,7 @@ def test_round1_simulate_merges_draft_exact_terms_into_context_keywords(
         lambda **_kwargs: [
             suggestion_service.RuleRuntime(
                 rule_id=uuid4(),
-                stable_key="company.custom.manual.mask_internal_code",
+                stable_key="personal.custom.manual.mask_internal_code",
                 name="simulate runtime rule",
                 action=RuleAction.mask,
                 priority=100,
@@ -920,7 +936,7 @@ def test_round1_simulate_merges_draft_exact_terms_into_context_keywords(
         return [
             suggestion_service.RuleMatch(
                 rule_id=uuid4(),
-                stable_key="company.custom.manual.mask_internal_code",
+                stable_key="personal.custom.manual.mask_internal_code",
                 name="simulate runtime rule",
                 action=RuleAction.mask,
                 priority=100,
@@ -992,7 +1008,7 @@ def test_round1_simulate_internal_code_exact_non_match_returns_allow(
         lambda **_kwargs: [
             suggestion_service.RuleRuntime(
                 rule_id=uuid4(),
-                stable_key="company.custom.manual.mask_internal_code",
+                stable_key="personal.custom.manual.mask_internal_code",
                 name="simulate runtime rule",
                 action=RuleAction.mask,
                 priority=100,
@@ -1030,7 +1046,7 @@ def test_round1_simulate_internal_code_exact_non_match_returns_allow(
         return [
             suggestion_service.RuleMatch(
                 rule_id=uuid4(),
-                stable_key="company.custom.manual.mask_internal_code",
+                stable_key="personal.custom.manual.mask_internal_code",
                 name="simulate runtime rule",
                 action=RuleAction.mask,
                 priority=100,
@@ -1110,3 +1126,4 @@ def test_round1_logs_history_has_before_after(monkeypatch: pytest.MonkeyPatch) -
     assert "suggestion.confirm" in actions
     assert any(x.after_json for x in logs)
     assert any(x.before_json for x in logs if x.action in {"suggestion.edit", "suggestion.confirm"})
+

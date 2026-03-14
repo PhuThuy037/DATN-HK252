@@ -133,7 +133,7 @@ def toggle_global_phone(
 
 def create_custom_phone_block(client: httpx.Client, token: str, rule_set_id: str) -> dict:
     payload = {
-        "stable_key": f"company.test.phone.block.{int(time.time())}",
+        "stable_key": f"personal.test.phone.block.{int(time.time())}",
         "name": "Company custom phone block",
         "description": "custom block for test",
         "scope": "prompt",
@@ -236,6 +236,7 @@ if __name__ == "__main__":
     except Exception as exc:
         print(f"FAIL: {exc}")
         sys.exit(1)
+
 
 
 

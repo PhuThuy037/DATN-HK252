@@ -227,7 +227,7 @@ def main() -> None:
         print("[6/10] edit success with entity_type split normalization")
         draft = dict(base.get("draft") or {})
         rule = dict(draft.get("rule") or {})
-        rule["stable_key"] = f"company.custom.phase3.multi.entity.{int(time.time())}"
+        rule["stable_key"] = f"personal.custom.phase3.multi.entity.{int(time.time())}"
         rule["name"] = "Phase3 multi-entity block"
         rule["conditions"] = {"any": [{"entity_type": "EMAIL|PHONE"}]}
         rule["action"] = "block"
@@ -356,6 +356,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
 

@@ -65,7 +65,7 @@ def create_job(client: httpx.Client, token: str, rule_set_id: str, content: str)
     payload = {
         "items": [
             {
-                "stable_key": "company.policy.test.alpha",
+                "stable_key": "personal.policy.test.alpha",
                 "title": "Policy Alpha",
                 "doc_type": "policy",
                 "content": content,
@@ -152,7 +152,7 @@ def main() -> None:
 
         print("[6/6] verify document version moved to 2")
         docs = list_docs(client, token, rule_set_id)
-        target = [d for d in docs if d.get("stable_key") == "company.policy.test.alpha"]
+        target = [d for d in docs if d.get("stable_key") == "personal.policy.test.alpha"]
         if len(target) != 1:
             fail(f"expected exactly 1 target doc, got={len(target)} docs={docs}")
         if int(target[0].get("version") or 0) < 2:
@@ -163,6 +163,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
 

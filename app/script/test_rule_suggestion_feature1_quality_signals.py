@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from app.common.enums import RagMode, RuleAction, RuleScope, RuleSeverity
 from app.suggestion import service as suggestion_service
@@ -12,7 +12,7 @@ from app.suggestion.schemas import (
 def _sample_draft() -> RuleSuggestionDraftPayload:
     return RuleSuggestionDraftPayload(
         rule=RuleSuggestionDraftRule(
-            stable_key="company.custom.test.feature1",
+            stable_key="personal.custom.test.feature1",
             name="Feature1 quality test",
             description="validate explanation and quality signals",
             scope=RuleScope.prompt,
@@ -40,7 +40,7 @@ def _sample_draft() -> RuleSuggestionDraftPayload:
 def _abstract_context_draft() -> RuleSuggestionDraftPayload:
     return RuleSuggestionDraftPayload(
         rule=RuleSuggestionDraftRule(
-            stable_key="company.custom.test.abstract",
+            stable_key="personal.custom.test.abstract",
             name="Abstract context keyword rule",
             description="runtime-usability guard test",
             scope=RuleScope.prompt,
@@ -163,3 +163,4 @@ def test_runtime_usability_auto_repair_for_exact_secret_prompt() -> None:
         repaired.rule.conditions,
         "zxq-unseen-9981",
     )
+

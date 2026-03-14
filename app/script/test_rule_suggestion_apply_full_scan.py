@@ -82,7 +82,7 @@ def edit_suggestion(
         "expected_version": expected_version,
         "draft": {
             "rule": {
-                "stable_key": f"company.custom.office.finance.block.{int(time.time())}",
+                "stable_key": f"personal.custom.office.finance.block.{int(time.time())}",
                 "name": "Block office finance by context",
                 "description": "e2e apply+full-scan test",
                 "scope": "prompt",
@@ -251,6 +251,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
 
