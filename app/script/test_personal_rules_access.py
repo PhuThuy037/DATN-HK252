@@ -52,15 +52,15 @@ def main() -> None:
         first_id = (r.json().get("data") or {}).get("id")
         assert first_id, "missing rule_set id"
 
-        # Idempotent: create returns existing owner rule set.
+        # Create again must fail clearly (no silent reuse).
         r = client.post(
             f"{BASE}/rule-sets",
             headers=headers(owner_token),
             json={"name": f"Owner Rule Set renamed {now}"},
         )
-        assert r.status_code == 200, ("create_rule_set_again", r.status_code, r.text)
-        second_id = (r.json().get("data") or {}).get("id")
-        assert second_id == first_id, ("idempotent_rule_set", first_id, second_id)
+        assert r.status_code == 409, ("create_rule_set_again", r.status_code, r.text)
+        err = (r.json().get("error") or {})
+        assert err.get("code") == "RULE_SET_ALREADY_EXISTS", ("error_code", err)
 
         r = client.get(f"{BASE}/rule-sets/{first_id}/rules", headers=headers(owner_token))
         assert r.status_code == 200, ("owner_list_rules", r.status_code, r.text)

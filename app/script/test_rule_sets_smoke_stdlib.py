@@ -75,13 +75,13 @@ def main() -> None:
     first_id = ((body.get("data") or {}).get("id") or "").strip()
     assert first_id, "missing rule_set id"
 
-    # idempotent create
+    # create again must fail clearly (no silent reuse)
     code, body = request_json(
         "POST", "/rule-sets", {"name": "Demo Rule Set 2"}, owner_token
     )
-    assert code == 200, ("create_rule_set_again", code, body)
-    second_id = ((body.get("data") or {}).get("id") or "").strip()
-    assert first_id == second_id, ("idempotent", first_id, second_id)
+    assert code == 409, ("create_rule_set_again", code, body)
+    err = body.get("error") or {}
+    assert err.get("code") == "RULE_SET_ALREADY_EXISTS", ("error_code", err)
 
     # list mine
     code, body = request_json("GET", "/rule-sets/me", token=owner_token)

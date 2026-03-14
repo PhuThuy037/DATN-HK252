@@ -69,6 +69,50 @@ def generate(client: httpx.Client, token: str, rule_set_id: str, prompt: str) ->
     return r.json().get("data") or {}
 
 
+def get_suggestion(
+    client: httpx.Client, token: str, rule_set_id: str, suggestion_id: str
+) -> dict[str, Any]:
+    r = client.get(
+        f"{V1}/rule-sets/{rule_set_id}/rule-suggestions/{suggestion_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if r.status_code != 200:
+        fail(f"get suggestion failed: HTTP {r.status_code}\n{r.text}")
+    return r.json().get("data") or {}
+
+
+def assert_feature1_fields(payload: dict[str, Any], *, source: str) -> None:
+    explanation = payload.get("explanation")
+    if not isinstance(explanation, dict):
+        fail(f"{source}: missing explanation object: {payload}")
+    for key in ["summary", "detected_intent", "derived_terms", "action_reason"]:
+        if key not in explanation:
+            fail(f"{source}: explanation missing key={key}: {explanation}")
+    if not isinstance(explanation.get("derived_terms"), list):
+        fail(f"{source}: explanation.derived_terms should be list: {explanation}")
+
+    quality = payload.get("quality_signals")
+    if not isinstance(quality, dict):
+        fail(f"{source}: missing quality_signals object: {payload}")
+    for key in [
+        "intent_confidence",
+        "duplicate_risk",
+        "conflict_risk",
+        "generation_source",
+        "has_policy_context",
+    ]:
+        if key not in quality:
+            fail(f"{source}: quality_signals missing key={key}: {quality}")
+
+    confidence = float(quality.get("intent_confidence") or 0.0)
+    if confidence < 0.0 or confidence > 1.0:
+        fail(f"{source}: intent_confidence out of range [0,1]: {quality}")
+    if str(quality.get("conflict_risk") or "") != "unknown":
+        fail(f"{source}: conflict_risk should be 'unknown' in phase 1: {quality}")
+    if bool(quality.get("has_policy_context")) is not False:
+        fail(f"{source}: has_policy_context should be false in phase 1: {quality}")
+
+
 def patch_edit(
     client: httpx.Client, token: str, rule_set_id: str, suggestion_id: str, draft: dict[str, Any], expected_version: int
 ) -> dict[str, Any]:
@@ -147,11 +191,19 @@ def main() -> None:
             fail(f"generate did not return suggestion id: {s1}")
         if s1.get("status") != "draft":
             fail(f"suggestion should be draft: {s1}")
+        assert_feature1_fields(s1, source="generate")
+
+        print("[3.1/8] get suggestion should include explanation + quality_signals")
+        got = get_suggestion(client, token, rule_set_id, suggestion_id)
+        if str(got.get("id") or "") != suggestion_id:
+            fail(f"get returned mismatched suggestion id: {got}")
+        assert_feature1_fields(got, source="get")
 
         print("[4/8] generate same prompt should dedupe to same suggestion")
         s2 = generate(client, token, rule_set_id, prompt)
         if str(s2.get("id") or "") != suggestion_id:
             fail(f"dedupe failed: first={suggestion_id}, second={s2.get('id')}")
+        assert_feature1_fields(s2, source="generate_dedupe")
 
         print("[5/8] edit draft")
         draft = dict(s1.get("draft") or {})
