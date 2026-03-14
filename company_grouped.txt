@@ -1,0 +1,949 @@
+﻿### alembic/versions/0f8e0583c04e_add_rag_policy_context_and_retrieval_.py
+30:         sa.Column("company_id", sa.Uuid(), nullable=True),
+45:             ["company_id"],
+51:         op.f("ix_context_terms_company_id"),
+53:         ["company_id"],
+71:         sa.Column("company_id", sa.Uuid(), nullable=True),
+84:             ["company_id"],
+94:         "ix_policy_documents_company_enabled",
+96:         ["company_id", "enabled"],
+100:         op.f("ix_policy_documents_company_id"),
+102:         ["company_id"],
+156:         sa.Column("company_id", sa.Uuid(), nullable=True),
+167:             ["company_id"],
+184:         op.f("ix_policy_chunks_company_id"),
+186:         ["company_id"],
+285:     op.drop_index(op.f("ix_policy_chunks_company_id"), table_name="policy_chunks")
+299:     op.drop_index(op.f("ix_policy_documents_company_id"), table_name="policy_documents")
+300:     op.drop_index("ix_policy_documents_company_enabled", table_name="policy_documents")
+305:     op.drop_index(op.f("ix_context_terms_company_id"), table_name="context_terms")
+
+### alembic/versions/24c1f5d987aa_add_rule_suggestions_tables.py
+28:         sa.Column("company_id", sa.Uuid(), nullable=False),
+60:         sa.ForeignKeyConstraint(["company_id"], ["companies.id"]),
+68:         "ix_rule_suggestions_company_status",
+70:         ["company_id", "status"],
+74:         "ix_rule_suggestions_company_created",
+76:         ["company_id", "created_at"],
+80:         "ix_rule_suggestions_company_dedupe",
+82:         ["company_id", "dedupe_key"],
+85:     op.create_index(op.f("ix_rule_suggestions_company_id"), "rule_suggestions", ["company_id"], unique=False)
+98:         sa.Column("company_id", sa.Uuid(), nullable=False),
+111:         sa.ForeignKeyConstraint(["company_id"], ["companies.id"]),
+122:         "ix_rule_suggestion_logs_company_created",
+124:         ["company_id", "created_at"],
+134:         op.f("ix_rule_suggestion_logs_company_id"),
+136:         ["company_id"],
+150:     op.drop_index(op.f("ix_rule_suggestion_logs_company_id"), table_name="rule_suggestion_logs")
+152:     op.drop_index("ix_rule_suggestion_logs_company_created", table_name="rule_suggestion_logs")
+163:     op.drop_index(op.f("ix_rule_suggestions_company_id"), table_name="rule_suggestions")
+164:     op.drop_index("ix_rule_suggestions_company_dedupe", table_name="rule_suggestions")
+165:     op.drop_index("ix_rule_suggestions_company_created", table_name="rule_suggestions")
+166:     op.drop_index("ix_rule_suggestions_company_status", table_name="rule_suggestions")
+
+### alembic/versions/3c1f7ea46d9b_add_company_system_prompt.py
+1: """add company system_prompt column
+
+### alembic/versions/7f2b1e6c9a10_add_rule_change_logs_and_rule_uniques.py
+30:         postgresql_where=sa.text("company_id IS NULL"),
+33:         "uq_rules_company_stable_key",
+35:         ["company_id", "stable_key"],
+37:         postgresql_where=sa.text("company_id IS NOT NULL"),
+43:         sa.Column("company_id", sa.Uuid(), nullable=False),
+57:         sa.ForeignKeyConstraint(["company_id"], ["companies.id"]),
+68:         "ix_rule_change_logs_company_created",
+70:         ["company_id", "created_at"],
+92:         op.f("ix_rule_change_logs_company_id"),
+94:         ["company_id"],
+115:     op.drop_index(op.f("ix_rule_change_logs_company_id"), table_name="rule_change_logs")
+119:     op.drop_index("ix_rule_change_logs_company_created", table_name="rule_change_logs")
+123:     op.drop_index("uq_rules_company_stable_key", table_name="rules")
+
+### alembic/versions/9850b0698762_add_column_stable_key_not_null.py
+31:         "ix_rules_stable_key_company",
+33:         ["stable_key", "company_id"],
+42:     op.drop_index("ix_rules_stable_key_company", table_name="rules")
+
+### alembic/versions/9b7d1c2e4a11_add_policy_ingest_jobs_and_stable_doc_fields.py
+65:         "ix_policy_documents_company_stable_key",
+67:         ["company_id", "stable_key"],
+75:         postgresql_where=sa.text("company_id IS NULL AND deleted_at IS NULL"),
+78:         "uq_policy_documents_company_stable_key",
+80:         ["company_id", "stable_key"],
+82:         postgresql_where=sa.text("company_id IS NOT NULL AND deleted_at IS NULL"),
+88:         sa.Column("company_id", sa.Uuid(), nullable=False),
+114:         sa.ForeignKeyConstraint(["company_id"], ["companies.id"]),
+120:         "ix_policy_ingest_jobs_company_created",
+122:         ["company_id", "created_at"],
+126:         "ix_policy_ingest_jobs_company_status",
+128:         ["company_id", "status"],
+132:         op.f("ix_policy_ingest_jobs_company_id"),
+134:         ["company_id"],
+160:         sa.Column("company_id", sa.Uuid(), nullable=False),
+183:         sa.ForeignKeyConstraint(["company_id"], ["companies.id"]),
+196:         "ix_policy_ingest_job_items_company_status",
+198:         ["company_id", "status"],
+202:         op.f("ix_policy_ingest_job_items_company_id"),
+204:         ["company_id"],
+235:     op.drop_index(op.f("ix_policy_ingest_job_items_company_id"), table_name="policy_ingest_job_items")
+237:         "ix_policy_ingest_job_items_company_status",
+249:     op.drop_index(op.f("ix_policy_ingest_jobs_company_id"), table_name="policy_ingest_jobs")
+250:     op.drop_index("ix_policy_ingest_jobs_company_status", table_name="policy_ingest_jobs")
+251:     op.drop_index("ix_policy_ingest_jobs_company_created", table_name="policy_ingest_jobs")
+254:     op.drop_index("uq_policy_documents_company_stable_key", table_name="policy_documents")
+256:     op.drop_index("ix_policy_documents_company_stable_key", table_name="policy_documents")
+
+### alembic/versions/b98fe549bb47_init_tables.py
+46:             sa.Enum("active", "inactive", name="company_status"),
+81:         "company_members",
+96:         sa.Column("company_id", sa.Uuid(), nullable=False),
+99:             sa.Enum("member", "company_admin", name="member_role"),
+112:             ["company_id"],
+121:             "user_id", "company_id", name="uq_company_members_user_company"
+125:         "ix_company_members_company_role_status",
+126:         "company_members",
+127:         ["company_id", "role", "status"],
+131:         "ix_company_members_company_status",
+132:         "company_members",
+133:         ["company_id", "status"],
+137:         "ix_company_members_user_status",
+138:         "company_members",
+158:         sa.Column("company_id", sa.Uuid(), nullable=True),
+170:             ["company_id"],
+180:         "ix_conversations_company_user",
+182:         ["company_id", "user_id"],
+209:         sa.Column("company_id", sa.Uuid(), nullable=True),
+246:             ["company_id"],
+256:         "ix_rules_company_enabled_scope",
+258:         ["company_id", "enabled", "scope"],
+262:         "ix_rules_company_enabled_scope_priority",
+264:         ["company_id", "enabled", "scope", "priority"],
+433:     op.drop_index("ix_rules_company_enabled_scope_priority", table_name="rules")
+434:     op.drop_index("ix_rules_company_enabled_scope", table_name="rules")
+438:     op.drop_index("ix_conversations_company_user", table_name="conversations")
+440:     op.drop_index("ix_company_members_user_status", table_name="company_members")
+441:     op.drop_index("ix_company_members_company_status", table_name="company_members")
+443:         "ix_company_members_company_role_status", table_name="company_members"
+445:     op.drop_table("company_members")
+
+### app/api/company.py
+10: from app.company import service as company_service
+11: from app.company.schemas import CompanyCreateIn, CompanyOut
+16: def _company_out(*, company, my_role) -> CompanyOut:
+17:     return CompanyOut(
+18:         id=company.id,
+19:         name=company.name,
+20:         status=company.status,
+21:         created_at=company.created_at,
+26: @router.post("/rule-sets", response_model=ApiResponse[CompanyOut])
+28:     payload: CompanyCreateIn,
+32:     company, owner_member = company_service.create_company(
+39:         data=_company_out(company=company, my_role=owner_member.role),
+43: @router.get("/rule-sets/me", response_model=ApiResponse[list[CompanyOut]])
+48:     rows = company_service.list_my_companies(
+52:     data = [_company_out(company=c, my_role=role) for c, role in rows]
+56: @router.get("/rule-sets/{rule_set_id}", response_model=ApiResponse[CompanyOut])
+62:     company, role = company_service.get_company_for_member(
+64:         company_id=rule_set_id,
+67:     return ApiResponse(ok=True, data=_company_out(company=company, my_role=role))
+
+### app/api/company_rules.py
+12:     CompanyRuleCreateIn,
+13:     CompanyRuleOut,
+14:     CompanyRuleToggleEnabledIn,
+15:     CompanyRuleUpdateIn,
+24:     response_model=ApiResponse[list[CompanyRuleOut]],
+31:     rows = rule_service.list_company_rules(
+33:         company_id=rule_set_id,
+49:     rows = rule_service.list_company_rule_change_logs(
+51:         company_id=rule_set_id,
+60:     response_model=ApiResponse[CompanyRuleOut],
+64:     payload: CompanyRuleCreateIn,
+68:     row = rule_service.create_company_custom_rule(
+70:         company_id=rule_set_id,
+79:     response_model=ApiResponse[CompanyRuleOut],
+84:     payload: CompanyRuleUpdateIn,
+88:     row = rule_service.update_company_rule(
+90:         company_id=rule_set_id,
+100:     response_model=ApiResponse[CompanyRuleOut],
+108:     row = rule_service.soft_delete_company_rule(
+110:         company_id=rule_set_id,
+119:     response_model=ApiResponse[CompanyRuleOut],
+124:     payload: CompanyRuleToggleEnabledIn,
+128:     row = rule_service.toggle_global_rule_for_company(
+130:         company_id=rule_set_id,
+
+### app/api/company_settings.py
+10: from app.company import service as company_service
+11: from app.company.schemas import CompanySystemPromptOut, CompanySystemPromptUpdateIn
+18:     response_model=ApiResponse[CompanySystemPromptOut],
+25:     company = company_service.get_system_prompt(
+27:         company_id=rule_set_id,
+32:         data=CompanySystemPromptOut(
+33:             rule_set_id=company.id,
+34:             system_prompt=company.system_prompt,
+41:     response_model=ApiResponse[CompanySystemPromptOut],
+45:     payload: CompanySystemPromptUpdateIn,
+49:     company = company_service.update_system_prompt(
+51:         company_id=rule_set_id,
+57:         data=CompanySystemPromptOut(
+58:             rule_set_id=company.id,
+59:             system_prompt=company.system_prompt,
+
+### app/api/conversation.py
+31:         rule_set_id=c.company_id,
+66:     c = convo_service.create_company_conversation(
+69:         company_id=rule_set_id,
+
+### app/api/debug.py
+16: from app.permissions.loaders.conversation import load_company_member_active_or_403
+65:     member = load_company_member_active_or_403(
+67:         company_id=req.rule_set_id,
+70:     if member.role != MemberRole.company_admin:
+79:         company_id=req.rule_set_id,
+98:         company_id=req.rule_set_id,
+
+### app/api/policy_admin.py
+31:     rows = policy_service.list_company_policy_documents(
+33:         company_id=rule_set_id,
+50:     row = policy_service.toggle_company_policy_document_enabled(
+52:         company_id=rule_set_id,
+70:     row = policy_service.soft_delete_company_policy_document(
+72:         company_id=rule_set_id,
+91:         company_id=rule_set_id,
+110:         company_id=rule_set_id,
+129:         company_id=rule_set_id,
+148:         company_id=rule_set_id,
+
+### app/api/rule_suggestions.py
+42:         company_id=rule_set_id,
+62:         company_id=rule_set_id,
+82:         company_id=rule_set_id,
+102:         company_id=rule_set_id,
+123:         company_id=rule_set_id,
+144:         company_id=rule_set_id,
+165:         company_id=rule_set_id,
+186:         company_id=rule_set_id,
+207:         company_id=rule_set_id,
+
+### app/auth/model.py
+33:     company_memberships: list["CompanyMember"] = Relationship(back_populates="user")
+
+### app/common/enums.py
+8: class CompanyStatus(str, Enum):
+15:     company_admin = "company_admin"
+
+### app/company/model.py
+7: from app.common.enums import CompanyStatus
+10: class Company(TimestampMixin, SQLModel, table=True):
+17:     status: CompanyStatus = Field(
+18:         default=CompanyStatus.active,
+21:                 CompanyStatus,
+22:                 name="company_status",
+26:             server_default=CompanyStatus.active.value,
+36:     members: list["CompanyMember"] = Relationship(back_populates="company")
+37:     rules: list["Rule"] = Relationship(back_populates="company")
+38:     conversations: list["Conversation"] = Relationship(back_populates="company")
+
+### app/company/schemas.py
+9: from app.common.enums import CompanyStatus, MemberRole, MemberStatus
+19:     status: CompanyStatus
+24: class CompanyMemberAddIn(BaseModel):
+28: class CompanyMemberUpdateIn(BaseModel):
+33: class CompanyMemberOut(BaseModel):
+49: class CompanySystemPromptUpdateIn(BaseModel):
+54: CompanyCreateIn = RuleSetCreateIn
+55: CompanyOut = RuleSetOut
+56: CompanySystemPromptOut = RuleSetSystemPromptOut
+
+### app/company/service.py
+10: from app.company.model import Company
+11: from app.company_member.model import CompanyMember
+13: from app.permissions.loaders.conversation import load_company_member_active_or_403
+16: def _load_company_or_404(*, session: Session, company_id: UUID) -> Company:
+17:     company = session.get(Company, company_id)
+18:     if not company:
+20:     return company
+23: def _load_active_membership(*, session: Session, user_id: UUID) -> CompanyMember | None:
+25:         select(CompanyMember)
+26:         .where(CompanyMember.user_id == user_id)
+27:         .where(CompanyMember.status == MemberStatus.active)
+28:         .order_by(CompanyMember.joined_at.desc())
+33: def _require_rule_set_owner(*, session: Session, company_id: UUID, user_id: UUID) -> CompanyMember:
+34:     member = load_company_member_active_or_403(
+36:         company_id=company_id,
+39:     if member.role != MemberRole.company_admin:
+48: def create_company(*, session: Session, user_id: UUID, name: str) -> tuple[Company, CompanyMember]:
+60:         if existing_membership.role != MemberRole.company_admin:
+74:                     "extra": {"existing_rule_set_id": str(existing_membership.company_id)},
+79:     company = Company(name=normalized_name)
+80:     session.add(company)
+83:     owner_member = CompanyMember(
+84:         company_id=company.id,
+86:         role=MemberRole.company_admin,
+91:     session.refresh(company)
+93:     return company, owner_member
+96: def list_my_companies(*, session: Session, user_id: UUID) -> list[tuple[Company, MemberRole]]:
+98:     if member is None or member.role != MemberRole.company_admin:
+101:     company = _load_company_or_404(session=session, company_id=member.company_id)
+102:     return [(company, member.role)]
+105: def get_company_for_member(
+106:     *, session: Session, company_id: UUID, user_id: UUID
+107: ) -> tuple[Company, MemberRole]:
+108:     company = _load_company_or_404(session=session, company_id=company_id)
+111:         company_id=company_id,
+114:     return company, member.role
+120:     company_id: UUID,
+131: def list_company_members(
+132:     *, session: Session, company_id: UUID, actor_user_id: UUID
+144:     company_id: UUID,
+157: def get_system_prompt(*, session: Session, company_id: UUID, user_id: UUID) -> Company:
+158:     company = _load_company_or_404(session=session, company_id=company_id)
+159:     _require_rule_set_owner(session=session, company_id=company_id, user_id=user_id)
+160:     return company
+166:     company_id: UUID,
+169: ) -> Company:
+170:     company = _load_company_or_404(session=session, company_id=company_id)
+171:     _require_rule_set_owner(session=session, company_id=company_id, user_id=user_id)
+174:     company.system_prompt = normalized or None
+175:     session.add(company)
+177:     session.refresh(company)
+178:     return company
+
+### app/company_member/model.py
+13: class CompanyMember(TimestampMixin, SQLModel, table=True):
+14:     __tablename__ = "company_members"
+17:             "user_id", "company_id", name="uq_company_members_user_company"
+19:         Index("ix_company_members_company_status", "company_id", "status"),
+20:         Index("ix_company_members_user_status", "user_id", "status"),
+21:         Index("ix_company_members_company_role_status", "company_id", "role", "status"),
+27:     company_id: UUID = Field(foreign_key="companies.id", nullable=False)
+59:     user: "User" = Relationship(back_populates="company_memberships")
+60:     company: "Company" = Relationship(back_populates="members")
+
+### app/conversation/model.py
+16:         Index("ix_conversations_company_user", "company_id", "user_id"),
+23:     # NULL = user personal chat, NOT NULL = company chat
+24:     company_id: Optional[UUID] = Field(default=None, foreign_key="companies.id")
+49:     company: Optional["Company"] = Relationship(back_populates="conversations")
+
+### app/conversation/schemas.py
+95: class ConversationCreateCompanyIn(ConversationCreateRuleSetIn):
+
+### app/conversation/service.py
+20: from app.company.model import Company
+21: from app.company_member.model import CompanyMember
+67:     if conversation.company_id:
+68:         company = session.get(Company, conversation.company_id)
+69:         company_prompt = (company.system_prompt or "").strip() if company else ""
+70:         if company_prompt:
+71:             return company_prompt
+87:         company_id=None,
+99: def create_company_conversation(
+103:     company_id: UUID,
+109:         select(CompanyMember)
+110:         .where(CompanyMember.company_id == company_id)
+111:         .where(CompanyMember.user_id == user_id)
+112:         .where(CompanyMember.status == MemberStatus.active)
+115:     if not m or m.role != MemberRole.company_admin:
+124:         company_id=company_id,
+158:     if c.company_id is None and c.user_id != user_id:
+165:     if c.company_id is not None:
+167:             select(CompanyMember)
+168:             .where(CompanyMember.company_id == c.company_id)
+169:             .where(CompanyMember.user_id == user_id)
+170:             .where(CompanyMember.status == MemberStatus.active)
+173:         if not mem or mem.role != MemberRole.company_admin:
+187:         company_id=c.company_id,
+256:         company_id=c.company_id,
+
+### app/db/all_models.py
+2: from app.company.model import Company
+3: from app.company_member.model import CompanyMember
+
+### app/decision/context_term_runtime.py
+35: def _get_cached(company_id: Optional[UUID]) -> ContextRuntimeOverrides | None:
+37:         entry = _cache.get(company_id)
+42:             _cache.pop(company_id, None)
+47: def _set_cached(company_id: Optional[UUID], data: ContextRuntimeOverrides) -> None:
+49:         _cache[company_id] = (time.monotonic() + _CACHE_TTL_SECONDS, data)
+55:     company_id: Optional[UUID],
+57:     cached = _get_cached(company_id)
+62:     if company_id is None:
+63:         stmt = stmt.where(ContextTerm.company_id.is_(None))
+66:             (ContextTerm.company_id.is_(None)) | (ContextTerm.company_id == company_id)
+81:     # Latest rows win for same term to support company-specific override by recency.
+123:     _set_cached(company_id, out)
+
+### app/decision/scan_engine_local.py
+226:         company_id: Optional[UUID],
+231:             company_id=company_id,
+242:         company_id: Optional[UUID],
+251:             company_id=company_id,
+335:             company_id=company_id,
+387:             company_id=company_id,
+411:                 company_id=company_id,
+434:             company_id=company_id,
+
+### app/main.py
+7: from app.api.company import router as company_router
+8: from app.api.company_rules import router as company_rules_router
+9: from app.api.company_settings import router as company_settings_router
+65: app.include_router(company_router)
+66: app.include_router(company_rules_router)
+67: app.include_router(company_settings_router)
+
+### app/permissions/core.py
+24:     company_id: Optional[UUID] = None
+
+### app/permissions/guards/conversation_guard.py
+12:     load_company_member_active_or_403,
+31:         if c.company_id is None:
+38:             # ✅ personal owner -> treat as company_admin for permissions (or create separate enum)
+40:                 user_id=user_id, role=MemberRole.company_admin, company_id=None
+44:         # Company: require membership
+45:         m = load_company_member_active_or_403(
+46:             session=session, company_id=c.company_id, user_id=user_id
+48:         ctx = AuthContext(user_id=user_id, role=m.role, company_id=c.company_id)
+
+### app/permissions/loaders/conversation.py
+9: from app.company_member.model import CompanyMember
+22: def load_company_member_active_or_403(
+23:     *, session: Session, company_id: UUID, user_id: UUID
+24: ) -> CompanyMember:
+26:         select(CompanyMember)
+27:         .where(CompanyMember.company_id == company_id)
+28:         .where(CompanyMember.user_id == user_id)
+29:         .where(CompanyMember.status == MemberStatus.active)
+34:             "Company membership required",
+35:             field="company_id",
+36:             reason="not_company_member",
+
+### app/permissions/policies/conversation.py
+10:         return ctx.role == MemberRole.company_admin
+14:         return ctx.role == MemberRole.company_admin
+18:         return ctx.role == MemberRole.company_admin
+
+### app/policy/service.py
+15: from app.company.model import Company
+17: from app.permissions.loaders.conversation import load_company_member_active_or_403
+81: def _load_company_or_404(*, session: Session, company_id: UUID) -> Company:
+82:     company = session.get(Company, company_id)
+83:     if not company:
+84:         raise not_found("Company not found", field="company_id")
+85:     return company
+88: def _require_company_admin(*, session: Session, company_id: UUID, user_id: UUID) -> None:
+89:     member = load_company_member_active_or_403(
+91:         company_id=company_id,
+94:     if member.role != MemberRole.company_admin:
+96:             "Company admin required",
+97:             field="company_id",
+98:             reason="not_company_admin",
+105:         rule_set_id=row.company_id,
+122:         rule_set_id=row.company_id,
+191:     company_id: UUID,
+197:         company_id=company_id,
+226:                 company_id=company_id,
+243: def list_company_policy_documents(
+244:     *, session: Session, company_id: UUID, actor_user_id: UUID
+246:     _load_company_or_404(session=session, company_id=company_id)
+247:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+252:             .where(PolicyDocument.company_id == company_id)
+260: def toggle_company_policy_document_enabled(
+263:     company_id: UUID,
+268:     _load_company_or_404(session=session, company_id=company_id)
+269:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+272:     if not row or row.company_id != company_id or row.deleted_at is not None:
+282: def soft_delete_company_policy_document(
+285:     company_id: UUID,
+289:     _load_company_or_404(session=session, company_id=company_id)
+290:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+293:     if not row or row.company_id != company_id or row.deleted_at is not None:
+307:     company_id: UUID,
+311:     _load_company_or_404(session=session, company_id=company_id)
+312:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+317:         company_id=company_id,
+340:     company_id: UUID,
+344:     _load_company_or_404(session=session, company_id=company_id)
+345:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+351:             .where(PolicyIngestJob.company_id == company_id)
+362:     company_id: UUID,
+366:     _load_company_or_404(session=session, company_id=company_id)
+367:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+370:     if not job or job.company_id != company_id:
+391:     company_id: UUID,
+395:     _load_company_or_404(session=session, company_id=company_id)
+396:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+399:     if not source_job or source_job.company_id != company_id:
+432:         company_id=company_id,
+530:             company_id=doc.company_id,
+554:     company_id: UUID,
+561:         .where(PolicyDocument.company_id == company_id)
+568:             company_id=company_id,
+676:                 company_id=job.company_id,
+
+### app/rag/models/context_term.py
+16:     company_id: Optional[UUID] = Field(
+
+### app/rag/models/policy_chunk.py
+30:     company_id: Optional[UUID] = Field(
+
+### app/rag/models/policy_document.py
+13:         sa.Index("ix_policy_documents_company_enabled", "company_id", "enabled"),
+14:         sa.Index("ix_policy_documents_company_stable_key", "company_id", "stable_key"),
+19:     company_id: Optional[UUID] = Field(
+
+### app/rag/models/policy_ingest_job.py
+14:         sa.Index("ix_policy_ingest_jobs_company_created", "company_id", "created_at"),
+15:         sa.Index("ix_policy_ingest_jobs_company_status", "company_id", "status"),
+20:     company_id: UUID = Field(foreign_key="companies.id", nullable=False, index=True)
+
+### app/rag/models/policy_ingest_job_item.py
+15:         sa.Index("ix_policy_ingest_job_items_company_status", "company_id", "status"),
+21:     company_id: UUID = Field(foreign_key="companies.id", nullable=False, index=True)
+
+### app/rag/policy_retriever.py
+74:         company_id: Optional[UUID],
+97:         # - personal chat (company_id is None): only global
+98:         # - company chat: global + current company
+99:         if company_id is None:
+100:             stmt = stmt.where(PolicyChunk.company_id.is_(None)).where(
+101:                 PolicyDocument.company_id.is_(None)
+105:                 (PolicyChunk.company_id.is_(None)) | (PolicyChunk.company_id == company_id)
+107:                 (PolicyDocument.company_id.is_(None))
+108:                 | (PolicyDocument.company_id == company_id)
+
+### app/rag/rag_verifier.py
+60:         company_id: Optional[UUID],
+69:                 company_id=company_id,
+
+### app/rule/engine.py
+44:     - Company:
+45:       1) company override > company custom > global default
+46:       2) override(enabled=false) disables matching global stable_key for that company
+58:         cls, *, company_id: Optional[UUID], user_id: Optional[UUID]
+61:         return (company_id, user_id if company_id is None else None)
+65:         cls, company_id: Optional[UUID] = None, user_id: Optional[UUID] = None
+68:             if company_id is None and user_id is None:
+72:                 cls._cache_key(company_id=company_id, user_id=user_id), None
+76:         self, *, company_id: Optional[UUID], user_id: Optional[UUID]
+78:         cache_key = self._cache_key(company_id=company_id, user_id=user_id)
+92:         company_id: Optional[UUID],
+96:         cache_key = self._cache_key(company_id=company_id, user_id=user_id)
+107:         company_id: Optional[UUID],
+110:         cached = self._get_cached_rules(company_id=company_id, user_id=user_id)
+116:             company_id=company_id,
+119:         self._set_cached_rules(company_id=company_id, user_id=user_id, rules=rules)
+126:         company_id: Optional[UUID],
+129:         if company_id is None:
+132:                 .where(Rule.company_id.is_(None))
+164:                 .where(Rule.company_id.is_(None))
+168:         company_rows = list(
+171:                 .where(Rule.company_id == company_id)
+185:         for c in company_rows:
+203:             # else: explicit company disable, skip both override and global.
+213:         company_id: Optional[UUID],
+220:         rules = self.load_rules(session=session, company_id=company_id, user_id=user_id)
+
+### app/rule/model.py
+21:             postgresql_where=sa.text("company_id IS NULL"),
+24:             "uq_rules_company_stable_key",
+25:             "company_id",
+28:             postgresql_where=sa.text("company_id IS NOT NULL"),
+30:         Index("ix_rules_company_enabled_scope", "company_id", "enabled", "scope"),
+33:             "ix_rules_company_enabled_scope_priority",
+34:             "company_id",
+39:         Index("ix_rules_stable_key_company", "stable_key", "company_id"),
+44:     # NULL = global rule, NOT NULL = company rule
+45:     company_id: Optional[UUID] = Field(default=None, foreign_key="companies.id")
+104:     company: Optional["Company"] = Relationship(back_populates="rules")
+
+### app/rule/schemas.py
+15:     company_override = "company_override"
+16:     company_custom = "company_custom"
+19: class CompanyRuleOut(BaseModel):
+41: class CompanyRuleCreateIn(BaseModel):
+54: class CompanyRuleUpdateIn(BaseModel):
+66: class CompanyRuleToggleEnabledIn(BaseModel):
+107: RuleSetRuleOut = CompanyRuleOut
+108: RuleSetRuleCreateIn = CompanyRuleCreateIn
+109: RuleSetRuleUpdateIn = CompanyRuleUpdateIn
+110: RuleSetRuleToggleEnabledIn = CompanyRuleToggleEnabledIn
+
+### app/rule/seed.py
+71:                 .where(Rule.company_id.is_(None))
+89:                         company_id=None,
+
+### app/rule/service.py
+12: from app.company.model import Company
+13: from app.company_member.model import CompanyMember
+15: from app.permissions.loaders.conversation import load_company_member_active_or_403
+19:     CompanyRuleCreateIn,
+20:     CompanyRuleOut,
+21:     CompanyRuleUpdateIn,
+30: def _load_company_or_404(*, session: Session, company_id: UUID) -> Company:
+31:     company = session.get(Company, company_id)
+32:     if not company:
+33:         raise not_found("Company not found", field="company_id")
+34:     return company
+37: def _require_company_member(
+38:     *, session: Session, company_id: UUID, user_id: UUID
+39: ) -> CompanyMember:
+40:     return load_company_member_active_or_403(
+42:         company_id=company_id,
+47: def _require_company_admin(
+48:     *, session: Session, company_id: UUID, user_id: UUID
+50:     member = _require_company_member(
+52:         company_id=company_id,
+55:     if member.role != MemberRole.company_admin:
+57:             "Company admin required",
+58:             field="company_id",
+59:             reason="not_company_admin",
+63: def _has_active_company_membership(*, session: Session, user_id: UUID) -> bool:
+65:         select(CompanyMember.id)
+66:         .where(CompanyMember.user_id == user_id)
+67:         .where(CompanyMember.status == MemberStatus.active)
+73: def _require_no_active_company_membership(*, session: Session, user_id: UUID) -> None:
+74:     if _has_active_company_membership(session=session, user_id=user_id):
+76:             "Personal rule management is not allowed for company members",
+78:             reason="personal_rule_forbidden_for_company_member",
+183:     rows = session.exec(select(Rule.stable_key).where(Rule.company_id.is_(None))).all()
+188:     if rule.company_id is None:
+191:         return RuleOrigin.company_override
+192:     return RuleOrigin.company_custom
+197: ) -> CompanyRuleOut:
+198:     return CompanyRuleOut(
+200:         rule_set_id=rule.company_id,
+216:         can_edit_action=is_admin and origin == RuleOrigin.company_custom,
+254:         rule_set_id=row.company_id,
+268:         "company_id": str(rule.company_id) if rule.company_id else None,
+286:     company_id: UUID,
+296:             company_id=company_id,
+307: def _load_company_rule_by_stable_key(
+308:     *, session: Session, company_id: UUID, stable_key: str
+312:         .where(Rule.company_id == company_id)
+319:             "Duplicate company rules found for stable_key",
+325: def list_company_rules(
+326:     *, session: Session, company_id: UUID, actor_user_id: UUID
+327: ) -> list[CompanyRuleOut]:
+328:     _load_company_or_404(session=session, company_id=company_id)
+329:     _require_company_admin(
+331:         company_id=company_id,
+336:     runtime_rules = RuleEngine().load_rules(session=session, company_id=company_id)
+346:     out: list[CompanyRuleOut] = []
+361: def list_company_rule_change_logs(
+364:     company_id: UUID,
+368:     _load_company_or_404(session=session, company_id=company_id)
+369:     _require_company_admin(
+370:         session=session, company_id=company_id, user_id=actor_user_id
+377:             .where(RuleChangeLog.company_id == company_id)
+385: def create_company_custom_rule(
+388:     company_id: UUID,
+390:     payload: CompanyRuleCreateIn,
+391: ) -> CompanyRuleOut:
+392:     _load_company_or_404(session=session, company_id=company_id)
+393:     _require_company_admin(
+394:         session=session, company_id=company_id, user_id=actor_user_id
+411:     existed = _load_company_rule_by_stable_key(
+413:         company_id=company_id,
+419:             "stable_key already exists in this company",
+424:         company_id=company_id,
+441:         company_id=company_id,
+463:     RuleEngine.invalidate_cache(company_id)
+464:     return _to_rule_out(rule=row, origin=RuleOrigin.company_custom)
+467: def update_company_rule(
+470:     company_id: UUID,
+473:     payload: CompanyRuleUpdateIn,
+474: ) -> CompanyRuleOut:
+475:     _load_company_or_404(session=session, company_id=company_id)
+476:     _require_company_admin(
+477:         session=session, company_id=company_id, user_id=actor_user_id
+483:     if row.company_id != company_id:
+495:     if origin == RuleOrigin.company_override:
+502:                 "Only enabled can be changed for company override rule",
+532:         if origin != RuleOrigin.company_custom:
+536:                 "Only company custom rule can change action",
+546:         company_id=company_id,
+556:     RuleEngine.invalidate_cache(company_id)
+560: def soft_delete_company_rule(
+563:     company_id: UUID,
+566: ) -> CompanyRuleOut:
+567:     _load_company_or_404(session=session, company_id=company_id)
+568:     _require_company_admin(
+569:         session=session, company_id=company_id, user_id=actor_user_id
+575:     if row.company_id != company_id:
+588:         company_id=company_id,
+598:     RuleEngine.invalidate_cache(company_id)
+602: def toggle_global_rule_for_company(
+605:     company_id: UUID,
+609: ) -> CompanyRuleOut:
+610:     _load_company_or_404(session=session, company_id=company_id)
+611:     _require_company_admin(
+612:         session=session, company_id=company_id, user_id=actor_user_id
+619:         .where(Rule.company_id.is_(None))
+626:     override = _load_company_rule_by_stable_key(
+628:         company_id=company_id,
+636:             company_id=company_id,
+658:         company_id=company_id,
+668:     RuleEngine.invalidate_cache(company_id)
+669:     return _to_rule_out(rule=override, origin=RuleOrigin.company_override)
+677:     _require_no_active_company_membership(session=session, user_id=actor_user_id)
+682:             .where(Rule.company_id.is_(None))
+711:     _require_no_active_company_membership(session=session, user_id=actor_user_id)
+717:         .where(Rule.company_id.is_(None))
+748:     RuleEngine.invalidate_cache(company_id=None, user_id=actor_user_id)
+
+### app/rule_change_log/model.py
+16:         Index("ix_rule_change_logs_company_created", "company_id", "created_at"),
+23:     company_id: UUID = Field(foreign_key="companies.id", nullable=False, index=True)
+
+### app/script/test_policy_ingest_job_api.py
+68:                 "stable_key": "company.policy.test.alpha",
+155:         target = [d for d in docs if d.get("stable_key") == "company.policy.test.alpha"]
+
+### app/script/test_rag_tenant_isolation.py
+12: from app.common.enums import CompanyStatus
+13: from app.company.model import Company
+41:     company_a_id: UUID
+42:     company_b_id: UUID
+50: def _create_company(session: Session, name: str) -> Company:
+51:     c = Company(name=name, status=CompanyStatus.active)
+113:         a = _create_company(session, f"Tenant A {marker}")
+114:         b = _create_company(session, f"Tenant B {marker}")
+172:             company_a_id=a.id,
+173:             company_b_id=b.id,
+182: def _chunk_company_map(session: Session, chunk_ids: list[UUID]) -> dict[UUID, UUID | None]:
+203:         # Case 1: company A -> only global + A
+207:             rule_set_id=seeded.company_a_id,
+213:         a_company_map = _chunk_company_map(session, a_chunk_ids)
+215:             all(cid in (None, seeded.company_a_id) for cid in a_company_map.values()),
+216:             "company A retrieval leaked non-global/non-A chunks",
+221:             "company A retrieval leaked company B content",
+226:             "disabled policy documents were retrieved for company A",
+230:             "company A retrieval missing expected global/A enabled chunks",
+233:         # Case 2: company B -> only global + B
+237:             rule_set_id=seeded.company_b_id,
+243:         b_company_map = _chunk_company_map(session, b_chunk_ids)
+245:             all(cid in (None, seeded.company_b_id) for cid in b_company_map.values()),
+246:             "company B retrieval leaked non-global/non-B chunks",
+251:             "company B retrieval leaked company A content",
+255:             "company B retrieval missing expected global/B enabled chunks",
+268:         p_company_map = _chunk_company_map(session, p_chunk_ids)
+270:             all(cid is None for cid in p_company_map.values()),
+271:             "personal retrieval leaked company-specific chunks",
+280:             "personal retrieval leaked company A/B content",
+
+### app/script/test_rag_two_phase_toggle.py
+13:     CompanyStatus,
+20: from app.company.model import Company
+109: def _upsert_company_override(
+207:         _upsert_company_override(
+214:         _upsert_company_override(
+223:             _upsert_company_override(
+268:         company = Company(name=f"Two-phase RAG test {marker}", status=CompanyStatus.active)
+269:         session.add(company)
+271:         session.refresh(company)
+272:         rule_set_id = company.id
+274:     force_key = f"company.test.two_phase.force_mask.{marker}"
+
+### app/script/test_rule_precedence_full_scan.py
+136:         "stable_key": f"company.test.phone.block.{int(time.time())}",
+137:         "name": "Company custom phone block",
+
+### app/script/test_rule_set_contract_regression_stdlib.py
+104:     assert "company_id" not in created_rule, ("rule_no_company_id", created_rule)
+115:     assert "company_id" not in conv, ("conversation_no_company_id", conv)
+129:         {"text": "so dien thoai 0901234567", "company_id": rule_set_id},
+132:     assert code == 422, ("debug_company_id_rejected", code, bad_scan)
+
+### app/script/test_rule_sets_smoke_stdlib.py
+115:     assert "company_id" not in created_rule, ("rule_no_company_id", created_rule)
+130:     assert "company_id" not in conv_data, ("conversation_no_company_id", conv_data)
+159:     assert "company_id" not in job_data, ("job_no_company_id", job_data)
+169:     assert "company_id" not in settings_data, ("settings_no_company_id", settings_data)
+
+### app/script/test_rule_suggestion_apply_full_scan.py
+85:                 "stable_key": f"company.custom.office.finance.block.{int(time.time())}",
+249:     print("ALL PASS: suggestion apply -> company rule -> full-scan works end-to-end.")
+
+### app/script/test_rule_suggestion_duplicate_semantic.py
+104:         stable_key = "company.custom.phone.block.semantic"
+
+### app/script/test_rule_suggestion_phase3_hardening.py
+230:         rule["stable_key"] = f"company.custom.phase3.multi.entity.{int(time.time())}"
+
+### app/suggestion/duplicate_checker.py
+337:     if rule.company_id is not None:
+560:     company_id: UUID,
+591:                 (Rule.company_id.is_(None)) | (Rule.company_id == company_id)
+633:             origin="global_default" if r.company_id is None else "company_rule",
+657:                 origin="global_default" if r.company_id is None else "company_rule",
+
+### app/suggestion/models/rule_suggestion.py
+16:         sa.Index("ix_rule_suggestions_company_status", "company_id", "status"),
+17:         sa.Index("ix_rule_suggestions_company_created", "company_id", "created_at"),
+18:         sa.Index("ix_rule_suggestions_company_dedupe", "company_id", "dedupe_key"),
+23:     company_id: UUID = Field(foreign_key="companies.id", nullable=False, index=True)
+
+### app/suggestion/models/rule_suggestion_log.py
+17:         sa.Index("ix_rule_suggestion_logs_company_created", "company_id", "created_at"),
+23:     company_id: UUID = Field(foreign_key="companies.id", nullable=False, index=True)
+
+### app/suggestion/service.py
+23: from app.company.model import Company
+31: from app.permissions.loaders.conversation import load_company_member_active_or_403
+113: def _load_company_or_404(*, session: Session, company_id: UUID) -> Company:
+114:     company = session.get(Company, company_id)
+115:     if not company:
+116:         raise not_found("Company not found", field="company_id")
+117:     return company
+120: def _require_company_admin(*, session: Session, company_id: UUID, user_id: UUID) -> None:
+121:     member = load_company_member_active_or_403(
+123:         company_id=company_id,
+126:     if member.role != MemberRole.company_admin:
+128:             "Company admin required",
+129:             field="company_id",
+130:             reason="not_company_admin",
+463: def _dedupe_key(*, company_id: UUID, payload: RuleSuggestionDraftPayload) -> str:
+465:         "company_id": str(company_id),
+477:         "company_id": str(row.company_id),
+502:     company_id: UUID,
+512:             company_id=company_id,
+525:         rule_set_id=row.company_id,
+544:         rule_set_id=row.company_id,
+654:     company_id: UUID,
+660:         company_id=company_id,
+707:     company_id: UUID,
+711:     if not row or row.company_id != company_id:
+1179:     company_id: UUID,
+1185:         .where(RuleSuggestion.company_id == company_id)
+1414:             "outside company",
+1446:         stable_key=f"company.custom.suggested.{stable_suffix}",
+1497:         stable_key=f"company.custom.suggested.{stable_suffix}",
+1888:     stable_key = f"company.custom.suggested.{stable_suffix}"
+2012:     stable_key = f"company.custom.suggested.{h}"
+2184:     company_id: UUID,
+2192:             .where((Rule.company_id.is_(None)) | (Rule.company_id == company_id))
+2220:                 "origin": "global_default" if row.company_id is None else "company_rule",
+2240:         company_id: UUID,
+2243:         self.company_id = company_id
+2274:                     company_id=self.company_id,
+2309:                 company_id=self.company_id,
+2317: def _ensure_company_stable_key(
+2331:         stable_key = f"company.custom.{slug}.{h}"
+2332:     elif not stable_key.startswith("company."):
+2333:         stable_key = f"company.custom.{stable_key}"
+2337:         stable_key = f"company.custom.suggested.{h}"
+2395:         "2) stable_key must be company-specific, never global.*.\n"
+2421:     company_id: UUID,
+2429:         company_id=company_id,
+2469:     draft = _ensure_company_stable_key(prompt=normalized_prompt, draft=draft)
+2487:         fb = _ensure_company_stable_key(prompt=normalized_prompt, draft=fb)
+2510:     *, session: Session, company_id: UUID, suggestion_id: UUID
+2513:     if not row or row.company_id != company_id:
+2521:     company_id: UUID,
+2525:     _load_company_or_404(session=session, company_id=company_id)
+2526:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+2530:         company_id=company_id,
+2536:         company_id=company_id,
+2539:     key = _dedupe_key(company_id=company_id, payload=draft)
+2552:         company_id=company_id,
+2559:             company_id=company_id,
+2569:             company_id=company_id,
+2608:         company_id=company_id,
+2623:         company_id=company_id,
+2632:         company_id=company_id,
+2674:     company_id: UUID,
+2679:     _load_company_or_404(session=session, company_id=company_id)
+2680:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+2685:         .where(RuleSuggestion.company_id == company_id)
+2702:     company_id: UUID,
+2706:     _load_company_or_404(session=session, company_id=company_id)
+2707:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+2709:         session=session, company_id=company_id, suggestion_id=suggestion_id
+2737:     company_id: UUID,
+2742:     _load_company_or_404(session=session, company_id=company_id)
+2743:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+2747:         company_id=company_id,
+2765:         company_id=company_id,
+2782:         company_id=company_id,
+2851:     if row.company_id is None:
+2861:         company_id=row.company_id,
+2871:     company_id: UUID,
+2876:     _load_company_or_404(session=session, company_id=company_id)
+2877:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+2878:     _load_suggestion_or_404(session=session, company_id=company_id, suggestion_id=suggestion_id)
+2895:     company_id: UUID,
+2900:     _load_company_or_404(session=session, company_id=company_id)
+2901:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+2904:         session=session, company_id=company_id, suggestion_id=suggestion_id
+2919:     key = _dedupe_key(company_id=company_id, payload=normalized)
+2922:         company_id=company_id,
+2941:         company_id=company_id,
+2955:     company_id: UUID,
+2960:     _load_company_or_404(session=session, company_id=company_id)
+2961:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+2963:         session=session, company_id=company_id, suggestion_id=suggestion_id
+2980:         company_id=company_id,
+3014:         company_id=company_id,
+3029:     company_id: UUID,
+3034:     _load_company_or_404(session=session, company_id=company_id)
+3035:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+3037:         session=session, company_id=company_id, suggestion_id=suggestion_id
+3061:         company_id=company_id,
+3076:     company_id: UUID,
+3082:         .where(Rule.company_id.is_(None))
+3095:         .where(Rule.company_id == company_id)
+3101:             company_id=company_id,
+3137:     company_id: UUID,
+3144:             .where(ContextTerm.company_id == company_id)
+3152:                 company_id=company_id,
+3176:     company_id: UUID,
+3182:     _load_company_or_404(session=session, company_id=company_id)
+3183:     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+3185:         session=session, company_id=company_id, suggestion_id=suggestion_id
+3219:             company_id=company_id,
+3225:             company_id=company_id,
+3240:             company_id=company_id,
+
+### ARCHITECTURE.md
+54: - Create personal/company conversation
+129: - System prompt resolution: company prompt -> default prompt
+147: - Personal (company_id = NULL)
+148: - Company-level (company_id != NULL)
+150: Company conversation requires active CompanyMember.
+152: Future strict RAG filter will isolate policy chunks per company.
+192: - Company isolation is mandatory (future strict mode)
+201: - No company-specific rule layering (planned)
+
+### README.md
+33: - Company/Member (MVP):
+34:   - Tạo company (tự động gán người tạo là `company_admin`)
+35:   - Danh sách company của tôi
+39: - Company system prompt:
+40:   - Quy tắc: `company_prompt > default_prompt`
+41:   - API GET/PUT system prompt theo công ty (chỉ `company_admin`)
+43:   - Personal chat và company chat
+74: - `company_members`
+80: - Personal Chat: `company_id = NULL`
+81: - Company Chat: `company_id = UUID`
+116: - Company: yêu cầu `CompanyMember` active (member hoặc company_admin tùy API)
+146: ### Company
+149: - `GET /v1/companies/{company_id}`
+150: - `POST /v1/companies/{company_id}/members`
+151: - `GET /v1/companies/{company_id}/members`
+152: - `PATCH /v1/companies/{company_id}/members/{member_id}`
+154: ### Company settings
+155: - `GET /v1/companies/{company_id}/settings/system-prompt`
+156: - `PUT /v1/companies/{company_id}/settings/system-prompt`
+160: - `POST /v1/companies/{company_id}/conversations`
+253: - Rate limiting theo company
+
+### ROADMAP_NEXT.md
+17: [x] Add system prompt support (company configurable)
+26:     company_id IN (NULL, current_company)
+28: [ ] Company-specific rule layering:
+30:     + company rules
+33: [ ] Company audit log table:
+59: [ ] Rate limiting per company
+
