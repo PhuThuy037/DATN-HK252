@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import hashlib
@@ -23,7 +23,10 @@ from app.common.errors import AppError
 from app.company.model import Company
 from app.core.config import get_settings
 from app.decision.context_scorer import ContextScorer
-from app.decision.context_term_runtime import load_context_runtime_overrides
+from app.decision.context_term_runtime import (
+    invalidate_context_runtime_cache,
+    load_context_runtime_overrides,
+)
 from app.decision.decision_resolver import DecisionResolver
 from app.decision.detectors.local_regex_detector import LocalRegexDetector
 from app.llm import generate_text_sync
@@ -1443,7 +1446,7 @@ def _build_exact_secret_draft(
 
     primary = normalized_terms[0]
     rule = RuleSuggestionDraftRule(
-        stable_key=f"company.custom.suggested.{stable_suffix}",
+        stable_key=f"personal.custom.suggested.{stable_suffix}",
         name=f"Protect internal token {primary}",
         description=f"Protect exact internal code/token from prompt: {prompt[:180]}",
         scope=RuleScope.prompt,
@@ -1494,7 +1497,7 @@ def _build_payroll_external_email_draft(
     payroll_terms = ["payroll", "salary", "luong", "bang luong"]
     external_terms = ["gmail", "personal email", "email ngoai cong ty", "external email"]
     rule = RuleSuggestionDraftRule(
-        stable_key=f"company.custom.suggested.{stable_suffix}",
+        stable_key=f"personal.custom.suggested.{stable_suffix}",
         name=f"Protect payroll to external email ({action.value})",
         description=f"Protect payroll/salary data from external or personal email sharing: {prompt[:180]}",
         scope=RuleScope.prompt,
@@ -1885,7 +1888,7 @@ def _build_persona_signal_draft(
     action: RuleAction,
     stable_suffix: str,
 ) -> RuleSuggestionDraftPayload:
-    stable_key = f"company.custom.suggested.{stable_suffix}"
+    stable_key = f"personal.custom.suggested.{stable_suffix}"
     if persona == "office":
         rule_name = f"Suggested office context {action.value}"
         risk_threshold = 0.10
@@ -2009,7 +2012,7 @@ def _fallback_generate(prompt: str) -> RuleSuggestionDraftPayload:
     else:
         entity_type = "TAX_ID"
 
-    stable_key = f"company.custom.suggested.{h}"
+    stable_key = f"personal.custom.suggested.{h}"
     return RuleSuggestionDraftPayload(
         rule=RuleSuggestionDraftRule(
             stable_key=stable_key,
@@ -2217,7 +2220,7 @@ def _build_rule_references(
                 "priority": int(row.priority),
                 "rag_mode": row.rag_mode.value,
                 "conditions": row.conditions,
-                "origin": "global_default" if row.company_id is None else "company_rule",
+                "origin": "global_default" if row.company_id is None else "personal_rule",
                 "prompt_overlap_score": round(float(score), 4),
             }
         )
@@ -2328,13 +2331,13 @@ def _ensure_company_stable_key(
         slug = ".".join(sorted(_tokenize_for_score(prompt)))[:60].strip(".")
         if not slug:
             slug = f"suggested.{h}"
-        stable_key = f"company.custom.{slug}.{h}"
-    elif not stable_key.startswith("company."):
-        stable_key = f"company.custom.{stable_key}"
+        stable_key = f"personal.custom.{slug}.{h}"
+    elif not stable_key.startswith("personal."):
+        stable_key = f"personal.custom.{stable_key}"
 
     stable_key = stable_key[:200].strip(".")
     if not stable_key:
-        stable_key = f"company.custom.suggested.{h}"
+        stable_key = f"personal.custom.suggested.{h}"
 
     rule = draft.rule.model_copy(update={"stable_key": stable_key})
     return draft.model_copy(update={"rule": rule})
@@ -2392,7 +2395,7 @@ Return valid JSON only.
         f"{references_json}\n\n"
         "Task / output schema requirements:\n"
         "1) Prefer rule conditions consistent with existing rule DSL.\n"
-        "2) stable_key must be company-specific, never global.*.\n"
+        "2) stable_key must be personal-specific, never global.*.\n"
         "3) Use policy excerpts as grounding context when they are relevant.\n"
         "4) If related rule contains same policy intent, keep naming and conditions style close to that rule.\n"
         "5) Avoid generating redundant duplicate policy when related rules already cover it.\n"
@@ -3198,8 +3201,36 @@ def apply_rule_suggestion(
                 "Suggestion was marked applied without result payload",
                 details=[{"field": "applied_result_json", "reason": "missing_rule_id"}],
             )
+        stable_key = str(result.get("stable_key") or "").strip()
+        name = str(result.get("name") or "").strip()
+        action_value = str(result.get("action") or "").strip().lower()
+        origin = str(result.get("origin") or "").strip() or "personal_custom"
+        rule_set_id_raw = str(result.get("rule_set_id") or "").strip()
+
+        if not (stable_key and name and action_value and rule_set_id_raw):
+            existing_rule = session.get(Rule, UUID(rule_id))
+            if existing_rule is None:
+                raise not_found("Rule not found", field="rule_id")
+            stable_key = stable_key or str(existing_rule.stable_key)
+            name = name or str(existing_rule.name)
+            action_value = action_value or str(existing_rule.action.value)
+            if not rule_set_id_raw:
+                rule_set_id_raw = str(existing_rule.company_id or "")
+        if not rule_set_id_raw:
+            raise AppError(
+                409,
+                ErrorCode.CONFLICT,
+                "Applied suggestion is missing rule_set_id",
+                details=[{"field": "applied_result_json", "reason": "missing_rule_set_id"}],
+            )
+
         return RuleSuggestionApplyOut(
             rule_id=UUID(rule_id),
+            rule_set_id=UUID(rule_set_id_raw),
+            stable_key=stable_key,
+            name=name,
+            action=RuleAction(action_value),
+            origin=origin,
             context_term_ids=[UUID(str(x)) for x in list(result.get("context_term_ids") or [])],
         )
     if row.status != SuggestionStatus.approved.value:
@@ -3231,6 +3262,11 @@ def apply_rule_suggestion(
         row.applied_at = _utcnow()
         row.applied_result_json = {
             "rule_id": str(rule_row.id),
+            "rule_set_id": str(company_id),
+            "stable_key": str(rule_row.stable_key),
+            "name": str(rule_row.name),
+            "action": str(rule_row.action.value),
+            "origin": "personal_custom",
             "context_term_ids": [str(x) for x in context_term_ids],
         }
         session.add(row)
@@ -3244,12 +3280,21 @@ def apply_rule_suggestion(
             after_json=_snapshot_suggestion(row),
         )
         session.commit()
+        invalidate_context_runtime_cache(company_id)
+        RuleEngine.invalidate_cache(company_id)
     except Exception:
         session.rollback()
         raise
 
     return RuleSuggestionApplyOut(
         rule_id=rule_row.id,
+        rule_set_id=company_id,
+        stable_key=str(rule_row.stable_key),
+        name=str(rule_row.name),
+        action=rule_row.action,
+        origin="personal_custom",
         context_term_ids=context_term_ids,
     )
+
+
 

@@ -12,8 +12,8 @@ from app.common.enums import RagMode, RuleAction, RuleScope, RuleSeverity
 
 class RuleOrigin(str, Enum):
     global_default = "global_default"
-    company_override = "company_override"
-    company_custom = "company_custom"
+    personal_override = "personal_override"
+    personal_custom = "personal_custom"
 
 
 class CompanyRuleOut(BaseModel):
@@ -49,6 +49,21 @@ class CompanyRuleCreateIn(BaseModel):
     priority: int = 0
     rag_mode: RagMode = RagMode.off
     enabled: bool = True
+
+
+class RuleContextTermIn(BaseModel):
+    entity_type: str = PydanticField(min_length=1, max_length=100)
+    term: str = PydanticField(min_length=1, max_length=500)
+    lang: str = PydanticField(default="vi", min_length=1, max_length=20)
+    weight: float = 1.0
+    window_1: int = 60
+    window_2: int = 20
+    enabled: bool = True
+
+
+class CompanyRuleCreateWithContextIn(BaseModel):
+    rule: CompanyRuleCreateIn
+    context_terms: list[RuleContextTermIn] = PydanticField(default_factory=list)
 
 
 class CompanyRuleUpdateIn(BaseModel):
@@ -103,9 +118,25 @@ class RuleChangeLogOut(BaseModel):
     created_at: datetime
 
 
+class CompanyRuleCreateOut(CompanyRuleOut):
+    context_term_ids: list[UUID] = PydanticField(default_factory=list)
+
+
+class EffectiveRuleMeOut(BaseModel):
+    rule_id: UUID
+    stable_key: str
+    name: str
+    origin: RuleOrigin
+    enabled: bool
+    priority: int
+    action: RuleAction
+
+
 # Backward-compatible aliases for naming migration.
 RuleSetRuleOut = CompanyRuleOut
 RuleSetRuleCreateIn = CompanyRuleCreateIn
+RuleSetRuleCreateWithContextIn = CompanyRuleCreateWithContextIn
+RuleSetRuleCreateOut = CompanyRuleCreateOut
 RuleSetRuleUpdateIn = CompanyRuleUpdateIn
 RuleSetRuleToggleEnabledIn = CompanyRuleToggleEnabledIn
 RuleSetRuleChangeLogOut = RuleChangeLogOut

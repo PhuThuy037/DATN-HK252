@@ -11,14 +11,19 @@ from app.common.errors import AppError
 from app.common.enums import MemberRole, MemberStatus
 from app.company.model import Company
 from app.company_member.model import CompanyMember
+from app.decision.context_term_runtime import invalidate_context_runtime_cache
 from app.permissions.core import forbid, not_found
 from app.permissions.loaders.conversation import load_company_member_active_or_403
+from app.rag.models.context_term import ContextTerm
 from app.rule.engine import RuleEngine
 from app.rule.model import Rule
 from app.rule.schemas import (
+    CompanyRuleCreateOut,
     CompanyRuleCreateIn,
+    RuleContextTermIn,
     CompanyRuleOut,
     CompanyRuleUpdateIn,
+    EffectiveRuleMeOut,
     PersonalRuleOut,
     RuleChangeLogOut,
     RuleOrigin,
@@ -61,13 +66,21 @@ def _require_company_admin(
 
 
 def _has_active_company_membership(*, session: Session, user_id: UUID) -> bool:
+    row = _load_active_company_membership(session=session, user_id=user_id)
+    return row is not None
+
+
+def _load_active_company_membership(
+    *, session: Session, user_id: UUID
+) -> CompanyMember | None:
     row = session.exec(
-        select(CompanyMember.id)
+        select(CompanyMember)
         .where(CompanyMember.user_id == user_id)
         .where(CompanyMember.status == MemberStatus.active)
+        .order_by(CompanyMember.joined_at.desc())
         .limit(1)
     ).first()
-    return row is not None
+    return row
 
 
 def _require_no_active_company_membership(*, session: Session, user_id: UUID) -> None:
@@ -188,8 +201,8 @@ def _classify_origin(*, rule: Rule, global_keys: set[str]) -> RuleOrigin:
     if rule.company_id is None:
         return RuleOrigin.global_default
     if rule.stable_key in global_keys:
-        return RuleOrigin.company_override
-    return RuleOrigin.company_custom
+        return RuleOrigin.personal_override
+    return RuleOrigin.personal_custom
 
 
 def _to_rule_out(
@@ -213,7 +226,7 @@ def _to_rule_out(
         created_at=rule.created_at,
         updated_at=rule.updated_at,
         origin=origin,
-        can_edit_action=is_admin and origin == RuleOrigin.company_custom,
+        can_edit_action=is_admin and origin == RuleOrigin.personal_custom,
         can_soft_delete=is_admin and origin != RuleOrigin.global_default,
     )
 
@@ -304,6 +317,97 @@ def _append_rule_change_log(
     )
 
 
+def _normalize_context_term_non_empty(*, value: str | None, field: str) -> str:
+    normalized = (value or "").strip()
+    if not normalized:
+        raise AppError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            f"Invalid {field}",
+            details=[{"field": field, "reason": "empty_after_trim"}],
+        )
+    return normalized
+
+
+def _normalize_context_terms(
+    *,
+    context_terms: list[RuleContextTermIn] | None,
+) -> list[RuleContextTermIn]:
+    if not context_terms:
+        return []
+
+    out: list[RuleContextTermIn] = []
+    dedupe: set[tuple[str, str, str]] = set()
+    for row in context_terms:
+        entity_type = _normalize_context_term_non_empty(
+            value=row.entity_type,
+            field="context_terms.entity_type",
+        ).upper()
+        term = _normalize_context_term_non_empty(
+            value=row.term,
+            field="context_terms.term",
+        ).lower()
+        lang = _normalize_context_term_non_empty(
+            value=row.lang,
+            field="context_terms.lang",
+        ).lower()
+        key = (entity_type, term, lang)
+        if key in dedupe:
+            continue
+        dedupe.add(key)
+        out.append(
+            RuleContextTermIn(
+                entity_type=entity_type,
+                term=term,
+                lang=lang,
+                weight=float(row.weight),
+                window_1=max(0, int(row.window_1)),
+                window_2=max(0, int(row.window_2)),
+                enabled=bool(row.enabled),
+            )
+        )
+    return out
+
+
+def _upsert_company_context_terms(
+    *,
+    session: Session,
+    company_id: UUID,
+    context_terms: list[RuleContextTermIn],
+) -> list[UUID]:
+    out_ids: list[UUID] = []
+    for t in context_terms:
+        row = session.exec(
+            select(ContextTerm)
+            .where(ContextTerm.company_id == company_id)
+            .where(ContextTerm.entity_type == t.entity_type)
+            .where(ContextTerm.term == t.term)
+            .where(ContextTerm.lang == t.lang)
+            .order_by(ContextTerm.created_at.desc())
+        ).first()
+        if row is None:
+            row = ContextTerm(
+                company_id=company_id,
+                entity_type=t.entity_type,
+                term=t.term,
+                lang=t.lang,
+                weight=t.weight,
+                window_1=t.window_1,
+                window_2=t.window_2,
+                enabled=t.enabled,
+            )
+        else:
+            row.weight = t.weight
+            row.window_1 = t.window_1
+            row.window_2 = t.window_2
+            row.enabled = t.enabled
+
+        session.add(row)
+        session.flush()
+        out_ids.append(row.id)
+    return out_ids
+
+
 def _load_company_rule_by_stable_key(
     *, session: Session, company_id: UUID, stable_key: str
 ) -> Rule | None:
@@ -388,7 +492,8 @@ def create_company_custom_rule(
     company_id: UUID,
     actor_user_id: UUID,
     payload: CompanyRuleCreateIn,
-) -> CompanyRuleOut:
+    context_terms: list[RuleContextTermIn] | None = None,
+) -> CompanyRuleCreateOut:
     _load_company_or_404(session=session, company_id=company_id)
     _require_company_admin(
         session=session, company_id=company_id, user_id=actor_user_id
@@ -420,6 +525,8 @@ def create_company_custom_rule(
             field="stable_key",
         )
 
+    normalized_context_terms = _normalize_context_terms(context_terms=context_terms)
+
     row = Rule(
         company_id=company_id,
         stable_key=stable_key,
@@ -436,6 +543,13 @@ def create_company_custom_rule(
         created_by=actor_user_id,
     )
     session.add(row)
+    session.flush()
+
+    context_term_ids = _upsert_company_context_terms(
+        session=session,
+        company_id=company_id,
+        context_terms=normalized_context_terms,
+    )
     _append_rule_change_log(
         session=session,
         company_id=company_id,
@@ -461,7 +575,12 @@ def create_company_custom_rule(
     session.commit()
     session.refresh(row)
     RuleEngine.invalidate_cache(company_id)
-    return _to_rule_out(rule=row, origin=RuleOrigin.company_custom)
+    invalidate_context_runtime_cache(company_id)
+    base = _to_rule_out(rule=row, origin=RuleOrigin.personal_custom)
+    return CompanyRuleCreateOut(
+        **base.model_dump(),
+        context_term_ids=context_term_ids,
+    )
 
 
 def update_company_rule(
@@ -492,7 +611,7 @@ def update_company_rule(
 
     before_json = _snapshot_rule(rule=row)
 
-    if origin == RuleOrigin.company_override:
+    if origin == RuleOrigin.personal_override:
         allowed_fields = {"enabled"}
         blocked = sorted(changed_fields - allowed_fields)
         if blocked:
@@ -529,7 +648,7 @@ def update_company_rule(
         row.enabled = bool(payload.enabled)
 
     if "action" in changed_fields and payload.action is not None:
-        if origin != RuleOrigin.company_custom:
+        if origin != RuleOrigin.personal_custom:
             raise AppError(
                 422,
                 ErrorCode.VALIDATION_ERROR,
@@ -666,7 +785,7 @@ def toggle_global_rule_for_company(
     session.commit()
     session.refresh(override)
     RuleEngine.invalidate_cache(company_id)
-    return _to_rule_out(rule=override, origin=RuleOrigin.company_override)
+    return _to_rule_out(rule=override, origin=RuleOrigin.personal_override)
 
 
 def list_personal_rules(
@@ -761,5 +880,72 @@ def toggle_personal_rule_enabled(
         else None,
         can_toggle_enabled=True,
     )
+
+
+def list_effective_rules_for_current_user(
+    *,
+    session: Session,
+    actor_user_id: UUID,
+) -> list[EffectiveRuleMeOut]:
+    active_membership = _load_active_company_membership(
+        session=session,
+        user_id=actor_user_id,
+    )
+
+    company_id = active_membership.company_id if active_membership else None
+    runtime_rules = RuleEngine().load_rules(
+        session=session,
+        company_id=company_id,
+        user_id=actor_user_id,
+    )
+    if not runtime_rules:
+        return []
+
+    rule_ids = [x.rule_id for x in runtime_rules]
+    row_map = {
+        r.id: r for r in session.exec(select(Rule).where(Rule.id.in_(rule_ids))).all()
+    }
+
+    # Personal scope (no active rule_set): global + per-user on/off overrides.
+    personal_override_keys: set[str] = set()
+    if company_id is None:
+        personal_override_keys = {
+            str(r.stable_key)
+            for r in session.exec(
+                select(UserRuleOverride).where(UserRuleOverride.user_id == actor_user_id)
+            ).all()
+            if str(r.stable_key or "").strip()
+        }
+    else:
+        global_keys = _global_stable_keys(session=session)
+
+    out: list[EffectiveRuleMeOut] = []
+    for runtime in runtime_rules:
+        row = row_map.get(runtime.rule_id)
+        if row is None:
+            continue
+
+        if company_id is None:
+            origin = (
+                RuleOrigin.personal_override
+                if str(runtime.stable_key) in personal_override_keys
+                else RuleOrigin.global_default
+            )
+        else:
+            origin = _classify_origin(rule=row, global_keys=global_keys)
+
+        out.append(
+            EffectiveRuleMeOut(
+                rule_id=runtime.rule_id,
+                stable_key=runtime.stable_key,
+                name=runtime.name,
+                origin=origin,
+                enabled=True,
+                priority=int(runtime.priority),
+                action=runtime.action,
+            )
+        )
+
+    return out
 
 

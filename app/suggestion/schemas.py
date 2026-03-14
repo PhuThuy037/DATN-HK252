@@ -80,6 +80,11 @@ class RuleSuggestionApplyIn(BaseModel):
 
 class RuleSuggestionApplyOut(BaseModel):
     rule_id: UUID
+    rule_set_id: UUID
+    stable_key: str
+    name: str
+    action: RuleAction
+    origin: str
     context_term_ids: list[UUID]
 
 
