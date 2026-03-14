@@ -49,6 +49,11 @@ def _set_cached(company_id: Optional[UUID], data: ContextRuntimeOverrides) -> No
         _cache[company_id] = (time.monotonic() + _CACHE_TTL_SECONDS, data)
 
 
+def invalidate_context_runtime_cache(company_id: Optional[UUID]) -> None:
+    with _cache_lock:
+        _cache.pop(company_id, None)
+
+
 def load_context_runtime_overrides(
     *,
     session: Session,
@@ -58,12 +63,16 @@ def load_context_runtime_overrides(
     if cached is not None:
         return cached
 
+    # Tenant filtering (legacy storage key `company_id`):
+    # - no rule_set scope: only global context terms
+    # - scoped conversation: global + personal context terms
+    scope_id = company_id
     stmt = select(ContextTerm).where(ContextTerm.enabled.is_(True))
-    if company_id is None:
+    if scope_id is None:
         stmt = stmt.where(ContextTerm.company_id.is_(None))
     else:
         stmt = stmt.where(
-            (ContextTerm.company_id.is_(None)) | (ContextTerm.company_id == company_id)
+            (ContextTerm.company_id.is_(None)) | (ContextTerm.company_id == scope_id)
         )
     # Make "latest wins" deterministic for dedup assignment below.
     stmt = stmt.order_by(ContextTerm.created_at.asc(), ContextTerm.id.asc())
@@ -78,7 +87,7 @@ def load_context_runtime_overrides(
     persona_keywords: dict[str, list[str]] = {}
     exact_terms: list[str] = []
 
-    # Latest rows win for same term to support company-specific override by recency.
+    # Latest rows win for same term to support personal override by recency.
     dedup: dict[tuple[str, str], ContextTerm] = {}
     for row in rows:
         et = str(row.entity_type or "").strip().upper()

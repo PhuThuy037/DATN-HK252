@@ -246,10 +246,15 @@ def list_company_policy_documents(
     _load_company_or_404(session=session, company_id=company_id)
     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
 
+    # Tenant filtering for policy browsing:
+    # global policies + current personal policies (legacy key: company_id).
     rows = list(
         session.exec(
             select(PolicyDocument)
-            .where(PolicyDocument.company_id == company_id)
+            .where(
+                (PolicyDocument.company_id.is_(None))
+                | (PolicyDocument.company_id == company_id)
+            )
             .where(PolicyDocument.deleted_at.is_(None))
             .order_by(PolicyDocument.created_at.desc())
         ).all()

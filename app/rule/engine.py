@@ -41,10 +41,11 @@ class RuleEngine:
 
     Runtime layering:
     - Personal: enabled global rules, with optional per-user enabled override.
-    - Company:
-      1) company override > company custom > global default
-      2) override(enabled=false) disables matching global stable_key for that company
-      3) final resolved rules are sorted by priority DESC
+    - Rule-set scope (legacy company_id storage):
+      1) personal rules are loaded from rule.company_id == current scope id
+      2) personal_rule > global_rule at match resolution time
+      3) legacy override(enabled=false) still disables matching global stable_key
+         for backward compatibility
     """
 
     _CACHE_TTL_SECONDS = 5.0
@@ -218,26 +219,40 @@ class RuleEngine:
         signals = self._normalize_signals(signals)
 
         rules = self.load_rules(session=session, company_id=company_id, user_id=user_id)
-        matches: list[RuleMatch] = []
+        personal_rule_ids: set[UUID] = set()
+        if company_id is not None and rules:
+            rows = list(
+                session.exec(
+                    select(Rule).where(Rule.id.in_([r.rule_id for r in rules]))
+                ).all()
+            )
+            personal_rule_ids = {r.id for r in rows if r.company_id == company_id}
+
+        personal_matches: list[RuleMatch] = []
+        global_matches: list[RuleMatch] = []
 
         for r in rules:
             try:
                 if self._match_conditions(
                     r.conditions or {}, entities=entities, signals=signals
                 ):
-                    matches.append(
-                        RuleMatch(
-                            rule_id=r.rule_id,
-                            stable_key=r.stable_key,
-                            name=r.name,
-                            action=r.action,
-                            priority=r.priority,
-                        )
+                    out = RuleMatch(
+                        rule_id=r.rule_id,
+                        stable_key=r.stable_key,
+                        name=r.name,
+                        action=r.action,
+                        priority=r.priority,
                     )
+                    if company_id is not None and r.rule_id in personal_rule_ids:
+                        personal_matches.append(out)
+                    else:
+                        global_matches.append(out)
             except Exception:
                 continue
 
-        return matches
+        if company_id is not None and personal_matches:
+            return personal_matches
+        return personal_matches + global_matches
 
     def _match_conditions(
         self,

@@ -93,19 +93,20 @@ class PolicyRetriever:
             .limit(k)
         )
 
-        # Strict tenant isolation:
-        # - personal chat (company_id is None): only global
-        # - company chat: global + current company
-        if company_id is None:
+        # Tenant filtering (legacy storage key `company_id`):
+        # - no rule_set scope (company_id is None): only global policies
+        # - scoped conversation: global + current personal policies
+        scope_id = company_id
+        if scope_id is None:
             stmt = stmt.where(PolicyChunk.company_id.is_(None)).where(
                 PolicyDocument.company_id.is_(None)
             )
         else:
             stmt = stmt.where(
-                (PolicyChunk.company_id.is_(None)) | (PolicyChunk.company_id == company_id)
+                (PolicyChunk.company_id.is_(None)) | (PolicyChunk.company_id == scope_id)
             ).where(
                 (PolicyDocument.company_id.is_(None))
-                | (PolicyDocument.company_id == company_id)
+                | (PolicyDocument.company_id == scope_id)
             )
 
         rows = session.exec(stmt).all()
