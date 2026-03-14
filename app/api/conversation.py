@@ -63,10 +63,10 @@ def create_rule_set_conversation(
     session: SessionDep,
     principal: CurrentPrincipal,
 ):
-    c = convo_service.create_company_conversation(
+    c = convo_service.create_rule_set_conversation(
         session=session,
         user_id=principal.user_id,
-        company_id=rule_set_id,
+        rule_set_id=rule_set_id,
         title=payload.title,
         model_name=payload.model_name,
         temperature=payload.temperature,

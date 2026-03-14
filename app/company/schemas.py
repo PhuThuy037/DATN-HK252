@@ -46,7 +46,7 @@ class RuleSetSystemPromptOut(BaseModel):
     system_prompt: Optional[str] = None
 
 
-class CompanySystemPromptUpdateIn(BaseModel):
+class RuleSetSystemPromptUpdateIn(BaseModel):
     system_prompt: Optional[str] = PydanticField(default=None, max_length=4000)
 
 
@@ -54,3 +54,4 @@ class CompanySystemPromptUpdateIn(BaseModel):
 CompanyCreateIn = RuleSetCreateIn
 CompanyOut = RuleSetOut
 CompanySystemPromptOut = RuleSetSystemPromptOut
+CompanySystemPromptUpdateIn = RuleSetSystemPromptUpdateIn

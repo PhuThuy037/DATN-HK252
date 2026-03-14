@@ -9,23 +9,22 @@ import anyio
 from sqlmodel import Session, select
 
 from app.chat.service import ChatService
+from app.common.errors import AppError
 from app.common.enums import (
-    MemberRole,
-    MemberStatus,
     MessageInputType,
     MessageRole,
     RuleAction,
     ScanStatus,
 )
 from app.company.model import Company
-from app.company_member.model import CompanyMember
 from app.conversation.model import Conversation
 from app.core.config import get_settings
 from app.decision.scan_engine_local import ScanEngineLocal
 from app.decision.serializers import entity_to_dict, rulematch_to_dict
 from app.masking.service import MaskService
 from app.messages.model import Message
-from app.permissions.core import forbid, not_found
+from app.permissions.core import not_found
+from app.permissions.loaders.conversation import load_rule_set_owner_active_or_403
 
 _chat = ChatService()
 _scan = ScanEngineLocal(context_yaml_path="app/config/context_base.yaml")
@@ -96,32 +95,24 @@ def create_personal_conversation(
     return c
 
 
-def create_company_conversation(
+def create_rule_set_conversation(
     *,
     session: Session,
     user_id: UUID,
-    company_id: UUID,
+    rule_set_id: UUID,
     title: str | None = None,
     model_name: str | None = None,
     temperature: float | None = None,
 ) -> Conversation:
-    stmt = (
-        select(CompanyMember)
-        .where(CompanyMember.company_id == company_id)
-        .where(CompanyMember.user_id == user_id)
-        .where(CompanyMember.status == MemberStatus.active)
+    load_rule_set_owner_active_or_403(
+        session=session,
+        rule_set_id=rule_set_id,
+        user_id=user_id,
     )
-    m = session.exec(stmt).first()
-    if not m or m.role != MemberRole.company_admin:
-        raise forbid(
-            "Rule set owner required",
-            field="rule_set_id",
-            reason="not_rule_set_owner",
-        )
 
     c = Conversation(
         user_id=user_id,
-        company_id=company_id,
+        company_id=rule_set_id,
         title=title,
         model_name=model_name,
         temperature=temperature,
@@ -131,6 +122,26 @@ def create_company_conversation(
     session.commit()
     session.refresh(c)
     return c
+
+
+def create_company_conversation(
+    *,
+    session: Session,
+    user_id: UUID,
+    company_id: UUID,
+    title: str | None = None,
+    model_name: str | None = None,
+    temperature: float | None = None,
+) -> Conversation:
+    # Backward-compatible alias while legacy call sites still pass company_id.
+    return create_rule_set_conversation(
+        session=session,
+        user_id=user_id,
+        rule_set_id=company_id,
+        title=title,
+        model_name=model_name,
+        temperature=temperature,
+    )
 
 
 async def append_user_message_async(
@@ -163,14 +174,13 @@ async def append_user_message_async(
         )
 
     if c.company_id is not None:
-        mem_stmt = (
-            select(CompanyMember)
-            .where(CompanyMember.company_id == c.company_id)
-            .where(CompanyMember.user_id == user_id)
-            .where(CompanyMember.status == MemberStatus.active)
-        )
-        mem = session.exec(mem_stmt).first()
-        if not mem or mem.role != MemberRole.company_admin:
+        try:
+            load_rule_set_owner_active_or_403(
+                session=session,
+                rule_set_id=c.company_id,
+                user_id=user_id,
+            )
+        except AppError:
             raise not_found(
                 "Conversation not found",
                 field="conversation_id",

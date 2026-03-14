@@ -5,20 +5,22 @@ from uuid import UUID
 
 from sqlmodel import Session
 
-from app.common.enums import MemberRole
+from app.conversation.model import Conversation
 from app.permissions.core import AuthContext, forbid, not_found
 from app.permissions.loaders.conversation import (
     load_conversation_or_404,
-    load_company_member_active_or_403,
+    load_rule_set_owner_active_or_403,
 )
 from app.permissions.policies.conversation import ConversationPolicy
-from app.conversation.model import Conversation
 
 
 @dataclass(slots=True)
 class ConversationAccess:
     ctx: AuthContext
     conversation: Conversation
+
+
+_RULE_SET_OWNER = "rule_set_owner"
 
 
 class ConversationGuard:
@@ -35,17 +37,19 @@ class ConversationGuard:
                     field="conversation_id",
                     reason="not_owner",
                 )
-            # ✅ personal owner -> treat as company_admin for permissions (or create separate enum)
-            ctx = AuthContext(
-                user_id=user_id, role=MemberRole.company_admin, company_id=None
-            )
+            # Personal owner is treated as rule_set_owner for unified checks.
+            ctx = AuthContext(user_id=user_id, role=_RULE_SET_OWNER, rule_set_id=None)
             return ctx, c
 
-        # Company: require membership
-        m = load_company_member_active_or_403(
-            session=session, company_id=c.company_id, user_id=user_id
+        # Rule-set conversation: require active owner mapping.
+        load_rule_set_owner_active_or_403(
+            session=session, rule_set_id=c.company_id, user_id=user_id
         )
-        ctx = AuthContext(user_id=user_id, role=m.role, company_id=c.company_id)
+        ctx = AuthContext(
+            user_id=user_id,
+            role=_RULE_SET_OWNER,
+            rule_set_id=c.company_id,
+        )
         return ctx, c
 
     def require_view(

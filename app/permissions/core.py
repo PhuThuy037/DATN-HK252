@@ -5,7 +5,6 @@ from enum import Enum
 from typing import Optional
 from uuid import UUID
 
-from app.common.enums import MemberRole
 from app.common.errors import AppError
 from app.common.error_codes import ErrorCode
 
@@ -20,8 +19,8 @@ class Action(str, Enum):
 @dataclass(slots=True)
 class AuthContext:
     user_id: UUID
-    role: MemberRole
-    company_id: Optional[UUID] = None
+    role: str
+    rule_set_id: Optional[UUID] = None
 
 
 def forbid(
