@@ -19,6 +19,9 @@ run ?= seed_rule
 up:
 	$(COMPOSE) up -d
 
+upp:
+	cd sentinel-ui && npm run dev
+
 # Rebuild image + start
 build:
 	$(COMPOSE) up --build -d
