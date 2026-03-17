@@ -3,14 +3,18 @@ from __future__ import annotations
 
 import hashlib
 import re
+from datetime import datetime
 from uuid import UUID
 
 import anyio
+import sqlalchemy as sa
 from sqlmodel import Session, select
 
 from app.chat.service import ChatService
+from app.common.error_codes import ErrorCode
 from app.common.errors import AppError
 from app.common.enums import (
+    ConversationStatus,
     MessageInputType,
     MessageRole,
     RuleAction,
@@ -35,6 +39,28 @@ _CODE_LIKE_TERM_RE = re.compile(r"[A-Za-z0-9]{2,}(?:[-_][A-Za-z0-9]{1,}){1,}")
 
 def _sha256_hex(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _safe_message_content(message: Message) -> tuple[str | None, bool]:
+    is_blocked = message.final_action == RuleAction.block
+    is_masked = message.final_action == RuleAction.mask
+
+    if is_blocked:
+        return None, True
+    if message.content_masked is not None:
+        return message.content_masked, False
+    if is_masked:
+        return None, False
+    return message.content, False
+
+
+def _truncate_preview(text: str | None, *, max_length: int = 180) -> str | None:
+    value = str(text or "").strip()
+    if not value:
+        return None
+    if len(value) <= max_length:
+        return value
+    return f"{value[:max_length].rstrip()}..."
 
 
 def _extract_code_like_mask_terms(scan_payload: dict) -> list[str]:
@@ -372,3 +398,164 @@ def list_messages_page(
     next_before_seq = oldest_seq if has_more else None
 
     return rows, has_more, next_before_seq, oldest_seq, newest_seq
+
+
+def list_conversations_page(
+    *,
+    session: Session,
+    user_id: UUID,
+    limit: int,
+    before_updated_at: datetime | None = None,
+    before_id: UUID | None = None,
+    status: ConversationStatus | None = ConversationStatus.active,
+) -> tuple[list[Conversation], bool, datetime | None, UUID | None]:
+    safe_limit = max(1, min(int(limit), 50))
+    stmt = select(Conversation).where(Conversation.user_id == user_id)
+
+    if status is not None:
+        stmt = stmt.where(Conversation.status == status)
+
+    if before_updated_at is not None:
+        if before_id is not None:
+            stmt = stmt.where(
+                sa.or_(
+                    Conversation.updated_at < before_updated_at,
+                    sa.and_(
+                        Conversation.updated_at == before_updated_at,
+                        Conversation.id < before_id,
+                    ),
+                )
+            )
+        else:
+            stmt = stmt.where(Conversation.updated_at < before_updated_at)
+
+    stmt = stmt.order_by(Conversation.updated_at.desc(), Conversation.id.desc()).limit(
+        safe_limit + 1
+    )
+    rows = list(session.exec(stmt).all())
+
+    has_more = len(rows) > safe_limit
+    if has_more:
+        rows = rows[:safe_limit]
+
+    next_before_updated_at = rows[-1].updated_at if (rows and has_more) else None
+    next_before_id = rows[-1].id if (rows and has_more) else None
+    return rows, has_more, next_before_updated_at, next_before_id
+
+
+def get_conversation_or_404(*, session: Session, conversation_id: UUID) -> Conversation:
+    row = session.get(Conversation, conversation_id)
+    if not row:
+        raise not_found("Conversation not found", field="conversation_id")
+    return row
+
+
+def get_last_message_summary(
+    *, session: Session, conversation_id: UUID
+) -> tuple[datetime | None, str | None]:
+    row = session.exec(
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.sequence_number.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None, None
+
+    safe_content, _ = _safe_message_content(row)
+    return row.created_at, _truncate_preview(safe_content)
+
+
+def get_message_for_conversation_or_404(
+    *,
+    session: Session,
+    conversation_id: UUID,
+    message_id: UUID,
+) -> Message:
+    row = session.get(Message, message_id)
+    if row is None or row.conversation_id != conversation_id:
+        raise not_found("Message not found", field="message_id")
+    return row
+
+
+def build_safe_message_detail(*, message: Message) -> dict:
+    safe_content, is_blocked = _safe_message_content(message)
+    return {
+        "id": message.id,
+        "conversation_id": message.conversation_id,
+        "role": message.role,
+        "sequence_number": message.sequence_number,
+        "input_type": message.input_type,
+        "content": safe_content,
+        "content_masked": message.content_masked,
+        "scan_status": (
+            message.scan_status.value
+            if hasattr(message.scan_status, "value")
+            else str(message.scan_status)
+        ),
+        "final_action": (
+            message.final_action.value
+            if hasattr(message.final_action, "value")
+            else (
+                str(message.final_action)
+                if message.final_action is not None
+                else None
+            )
+        ),
+        "risk_score": message.risk_score,
+        "ambiguous": bool(message.ambiguous),
+        "matched_rule_ids": message.matched_rule_ids,
+        "entities_json": message.entities_json,
+        "rag_evidence_json": message.rag_evidence_json,
+        "latency_ms": message.latency_ms,
+        "blocked": is_blocked,
+        "blocked_reason": getattr(message, "blocked_reason", None),
+        "created_at": message.created_at,
+    }
+
+
+def update_conversation_metadata(
+    *,
+    session: Session,
+    conversation_id: UUID,
+    title: str | None,
+    status: ConversationStatus | None,
+    fields_set: set[str],
+) -> Conversation:
+    row = get_conversation_or_404(session=session, conversation_id=conversation_id)
+
+    if not fields_set:
+        return row
+
+    if "title" in fields_set:
+        normalized = (title or "").strip()
+        row.title = normalized or None
+
+    if "status" in fields_set:
+        if status is None:
+            raise AppError(
+                422,
+                ErrorCode.VALIDATION_ERROR,
+                "Invalid status",
+                details=[{"field": "status", "reason": "required"}],
+            )
+        row.status = status
+
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def soft_delete_conversation(
+    *,
+    session: Session,
+    conversation_id: UUID,
+) -> Conversation:
+    row = get_conversation_or_404(session=session, conversation_id=conversation_id)
+    if row.status != ConversationStatus.archived:
+        row.status = ConversationStatus.archived
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+    return row

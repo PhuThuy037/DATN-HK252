@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field as PydanticField
 
+from app.common.enums import ConversationStatus
 from app.common.enums import MessageInputType, MessageRole
 
 
@@ -31,9 +32,47 @@ class ConversationOut(BaseModel):
     last_sequence_number: int
     status: str
     created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class ConversationListItemOut(BaseModel):
+    id: UUID
+    rule_set_id: Optional[UUID]
+    title: Optional[str]
+    status: str
+    model_name: Optional[str]
+    temperature: Optional[float]
+    last_sequence_number: int
+    created_at: datetime
+    updated_at: datetime
+    last_message_at: Optional[datetime] = None
+    last_message_preview: Optional[str] = None
+
+
+class ConversationsPageMeta(BaseModel):
+    limit: int
+    has_more: bool
+    next_before_updated_at: Optional[datetime] = None
+    next_before_id: Optional[UUID] = None
+    status: Optional[str] = None
+
+
+class ConversationsPageOut(BaseModel):
+    items: list[ConversationListItemOut]
+    page: ConversationsPageMeta
+
+
+class ConversationUpdateIn(BaseModel):
+    title: Optional[str] = PydanticField(default=None, max_length=300)
+    status: Optional[ConversationStatus] = None
+
+
+class ConversationDeleteOut(BaseModel):
+    id: UUID
+    status: str
 
 
 class MessageCreateIn(BaseModel):
@@ -90,6 +129,27 @@ class MessagesPageMeta(BaseModel):
 class MessagesPageOut(BaseModel):
     items: list[MessagePublicOut]
     page: MessagesPageMeta
+
+
+class MessageDetailOut(BaseModel):
+    id: UUID
+    conversation_id: UUID
+    role: MessageRole
+    sequence_number: int
+    input_type: MessageInputType
+    content: Optional[str]
+    content_masked: Optional[str]
+    scan_status: str
+    final_action: Optional[str]
+    risk_score: Optional[float]
+    ambiguous: bool
+    matched_rule_ids: Optional[list[str]] = None
+    entities_json: Optional[dict[str, Any]] = None
+    rag_evidence_json: Optional[dict[str, Any]] = None
+    latency_ms: Optional[int] = None
+    blocked: bool = False
+    blocked_reason: Optional[str] = None
+    created_at: datetime
 
 
 class ConversationCreateCompanyIn(ConversationCreateRuleSetIn):
