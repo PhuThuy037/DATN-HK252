@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Menu, PanelRight, X } from "lucide-react";
-import { Outlet, useParams } from "react-router-dom";
+import { Outlet, useLocation, useParams } from "react-router-dom";
 import { CompliancePanel } from "@/features/compliance/components/CompliancePanel";
 import { ConversationSidebar } from "@/features/conversations/components/ConversationSidebar";
 import { cn } from "@/shared/lib/utils";
@@ -9,21 +9,32 @@ import { Sheet, SheetContent } from "@/shared/ui/sheet";
 
 export function AppLayout() {
   const { conversationId } = useParams();
+  const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isComplianceOpen, setIsComplianceOpen] = useState(false);
+  const isChatRoute = location.pathname.startsWith("/app/chat");
 
   return (
     <div className="relative h-screen overflow-hidden bg-background">
-      <div className="hidden h-full grid-cols-[280px_minmax(0,1fr)_320px] overflow-hidden md:grid">
+      <div
+        className={cn(
+          "hidden h-full overflow-hidden md:grid",
+          isChatRoute
+            ? "grid-cols-[280px_minmax(0,1fr)_320px]"
+            : "grid-cols-[280px_minmax(0,1fr)]"
+        )}
+      >
         <ConversationSidebar activeConversationId={conversationId} />
 
         <main className="min-w-0 overflow-hidden">
           <Outlet />
         </main>
 
-        <div className="h-full overflow-y-auto border-l bg-muted/20 p-4">
-          <CompliancePanel conversationId={conversationId} className="h-full" />
-        </div>
+        {isChatRoute && (
+          <div className="h-full overflow-y-auto border-l bg-muted/20 p-4">
+            <CompliancePanel conversationId={conversationId} className="h-full" />
+          </div>
+        )}
       </div>
 
       <div className="relative flex h-full flex-col md:hidden">
@@ -41,25 +52,27 @@ export function AppLayout() {
           >
             <Menu className="h-4 w-4" />
           </Button>
-          <Button
-            className="pointer-events-auto h-9 rounded-full px-3 shadow-md"
-            onClick={() => setIsComplianceOpen((prev) => !prev)}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {isComplianceOpen ? (
-              <>
-                <X className="mr-1 h-4 w-4" />
-                Hide
-              </>
-            ) : (
-              <>
-                <PanelRight className="mr-1 h-4 w-4" />
-                Compliance
-              </>
-            )}
-          </Button>
+          {isChatRoute && (
+            <Button
+              className="pointer-events-auto h-9 rounded-full px-3 shadow-md"
+              onClick={() => setIsComplianceOpen((prev) => !prev)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {isComplianceOpen ? (
+                <>
+                  <X className="mr-1 h-4 w-4" />
+                  Hide
+                </>
+              ) : (
+                <>
+                  <PanelRight className="mr-1 h-4 w-4" />
+                  Compliance
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -73,7 +86,7 @@ export function AppLayout() {
         </SheetContent>
       </Sheet>
 
-      {isComplianceOpen && (
+      {isChatRoute && isComplianceOpen && (
         <button
           aria-label="Close compliance panel overlay"
           className="absolute inset-0 z-20 bg-black/25 md:hidden"
@@ -82,14 +95,16 @@ export function AppLayout() {
         />
       )}
 
-      <div
-        className={cn(
-          "absolute right-0 top-0 z-30 h-full w-[86vw] max-w-[360px] border-l bg-muted/30 p-3 shadow-xl transition-transform duration-200 md:hidden",
-          isComplianceOpen ? "translate-x-0" : "translate-x-full"
-        )}
-      >
-        <CompliancePanel conversationId={conversationId} className="h-full" />
-      </div>
+      {isChatRoute && (
+        <div
+          className={cn(
+            "absolute right-0 top-0 z-30 h-full w-[86vw] max-w-[360px] border-l bg-muted/30 p-3 shadow-xl transition-transform duration-200 md:hidden",
+            isComplianceOpen ? "translate-x-0" : "translate-x-full"
+          )}
+        >
+          <CompliancePanel conversationId={conversationId} className="h-full" />
+        </div>
+      )}
     </div>
   );
 }

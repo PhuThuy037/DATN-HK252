@@ -45,6 +45,18 @@ export async function createPersonalConversation(payload?: CreateConversationPay
   return unwrapEnvelope(response.data, "Failed to create conversation");
 }
 
+export async function createRuleSetConversation(
+  ruleSetId: string,
+  payload?: CreateConversationPayload
+) {
+  const response = await httpClient.post<ApiEnvelope<ConversationDetail>>(
+    `/v1/rule-sets/${ruleSetId}/conversations`,
+    payload ?? {}
+  );
+
+  return unwrapEnvelope(response.data, "Failed to create rule set conversation");
+}
+
 export async function updateConversation(
   conversationId: string,
   payload: ConversationUpdatePayload

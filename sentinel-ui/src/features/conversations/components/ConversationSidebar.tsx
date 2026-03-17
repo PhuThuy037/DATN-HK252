@@ -1,6 +1,14 @@
 import { useMemo, useState } from "react";
-import { LogOut, MessageSquarePlus } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import {
+  LogOut,
+  MessageSquarePlus,
+  Scale,
+  MessagesSquare,
+  WandSparkles,
+  FileText,
+  SlidersHorizontal,
+} from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   extractAuthErrorMessage,
   logout,
@@ -11,6 +19,7 @@ import { useConversations } from "@/features/conversations/hooks/useConversation
 import { useCreateConversation } from "@/features/conversations/hooks/useCreateConversation";
 import { useDeleteConversation } from "@/features/conversations/hooks/useDeleteConversation";
 import { useUpdateConversation } from "@/features/conversations/hooks/useUpdateConversation";
+import { useRuleSetStore } from "@/features/rules/store/ruleSetStore";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -30,9 +39,13 @@ export function ConversationSidebar({
   onConversationSelect,
 }: ConversationSidebarProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const user = useAuthStore((state) => state.user);
   const refreshToken = useAuthStore((state) => state.refreshToken);
   const clearAuth = useAuthStore((state) => state.clearAuth);
+  const currentRuleSet = useRuleSetStore((state) => state.currentRuleSet);
+  const clearCurrentRuleSet = useRuleSetStore((state) => state.clearCurrentRuleSet);
+  const setRuleSetResolved = useRuleSetStore((state) => state.setRuleSetResolved);
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -76,6 +89,14 @@ export function ConversationSidebar({
       });
     }
   };
+
+  const isRulesRoute = location.pathname.startsWith("/app/settings/rules");
+  const isSystemPromptRoute = location.pathname.startsWith(
+    "/app/settings/system-prompt"
+  );
+  const isSuggestionsRoute = location.pathname.startsWith("/app/suggestions");
+  const isPoliciesRoute = location.pathname.startsWith("/app/policies");
+  const isChatRoute = location.pathname.startsWith("/app/chat");
 
   const handleRenameConversation = async (item: ConversationListItemType) => {
     const nextTitle = window.prompt(
@@ -169,6 +190,8 @@ export function ConversationSidebar({
       // Always clear local auth even when API logout fails.
     } finally {
       clearAuth();
+      clearCurrentRuleSet();
+      setRuleSetResolved(false);
       navigate("/login");
       setIsLoggingOut(false);
     }
@@ -181,6 +204,11 @@ export function ConversationSidebar({
           <div>
             <h1 className="text-base font-semibold">Sentinel Workspace</h1>
             <p className="text-xs text-muted-foreground">{user?.email ?? "User"}</p>
+            {currentRuleSet?.name && (
+              <p className="text-xs text-muted-foreground">
+                Rule set: {currentRuleSet.name}
+              </p>
+            )}
           </div>
           <Button
             disabled={isLoggingOut}
@@ -204,6 +232,74 @@ export function ConversationSidebar({
         <MessageSquarePlus className="mr-2 h-4 w-4" />
         New conversation
       </Button>
+
+      <div className="mb-3 grid grid-cols-1 gap-2">
+        <Button
+          className="justify-start"
+          onClick={() => {
+            navigate("/app/chat");
+            onConversationSelect?.();
+          }}
+          size="sm"
+          type="button"
+          variant={isChatRoute ? "default" : "outline"}
+        >
+          <MessagesSquare className="mr-2 h-4 w-4" />
+          Chat
+        </Button>
+        <Button
+          className="justify-start"
+          onClick={() => {
+            navigate("/app/settings/rules");
+            onConversationSelect?.();
+          }}
+          size="sm"
+          type="button"
+          variant={isRulesRoute ? "default" : "outline"}
+        >
+          <Scale className="mr-2 h-4 w-4" />
+          Rules
+        </Button>
+        <Button
+          className="justify-start"
+          onClick={() => {
+            navigate("/app/settings/system-prompt");
+            onConversationSelect?.();
+          }}
+          size="sm"
+          type="button"
+          variant={isSystemPromptRoute ? "default" : "outline"}
+        >
+          <SlidersHorizontal className="mr-2 h-4 w-4" />
+          System Prompt
+        </Button>
+        <Button
+          className="justify-start"
+          onClick={() => {
+            navigate("/app/suggestions");
+            onConversationSelect?.();
+          }}
+          size="sm"
+          type="button"
+          variant={isSuggestionsRoute ? "default" : "outline"}
+        >
+          <WandSparkles className="mr-2 h-4 w-4" />
+          Suggestions
+        </Button>
+        <Button
+          className="justify-start"
+          onClick={() => {
+            navigate("/app/policies");
+            onConversationSelect?.();
+          }}
+          size="sm"
+          type="button"
+          variant={isPoliciesRoute ? "default" : "outline"}
+        >
+          <FileText className="mr-2 h-4 w-4" />
+          Policies
+        </Button>
+      </div>
 
       <Card className="min-h-0 flex-1 overflow-hidden p-2">
         <ScrollArea className="h-full">
