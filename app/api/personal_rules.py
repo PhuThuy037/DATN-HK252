@@ -14,6 +14,7 @@ from app.decision.scan_engine_local import ScanEngineLocal
 from app.rule import service as rule_service
 from app.rule.schemas import (
     EffectiveRuleMeOut,
+    RuleDetailOut,
     RuleSetRuleChangeLogOut,
     RuleSetRuleCreateOut,
     RuleSetRuleCreateIn,
@@ -100,6 +101,23 @@ async def debug_evaluate_rules_for_current_user(
             signals=dict(scan_out.get("signals") or {}),
         ),
     )
+
+
+@router.get(
+    "/rules/{rule_id}",
+    response_model=ApiResponse[RuleDetailOut],
+)
+def get_rule_detail(
+    rule_id: UUID,
+    session: SessionDep,
+    principal: CurrentPrincipal,
+):
+    row = rule_service.get_rule_detail(
+        session=session,
+        rule_id=rule_id,
+        actor_user_id=principal.user_id,
+    )
+    return ApiResponse(ok=True, data=row)
 
 
 @router.get(

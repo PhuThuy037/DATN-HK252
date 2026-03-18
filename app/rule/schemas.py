@@ -122,6 +122,35 @@ class CompanyRuleCreateOut(CompanyRuleOut):
     context_term_ids: list[UUID] = PydanticField(default_factory=list)
 
 
+class RuleContextTermOut(BaseModel):
+    id: UUID
+    entity_type: str
+    term: str
+    lang: str
+    weight: float
+    window_1: int
+    window_2: int
+    enabled: bool
+    created_at: datetime
+
+
+class RuleDetailOut(BaseModel):
+    id: UUID
+    stable_key: str
+    name: str
+    description: Optional[str] = None
+    scope: RuleScope
+    conditions: dict[str, Any]
+    action: RuleAction
+    severity: RuleSeverity
+    priority: int
+    rag_mode: RagMode
+    enabled: bool
+    context_terms: list[RuleContextTermOut] = PydanticField(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
 class EffectiveRuleMeOut(BaseModel):
     rule_id: UUID
     stable_key: str

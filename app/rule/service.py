@@ -21,6 +21,8 @@ from app.rule.schemas import (
     CompanyRuleCreateOut,
     CompanyRuleCreateIn,
     RuleContextTermIn,
+    RuleContextTermOut,
+    RuleDetailOut,
     CompanyRuleOut,
     CompanyRuleUpdateIn,
     EffectiveRuleMeOut,
@@ -275,6 +277,107 @@ def _to_rule_change_out(*, row: RuleChangeLog) -> RuleChangeLogOut:
     )
 
 
+def _to_rule_context_term_out(*, row: ContextTerm) -> RuleContextTermOut:
+    return RuleContextTermOut(
+        id=row.id,
+        entity_type=str(row.entity_type),
+        term=str(row.term),
+        lang=str(row.lang),
+        weight=float(row.weight),
+        window_1=int(row.window_1),
+        window_2=int(row.window_2),
+        enabled=bool(row.enabled),
+        created_at=row.created_at,
+    )
+
+
+def _has_any_active_company_membership(*, session: Session, user_id: UUID) -> bool:
+    row = session.exec(
+        select(CompanyMember.id)
+        .where(CompanyMember.user_id == user_id)
+        .where(CompanyMember.status == MemberStatus.active)
+        .limit(1)
+    ).first()
+    return row is not None
+
+
+def _extract_entity_types_from_conditions(node: Any) -> set[str]:
+    out: set[str] = set()
+    if isinstance(node, dict):
+        if "entity_type" in node:
+            value = str(node.get("entity_type") or "").strip().upper()
+            if value:
+                out.add(value)
+        for value in node.values():
+            out.update(_extract_entity_types_from_conditions(value))
+        return out
+    if isinstance(node, list):
+        for item in node:
+            out.update(_extract_entity_types_from_conditions(item))
+    return out
+
+
+def _extract_context_keyword_terms_from_conditions(node: Any) -> set[str]:
+    out: set[str] = set()
+    if isinstance(node, dict):
+        signal = node.get("signal")
+        if isinstance(signal, dict):
+            field = str(signal.get("field") or "").strip().lower()
+            if field == "context_keywords":
+                for op in ("equals", "contains", "startswith", "regex"):
+                    if op in signal:
+                        value = str(signal.get(op) or "").strip().lower()
+                        if value:
+                            out.add(value)
+                for op in ("in", "any_of"):
+                    raw = signal.get(op)
+                    if isinstance(raw, list):
+                        for item in raw:
+                            value = str(item or "").strip().lower()
+                            if value:
+                                out.add(value)
+                    elif isinstance(raw, str):
+                        value = raw.strip().lower()
+                        if value:
+                            out.add(value)
+        for value in node.values():
+            out.update(_extract_context_keyword_terms_from_conditions(value))
+        return out
+    if isinstance(node, list):
+        for item in node:
+            out.update(_extract_context_keyword_terms_from_conditions(item))
+    return out
+
+
+def _list_context_terms_for_rule(
+    *,
+    session: Session,
+    rule: Rule,
+    limit: int = 200,
+) -> list[RuleContextTermOut]:
+    if rule.company_id is None:
+        return []
+
+    entity_types = _extract_entity_types_from_conditions(rule.conditions)
+    keywords = _extract_context_keyword_terms_from_conditions(rule.conditions)
+    if not entity_types and not keywords:
+        return []
+
+    stmt = (
+        select(ContextTerm)
+        .where(ContextTerm.company_id == rule.company_id)
+        .order_by(ContextTerm.created_at.desc())
+        .limit(max(1, int(limit)))
+    )
+    if entity_types:
+        stmt = stmt.where(ContextTerm.entity_type.in_(sorted(entity_types)))
+    if keywords:
+        stmt = stmt.where(ContextTerm.term.in_(sorted(keywords)))
+
+    rows = list(session.exec(stmt).all())
+    return [_to_rule_context_term_out(row=r) for r in rows]
+
+
 def _snapshot_rule(*, rule: Rule) -> dict[str, Any]:
     return {
         "id": str(rule.id),
@@ -424,6 +527,52 @@ def _load_company_rule_by_stable_key(
             field="stable_key",
         )
     return rows[0] if rows else None
+
+
+def get_rule_detail(
+    *,
+    session: Session,
+    rule_id: UUID,
+    actor_user_id: UUID,
+) -> RuleDetailOut:
+    row = session.get(Rule, rule_id)
+    if not row:
+        raise not_found("Rule not found", field="rule_id")
+
+    if row.company_id is None:
+        if not _has_any_active_company_membership(
+            session=session,
+            user_id=actor_user_id,
+        ):
+            raise forbid(
+                "Access denied",
+                field="rule_id",
+                reason="no_company_access",
+            )
+    else:
+        _require_company_member(
+            session=session,
+            company_id=row.company_id,
+            user_id=actor_user_id,
+        )
+
+    context_terms = _list_context_terms_for_rule(session=session, rule=row)
+    return RuleDetailOut(
+        id=row.id,
+        stable_key=row.stable_key,
+        name=row.name,
+        description=row.description,
+        scope=row.scope,
+        conditions=row.conditions,
+        action=row.action,
+        severity=row.severity,
+        priority=int(row.priority),
+        rag_mode=row.rag_mode,
+        enabled=bool(row.enabled),
+        context_terms=context_terms,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
 
 
 def list_company_rules(
