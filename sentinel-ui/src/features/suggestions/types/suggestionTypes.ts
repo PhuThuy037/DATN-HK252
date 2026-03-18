@@ -64,6 +64,9 @@ export type SuggestionDuplicateCandidate = {
   origin: string;
   similarity: number;
   lexical_score: number;
+  action?: string | null;
+  scope?: string | null;
+  summary?: string | null;
 };
 
 export type SuggestionDuplicateCheck = {
@@ -79,6 +82,14 @@ export type SuggestionDuplicateCheck = {
   llm_provider?: string | null;
   llm_model?: string | null;
   llm_fallback_used: boolean;
+};
+
+export type SuggestionDuplicateLevel = "none" | "weak" | "strong";
+
+export type SuggestionDuplicate = {
+  level: SuggestionDuplicateLevel;
+  reason: string;
+  similar_rules: SuggestionDuplicateCandidate[];
 };
 
 export type SuggestionRetrievalContext = {
@@ -104,6 +115,7 @@ export type RuleSuggestionOut = {
 };
 
 export type RuleSuggestionGenerateOut = RuleSuggestionOut & {
+  duplicate: SuggestionDuplicate;
   duplicate_check: SuggestionDuplicateCheck;
   explanation: SuggestionExplanation;
   quality_signals: SuggestionQualitySignals;
@@ -111,6 +123,7 @@ export type RuleSuggestionGenerateOut = RuleSuggestionOut & {
 };
 
 export type RuleSuggestionGetOut = RuleSuggestionOut & {
+  duplicate: SuggestionDuplicate;
   explanation: SuggestionExplanation;
   quality_signals: SuggestionQualitySignals;
 };

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
-import { useMyRuleSets } from "@/features/rules/hooks";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
+import { getRuleDetail } from "@/features/rules";
+import type { RuleDetail } from "@/features/rules/types";
+import { useRuleSetStore } from "@/features/rules/store/ruleSetStore";
 import {
   SuggestionApiError,
   getSuggestionErrorMessage,
@@ -14,26 +15,51 @@ import {
   useSuggestionLogs,
 } from "@/features/suggestions";
 import {
-  DraftEditor,
-  SimulatePanel,
-  StatusBadge,
-  SuggestionActions,
-  SuggestionLogs,
+  SuggestionActionDialog,
+  SuggestionApplyStep,
+  SuggestionDecisionStep,
+  SuggestionDraftStep,
+  SuggestionGenerateStep,
+  SuggestionHeader,
+  SuggestionRuleInspectorDialog,
+  SuggestionReviewStep,
+  SuggestionSimulateStep,
   SuggestionStepper,
-  canEditDraft,
-  canSimulate,
-  formatDate,
+  SuggestionTechnicalDetails,
   type SuggestionStepKey,
 } from "@/features/suggestions/components";
 import type {
   RuleSuggestionGetOut,
   RuleSuggestionSimulateOut,
   SuggestionDraft,
+  SuggestionDuplicate,
+  SuggestionDuplicateCandidate,
+  SuggestionDuplicateCheck,
 } from "@/features/suggestions/types";
-import { Button } from "@/shared/ui/button";
+import { canEditDraft } from "@/features/suggestions/components/StatusBadge";
 import { Card } from "@/shared/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/tabs";
+import { Textarea } from "@/shared/ui/textarea";
 import { toast } from "@/shared/ui/use-toast";
+
+type SuggestionDetailLocationState = {
+  initialStep?: SuggestionStepKey;
+  generationInsights?: {
+    suggestionId: string;
+    duplicate?: SuggestionDuplicate;
+    duplicate_check?: SuggestionDuplicateCheck;
+  };
+};
+
+type DuplicateInsight = {
+  level?: "none" | "weak" | "strong";
+  reason?: string;
+  duplicateRisk?: string;
+  conflictRisk?: string;
+  runtimeUsable?: boolean;
+  rationale?: string;
+  similarRules?: SuggestionDuplicateCandidate[];
+  candidates?: SuggestionDuplicateCandidate[];
+};
 
 function mapStatusToInitialStep(status: RuleSuggestionGetOut["status"]): SuggestionStepKey {
   if (status === "draft") {
@@ -46,22 +72,6 @@ function mapStatusToInitialStep(status: RuleSuggestionGetOut["status"]): Suggest
     return "apply";
   }
   return "review";
-}
-
-function parseRuleJson(value: string) {
-  const parsed = JSON.parse(value) as unknown;
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("draft.rule must be a JSON object");
-  }
-  return parsed as SuggestionDraft["rule"];
-}
-
-function parseContextTermsJson(value: string) {
-  const parsed = JSON.parse(value) as unknown;
-  if (!Array.isArray(parsed)) {
-    throw new Error("draft.context_terms must be a JSON array");
-  }
-  return parsed as SuggestionDraft["context_terms"];
 }
 
 function isStaleVersionConflict(error: SuggestionApiError) {
@@ -78,90 +88,322 @@ function isStaleVersionConflict(error: SuggestionApiError) {
 
 function validateDraft(rule: SuggestionDraft["rule"], contextTerms: SuggestionDraft["context_terms"]) {
   if (!rule.stable_key?.trim()) {
-    return "stable_key is required";
+    return "Stable key is required";
   }
   if (!rule.name?.trim()) {
-    return "name is required";
+    return "Name is required";
   }
   if (typeof rule.priority !== "number" || Number.isNaN(rule.priority)) {
-    return "priority must be a valid number";
+    return "Priority must be a valid number";
   }
 
   for (const term of contextTerms) {
     if (!term.entity_type?.trim() || !term.term?.trim()) {
-      return "context_terms require entity_type and term";
+      return "Each context term requires entity_type and term";
     }
   }
 
   return null;
 }
 
+function cloneDraft(value: SuggestionDraft): SuggestionDraft {
+  return JSON.parse(JSON.stringify(value)) as SuggestionDraft;
+}
+
+function buildHeaderTitle(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.length <= 80) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, 80)}...`;
+}
+
+function getRuleDetailErrorMessage(error: unknown) {
+  const serverMessage =
+    typeof error === "object" &&
+    error !== null &&
+    "response" in error &&
+    typeof (error as { response?: unknown }).response === "object" &&
+    (error as { response?: { data?: { error?: { message?: unknown } } } }).response?.data?.error
+      ?.message;
+
+  if (typeof serverMessage === "string" && serverMessage.trim().length > 0) {
+    return serverMessage;
+  }
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+  return "Failed to load rule detail";
+}
+
+function asDuplicateCandidates(value: unknown): SuggestionDuplicateCandidate[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const record = item as Record<string, unknown>;
+      return {
+        rule_id: String(record.rule_id ?? ""),
+        stable_key: String(record.stable_key ?? ""),
+        name: String(record.name ?? ""),
+        origin: String(record.origin ?? ""),
+        similarity: Number(record.similarity ?? record.score ?? 0),
+        lexical_score: Number(record.lexical_score ?? 0),
+        action: record.action ? String(record.action) : null,
+        scope: record.scope ? String(record.scope) : null,
+        summary: record.summary
+          ? String(record.summary)
+          : record.description
+            ? String(record.description)
+            : null,
+      } as SuggestionDuplicateCandidate;
+    })
+    .filter((candidate): candidate is SuggestionDuplicateCandidate => Boolean(candidate?.rule_id));
+}
+
+function normalizeDuplicateLevel(
+  rawLevel: unknown,
+  decision: string | undefined,
+  similarRuleCount: number
+): "none" | "weak" | "strong" {
+  const levelText = typeof rawLevel === "string" ? rawLevel.trim().toLowerCase() : "";
+  if (levelText === "strong" || levelText === "weak" || levelText === "none") {
+    return levelText;
+  }
+  if (similarRuleCount > 0) {
+    return "strong";
+  }
+  if (decision && decision.toUpperCase() !== "DIFFERENT") {
+    return "weak";
+  }
+  return "none";
+}
+
+function extractDuplicateFromUnknown(value: unknown): DuplicateInsight | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const decision = typeof record.decision === "string" ? record.decision : undefined;
+  const similarRules = asDuplicateCandidates(record.similar_rules ?? record.candidates);
+  const level = normalizeDuplicateLevel(record.level, decision, similarRules.length);
+  const reason =
+    typeof record.reason === "string"
+      ? record.reason
+      : typeof record.rationale === "string"
+        ? record.rationale
+        : undefined;
+
+  return {
+    level,
+    reason,
+    duplicateRisk: decision,
+    rationale: reason,
+    similarRules,
+    candidates: similarRules,
+  };
+}
+
+function extractDuplicateInsight(
+  suggestion: RuleSuggestionGetOut,
+  logs: Array<{ before_json?: Record<string, unknown> | null; after_json?: Record<string, unknown> | null }> | undefined,
+  locationState: SuggestionDetailLocationState | null
+): DuplicateInsight {
+  const base: DuplicateInsight = {
+    level: "none",
+    duplicateRisk: suggestion.quality_signals?.duplicate_risk,
+    conflictRisk: suggestion.quality_signals?.conflict_risk,
+    runtimeUsable: suggestion.quality_signals?.runtime_usable,
+    similarRules: [],
+    candidates: [],
+  };
+
+  if (
+    locationState?.generationInsights?.suggestionId === suggestion.id &&
+    locationState.generationInsights.duplicate
+  ) {
+    const fromLocationDuplicate = extractDuplicateFromUnknown(
+      locationState.generationInsights.duplicate
+    );
+    if (fromLocationDuplicate) {
+      return {
+        ...base,
+        ...fromLocationDuplicate,
+      };
+    }
+  }
+
+  if (
+    locationState?.generationInsights?.suggestionId === suggestion.id &&
+    locationState.generationInsights.duplicate_check
+  ) {
+    const fromLocationLegacy = extractDuplicateFromUnknown(
+      locationState.generationInsights.duplicate_check
+    );
+    if (fromLocationLegacy) {
+      return {
+        ...base,
+        ...fromLocationLegacy,
+      };
+    }
+  }
+
+  const fromSuggestion = extractDuplicateFromUnknown(suggestion.duplicate);
+  if (fromSuggestion) {
+    return {
+      ...base,
+      ...fromSuggestion,
+    };
+  }
+
+  if (Array.isArray(logs)) {
+    for (const log of logs) {
+      const fromAfter = extractDuplicateFromUnknown(log.after_json?.duplicate);
+      if (fromAfter) {
+        return {
+          ...base,
+          ...fromAfter,
+        };
+      }
+
+      const fromAfterLegacy = extractDuplicateFromUnknown(log.after_json?.duplicate_check);
+      if (fromAfterLegacy) {
+        return {
+          ...base,
+          ...fromAfterLegacy,
+        };
+      }
+
+      const fromBefore = extractDuplicateFromUnknown(log.before_json?.duplicate);
+      if (fromBefore) {
+        return {
+          ...base,
+          ...fromBefore,
+        };
+      }
+
+      const fromBeforeLegacy = extractDuplicateFromUnknown(log.before_json?.duplicate_check);
+      if (fromBeforeLegacy) {
+        return {
+          ...base,
+          ...fromBeforeLegacy,
+        };
+      }
+    }
+  }
+
+  return base;
+}
+
 export function SuggestionDetailPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { suggestionId } = useParams();
 
-  const myRuleSetsQuery = useMyRuleSets();
-  const ruleSetId = myRuleSetsQuery.data?.[0]?.id;
+  const locationState = (location.state as SuggestionDetailLocationState | null) ?? null;
 
-  const detailQuery = useSuggestionDetail(ruleSetId, suggestionId);
-  const logsQuery = useSuggestionLogs(ruleSetId, suggestionId, 100);
+  const currentRuleSetId = useRuleSetStore((state) => state.currentRuleSetId);
+  const isRuleSetResolved = useRuleSetStore((state) => state.isRuleSetResolved);
 
-  const editMutation = useEditSuggestion(ruleSetId, suggestionId);
-  const simulateMutation = useSimulateSuggestion(ruleSetId, suggestionId);
-  const confirmMutation = useConfirmSuggestion(ruleSetId, suggestionId);
-  const rejectMutation = useRejectSuggestion(ruleSetId, suggestionId);
-  const applyMutation = useApplySuggestion(ruleSetId, suggestionId);
+  const detailQuery = useSuggestionDetail(currentRuleSetId ?? undefined, suggestionId);
+  const logsQuery = useSuggestionLogs(currentRuleSetId ?? undefined, suggestionId, 100);
+
+  const editMutation = useEditSuggestion(currentRuleSetId ?? undefined, suggestionId);
+  const simulateMutation = useSimulateSuggestion(currentRuleSetId ?? undefined, suggestionId);
+  const confirmMutation = useConfirmSuggestion(currentRuleSetId ?? undefined, suggestionId);
+  const rejectMutation = useRejectSuggestion(currentRuleSetId ?? undefined, suggestionId);
+  const applyMutation = useApplySuggestion(currentRuleSetId ?? undefined, suggestionId);
 
   const [activeStep, setActiveStep] = useState<SuggestionStepKey>("draft");
-  const [sideTab, setSideTab] = useState<"simulate" | "logs" | "metadata">("simulate");
-  const [ruleJson, setRuleJson] = useState("{}");
-  const [contextTermsJson, setContextTermsJson] = useState("[]");
+  const [draftState, setDraftState] = useState<SuggestionDraft | null>(null);
   const [draftValidationError, setDraftValidationError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [staleBanner, setStaleBanner] = useState<string | null>(null);
   const [unsavedDraftSnapshot, setUnsavedDraftSnapshot] = useState<string | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
+
   const [simulateResult, setSimulateResult] = useState<RuleSuggestionSimulateOut | null>(null);
   const [simulateError, setSimulateError] = useState<string | null>(null);
+
+  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
+  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
+  const [isApplyDialogOpen, setIsApplyDialogOpen] = useState(false);
+  const [isRuleInspectorOpen, setIsRuleInspectorOpen] = useState(false);
+  const [ruleInspectorMode, setRuleInspectorMode] = useState<"view" | "compare">("view");
+  const [selectedDuplicateCandidate, setSelectedDuplicateCandidate] =
+    useState<SuggestionDuplicateCandidate | null>(null);
+  const [selectedRuleDetail, setSelectedRuleDetail] = useState<RuleDetail | null>(null);
+  const [ruleInspectorError, setRuleInspectorError] = useState<string | null>(null);
+  const [isRuleInspectorLoading, setIsRuleInspectorLoading] = useState(false);
+  const [rejectReasonInput, setRejectReasonInput] = useState("");
+  const initializedSuggestionIdRef = useRef<string | null>(null);
+  const ruleInspectorRequestIdRef = useRef(0);
 
   useEffect(() => {
     if (!detailQuery.data) {
       return;
     }
-    setRuleJson(JSON.stringify(detailQuery.data.draft.rule, null, 2));
-    setContextTermsJson(JSON.stringify(detailQuery.data.draft.context_terms, null, 2));
-    setActiveStep(mapStatusToInitialStep(detailQuery.data.status));
+
+    setDraftState(cloneDraft(detailQuery.data.draft));
+
+    const isNewSuggestion = initializedSuggestionIdRef.current !== detailQuery.data.id;
+    if (isNewSuggestion) {
+      initializedSuggestionIdRef.current = detailQuery.data.id;
+
+      const shouldStartAtGenerate =
+        locationState?.initialStep === "generate" &&
+        locationState?.generationInsights?.suggestionId === detailQuery.data.id;
+
+      setActiveStep(
+        shouldStartAtGenerate ? "generate" : mapStatusToInitialStep(detailQuery.data.status)
+      );
+
+      if (shouldStartAtGenerate) {
+        navigate(location.pathname, { replace: true });
+      }
+    }
+
     setDraftValidationError(null);
     setActionError(null);
     setStaleBanner(null);
-  }, [detailQuery.data?.id, detailQuery.data?.version]);
+  }, [
+    detailQuery.data?.id,
+    detailQuery.data?.version,
+    location.pathname,
+    locationState?.generationInsights?.suggestionId,
+    locationState?.initialStep,
+    navigate,
+  ]);
 
   const hasDirtyDraft = useMemo(() => {
-    if (!detailQuery.data) {
+    if (!detailQuery.data || !draftState) {
       return false;
     }
-    const serverRuleJson = JSON.stringify(detailQuery.data.draft.rule, null, 2).trim();
-    const serverTermsJson = JSON.stringify(detailQuery.data.draft.context_terms, null, 2).trim();
-    return ruleJson.trim() !== serverRuleJson || contextTermsJson.trim() !== serverTermsJson;
-  }, [contextTermsJson, detailQuery.data, ruleJson]);
+
+    return JSON.stringify(draftState) !== JSON.stringify(detailQuery.data.draft);
+  }, [detailQuery.data, draftState]);
+
+  const duplicateInsight = useMemo(() => {
+    if (!detailQuery.data) {
+      return null;
+    }
+
+    return extractDuplicateInsight(detailQuery.data, logsQuery.data, locationState);
+  }, [detailQuery.data, locationState, logsQuery.data]);
 
   const handleStaleConflict = async (message: string) => {
     setStaleBanner(message);
-    setUnsavedDraftSnapshot(
-      JSON.stringify(
-        {
-          rule: parseSafeJson(ruleJson),
-          context_terms: parseSafeJson(contextTermsJson),
-        },
-        null,
-        2
-      )
-    );
+    setUnsavedDraftSnapshot(draftState ? JSON.stringify(draftState, null, 2) : null);
     await detailQuery.refetch();
   };
 
   const handleSaveDraft = async () => {
-    if (!detailQuery.data) {
+    if (!detailQuery.data || !draftState || !canEditDraft(detailQuery.data.status)) {
       return;
     }
 
@@ -169,20 +411,7 @@ export function SuggestionDetailPage() {
     setActionError(null);
     setStaleBanner(null);
 
-    let nextRule: SuggestionDraft["rule"];
-    let nextTerms: SuggestionDraft["context_terms"];
-
-    try {
-      nextRule = parseRuleJson(ruleJson);
-      nextTerms = parseContextTermsJson(contextTermsJson);
-    } catch (error) {
-      setDraftValidationError(
-        error instanceof Error ? error.message : "Invalid draft JSON format"
-      );
-      return;
-    }
-
-    const validationMessage = validateDraft(nextRule, nextTerms);
+    const validationMessage = validateDraft(draftState.rule, draftState.context_terms);
     if (validationMessage) {
       setDraftValidationError(validationMessage);
       return;
@@ -190,15 +419,13 @@ export function SuggestionDetailPage() {
 
     try {
       const saved = await editMutation.mutateAsync({
-        draft: {
-          rule: nextRule,
-          context_terms: nextTerms,
-        },
+        draft: draftState,
         expected_version: detailQuery.data.version,
       });
 
-      setRuleJson(JSON.stringify(saved.draft.rule, null, 2));
-      setContextTermsJson(JSON.stringify(saved.draft.context_terms, null, 2));
+      setDraftState(cloneDraft(saved.draft));
+      await detailQuery.refetch();
+
       toast({
         title: "Draft saved",
         description: "Suggestion draft has been updated.",
@@ -206,10 +433,18 @@ export function SuggestionDetailPage() {
       });
     } catch (error) {
       if (error instanceof SuggestionApiError && isStaleVersionConflict(error)) {
-        await handleStaleConflict("Draft dã b? thay d?i ? noi khác. Vui lòng t?i l?i d? li?u m?i nh?t.");
+        await handleStaleConflict(
+          "Suggestion was updated elsewhere. Please review the latest data and apply your changes again."
+        );
         return;
       }
-      setActionError(getSuggestionErrorMessage(error, "Failed to save draft"));
+      const message = getSuggestionErrorMessage(error, "Failed to save draft");
+      setActionError(message);
+      toast({
+        title: "Save draft failed",
+        description: message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -222,25 +457,32 @@ export function SuggestionDetailPage() {
     setStaleBanner(null);
 
     try {
-      await confirmMutation.mutateAsync({
-        expected_version: detailQuery.data.version,
-      });
+      await confirmMutation.mutateAsync({ expected_version: detailQuery.data.version });
       await detailQuery.refetch();
+      setIsConfirmDialogOpen(false);
       toast({
-        title: "Suggestion approved",
-        description: "Status changed to approved.",
+        title: "Suggestion confirmed",
+        description: "Status is now approved.",
         variant: "success",
       });
     } catch (error) {
       if (error instanceof SuggestionApiError && isStaleVersionConflict(error)) {
-        await handleStaleConflict("Draft dã b? thay d?i ? noi khác. Vui lòng t?i l?i d? li?u m?i nh?t.");
+        await handleStaleConflict(
+          "Suggestion was updated elsewhere. Please review the latest data and apply your changes again."
+        );
         return;
       }
-      setActionError(getSuggestionErrorMessage(error, "Failed to confirm suggestion"));
+      const message = getSuggestionErrorMessage(error, "Failed to confirm suggestion");
+      setActionError(message);
+      toast({
+        title: "Confirm failed",
+        description: message,
+        variant: "destructive",
+      });
     }
   };
 
-  const handleReject = async (reason?: string | null) => {
+  const handleReject = async () => {
     if (!detailQuery.data) {
       return;
     }
@@ -250,21 +492,31 @@ export function SuggestionDetailPage() {
 
     try {
       await rejectMutation.mutateAsync({
-        reason,
+        reason: rejectReasonInput.trim() || null,
         expected_version: detailQuery.data.version,
       });
       await detailQuery.refetch();
+      setIsRejectDialogOpen(false);
+      setRejectReasonInput("");
       toast({
         title: "Suggestion rejected",
-        description: "Status changed to rejected.",
+        description: "Status is now rejected.",
         variant: "success",
       });
     } catch (error) {
       if (error instanceof SuggestionApiError && isStaleVersionConflict(error)) {
-        await handleStaleConflict("Draft dã b? thay d?i ? noi khác. Vui lòng t?i l?i d? li?u m?i nh?t.");
+        await handleStaleConflict(
+          "Suggestion was updated elsewhere. Please review the latest data and apply your changes again."
+        );
         return;
       }
-      setActionError(getSuggestionErrorMessage(error, "Failed to reject suggestion"));
+      const message = getSuggestionErrorMessage(error, "Failed to reject suggestion");
+      setActionError(message);
+      toast({
+        title: "Reject failed",
+        description: message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -277,10 +529,9 @@ export function SuggestionDetailPage() {
     setStaleBanner(null);
 
     try {
-      const applied = await applyMutation.mutateAsync({
-        expected_version: detailQuery.data.version,
-      });
+      const applied = await applyMutation.mutateAsync({ expected_version: detailQuery.data.version });
       await detailQuery.refetch();
+      setIsApplyDialogOpen(false);
       toast({
         title: "Suggestion applied",
         description: `Rule ${applied.stable_key} has been applied.`,
@@ -288,10 +539,18 @@ export function SuggestionDetailPage() {
       });
     } catch (error) {
       if (error instanceof SuggestionApiError && isStaleVersionConflict(error)) {
-        await handleStaleConflict("Draft dã b? thay d?i ? noi khác. Vui lòng t?i l?i d? li?u m?i nh?t.");
+        await handleStaleConflict(
+          "Suggestion was updated elsewhere. Please review the latest data and apply your changes again."
+        );
         return;
       }
-      setActionError(getSuggestionErrorMessage(error, "Failed to apply suggestion"));
+      const message = getSuggestionErrorMessage(error, "Failed to apply suggestion");
+      setActionError(message);
+      toast({
+        title: "Apply failed",
+        description: message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -301,22 +560,112 @@ export function SuggestionDetailPage() {
     try {
       const result = await simulateMutation.mutateAsync(payload);
       setSimulateResult(result);
-      setSideTab("simulate");
+      toast({
+        title: "Simulation complete",
+        description: `Processed ${result.sample_size} samples.`,
+        variant: "success",
+      });
     } catch (error) {
-      setSimulateError(getSuggestionErrorMessage(error, "Failed to simulate suggestion"));
+      const message = getSuggestionErrorMessage(error, "Failed to simulate suggestion");
+      setSimulateError(message);
+      toast({
+        title: "Simulation failed",
+        description: message,
+        variant: "destructive",
+      });
     }
   };
 
-  if (myRuleSetsQuery.isLoading || detailQuery.isLoading) {
-    return <section className="p-6 text-sm text-muted-foreground">Loading suggestion detail...</section>;
+  const handleContinueToDraft = () => {
+    setActiveStep("draft");
+  };
+
+  const loadRuleDetailByCandidate = async (candidate: SuggestionDuplicateCandidate) => {
+    const requestId = ruleInspectorRequestIdRef.current + 1;
+    ruleInspectorRequestIdRef.current = requestId;
+    setSelectedRuleDetail(null);
+    setRuleInspectorError(null);
+    setIsRuleInspectorLoading(true);
+
+    try {
+      const ruleDetail = await getRuleDetail(candidate.rule_id);
+      if (ruleInspectorRequestIdRef.current !== requestId) {
+        return;
+      }
+      setSelectedRuleDetail(ruleDetail);
+    } catch (error) {
+      if (ruleInspectorRequestIdRef.current !== requestId) {
+        return;
+      }
+      setRuleInspectorError(getRuleDetailErrorMessage(error));
+    } finally {
+      if (ruleInspectorRequestIdRef.current === requestId) {
+        setIsRuleInspectorLoading(false);
+      }
+    }
+  };
+
+  const openRuleInspector = (
+    mode: "view" | "compare",
+    candidate: SuggestionDuplicateCandidate
+  ) => {
+    setRuleInspectorMode(mode);
+    setSelectedDuplicateCandidate(candidate);
+    setIsRuleInspectorOpen(true);
+    void loadRuleDetailByCandidate(candidate);
+  };
+
+  const handleViewDuplicateRule = (candidate: SuggestionDuplicateCandidate) => {
+    openRuleInspector("view", candidate);
+  };
+
+  const handleCompareDuplicateRule = (candidate: SuggestionDuplicateCandidate) => {
+    openRuleInspector("compare", candidate);
+  };
+
+  const handleRetryLoadRuleDetail = () => {
+    if (!selectedDuplicateCandidate) {
+      return;
+    }
+    void loadRuleDetailByCandidate(selectedDuplicateCandidate);
+  };
+
+  const handleCloseRuleInspector = () => {
+    ruleInspectorRequestIdRef.current += 1;
+    setIsRuleInspectorOpen(false);
+    setIsRuleInspectorLoading(false);
+    setRuleInspectorError(null);
+  };
+
+  const handleEditExistingRule = () => {
+    if (!selectedDuplicateCandidate) {
+      return;
+    }
+
+    navigate("/app/settings/rules", {
+      state: {
+        highlightRuleId: selectedDuplicateCandidate.rule_id,
+        openEditForRuleId: selectedDuplicateCandidate.rule_id,
+        source: "suggestion-compare",
+      },
+    });
+  };
+
+  const handleContinueAnywayFromCompare = () => {
+    handleCloseRuleInspector();
+    setActiveStep("draft");
+  };
+
+  if (!isRuleSetResolved) {
+    return <section className="p-6 text-sm text-muted-foreground">Resolving workspace...</section>;
   }
 
-  if (myRuleSetsQuery.isError || !ruleSetId) {
-    return (
-      <section className="p-6">
-        <Card className="p-4 text-sm text-destructive">Unable to resolve current rule set.</Card>
-      </section>
-    );
+  if (!currentRuleSetId) {
+    return <Navigate replace to="/onboarding/rule-set" />;
+  }
+
+  if (detailQuery.isLoading) {
+    return <section className="p-6 text-sm text-muted-foreground">Loading suggestion detail...</section>;
   }
 
   if (detailQuery.isError || !detailQuery.data) {
@@ -325,7 +674,9 @@ export function SuggestionDetailPage() {
     if (status === 403) {
       return (
         <section className="p-6">
-          <Card className="p-4 text-sm text-destructive">You do not have permission to view this suggestion.</Card>
+          <Card className="p-4 text-sm text-destructive">
+            You do not have permission to view this suggestion.
+          </Card>
         </section>
       );
     }
@@ -351,50 +702,18 @@ export function SuggestionDetailPage() {
 
   return (
     <section className="h-full overflow-auto p-6">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
-        <div className="flex items-center justify-between gap-3">
-          <Button onClick={() => navigate("/app/suggestions")} size="sm" type="button" variant="outline">
-            <ArrowLeft className="mr-1 h-4 w-4" />
-            Back
-          </Button>
-
-          <SuggestionActions
-            hasDirtyDraft={hasDirtyDraft}
-            isApplying={applyMutation.isPending}
-            isConfirming={confirmMutation.isPending}
-            isRejecting={rejectMutation.isPending}
-            isSaving={editMutation.isPending}
-            onApply={handleApply}
-            onConfirm={handleConfirm}
-            onOpenSimulate={() => {
-              setActiveStep("simulate");
-              setSideTab("simulate");
-            }}
-            onReject={async (reason) => {
-              setRejectReason(reason ?? "");
-              await handleReject(reason);
-            }}
-            onSaveDraft={handleSaveDraft}
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
+        <Card className="p-4">
+          <SuggestionHeader
+            createdAt={suggestion.created_at}
+            expiresAt={suggestion.expires_at}
+            onBack={() => navigate("/app/suggestions")}
             status={suggestion.status}
+            suggestionId={suggestion.id}
+            title={buildHeaderTitle(suggestion.nl_input)}
+            updatedAt={suggestion.updated_at}
+            version={suggestion.version}
           />
-        </div>
-
-        <Card className="space-y-2 p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge status={suggestion.status} />
-            <span className="text-xs text-muted-foreground">v{suggestion.version}</span>
-            <span className="text-xs text-muted-foreground">ID: {suggestion.id}</span>
-          </div>
-          <div className="grid gap-1 text-xs text-muted-foreground md:grid-cols-2">
-            <p>created_at: {formatDate(suggestion.created_at)}</p>
-            <p>updated_at: {formatDate(suggestion.updated_at)}</p>
-            <p>expires_at: {formatDate(suggestion.expires_at)}</p>
-            <p>type: {suggestion.type}</p>
-          </div>
-          <div className="rounded-md border bg-muted/30 p-3">
-            <p className="text-xs font-medium text-muted-foreground">nl_input</p>
-            <p className="mt-1 text-sm">{suggestion.nl_input}</p>
-          </div>
         </Card>
 
         {staleBanner && (
@@ -402,158 +721,131 @@ export function SuggestionDetailPage() {
         )}
 
         {actionError && (
-          <Card className="border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{actionError}</Card>
+          <Card className="border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            {actionError}
+          </Card>
         )}
 
-        <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-4 min-h-0">
-            <SuggestionStepper activeStep={activeStep} onStepChange={setActiveStep} status={suggestion.status} />
+        <SuggestionStepper activeStep={activeStep} onStepChange={setActiveStep} status={suggestion.status} />
 
-            {activeStep === "generate" && (
-              <Card className="p-4">
-                <p className="text-sm font-semibold">Generate step</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Suggestion was generated from your natural language prompt. You can move to Draft or Simulate anytime.
-                </p>
-              </Card>
-            )}
+        {activeStep === "generate" && (
+          <SuggestionGenerateStep
+            duplicateInsight={duplicateInsight}
+            onCompareDuplicateRule={handleCompareDuplicateRule}
+            onContinueToDraft={handleContinueToDraft}
+            onViewDuplicateRule={handleViewDuplicateRule}
+            prompt={suggestion.nl_input}
+          />
+        )}
 
-            {activeStep === "draft" && (
-              <Card className="p-4">
-                <DraftEditor
-                  contextTermsJson={contextTermsJson}
-                  onContextTermsJsonChange={setContextTermsJson}
-                  onRuleJsonChange={setRuleJson}
-                  readOnly={!canEditDraft(suggestion.status)}
-                  ruleJson={ruleJson}
-                  validationError={draftValidationError}
-                />
-              </Card>
-            )}
+        {activeStep === "draft" && draftState && (
+          <SuggestionDraftStep
+            draft={draftState}
+            hasDirtyDraft={hasDirtyDraft}
+            isSaving={editMutation.isPending}
+            onDraftChange={setDraftState}
+            onSaveDraft={() => void handleSaveDraft()}
+            status={suggestion.status}
+            validationError={draftValidationError}
+          />
+        )}
 
-            {activeStep === "simulate" && (
-              <SimulatePanel
-                disabled={!canSimulate(suggestion.status)}
-                errorMessage={simulateError}
-                isSubmitting={simulateMutation.isPending}
-                onSimulate={handleSimulate}
-                result={simulateResult}
-              />
-            )}
+        {activeStep === "simulate" && (
+          <SuggestionSimulateStep
+            errorMessage={simulateError}
+            isSubmitting={simulateMutation.isPending}
+            onSimulate={handleSimulate}
+            result={simulateResult}
+            status={suggestion.status}
+          />
+        )}
 
-            {activeStep === "review" && (
-              <Card className="space-y-3 p-4">
-                <p className="text-sm font-semibold">Review</p>
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">explanation</p>
-                  <pre className="overflow-auto rounded-md bg-muted p-3 text-xs">
-                    {JSON.stringify(suggestion.explanation, null, 2)}
-                  </pre>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">quality_signals</p>
-                  <pre className="overflow-auto rounded-md bg-muted p-3 text-xs">
-                    {JSON.stringify(suggestion.quality_signals, null, 2)}
-                  </pre>
-                </div>
-              </Card>
-            )}
+        {activeStep === "review" && <SuggestionReviewStep suggestion={suggestion} />}
 
-            {activeStep === "decision" && (
-              <Card className="p-4 text-sm text-muted-foreground">
-                <p>Current status: {suggestion.status}</p>
-                <p className="mt-1">Use action bar to confirm or reject based on your review.</p>
-                {rejectReason && <p className="mt-1 text-xs">Last reject reason input: {rejectReason}</p>}
-              </Card>
-            )}
+        {activeStep === "decision" && (
+          <SuggestionDecisionStep
+            isConfirming={confirmMutation.isPending}
+            isRejecting={rejectMutation.isPending}
+            onOpenConfirm={() => setIsConfirmDialogOpen(true)}
+            onOpenReject={() => setIsRejectDialogOpen(true)}
+            status={suggestion.status}
+          />
+        )}
 
-            {activeStep === "apply" && (
-              <Card className="space-y-3 p-4">
-                <p className="text-sm font-semibold">Apply result</p>
-                {suggestion.applied_result_json ? (
-                  <pre className="overflow-auto rounded-md bg-muted p-3 text-xs">
-                    {JSON.stringify(suggestion.applied_result_json, null, 2)}
-                  </pre>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No applied_result_json available yet.</p>
-                )}
-              </Card>
-            )}
+        {activeStep === "apply" && (
+          <SuggestionApplyStep
+            isApplying={applyMutation.isPending}
+            onOpenApply={() => setIsApplyDialogOpen(true)}
+            suggestion={suggestion}
+          />
+        )}
 
-            {unsavedDraftSnapshot && (
-              <details className="rounded-md border p-3 text-xs">
-                <summary className="cursor-pointer font-medium text-muted-foreground">
-                  Unsaved local draft snapshot (for manual copy)
-                </summary>
-                <pre className="mt-2 overflow-auto rounded-md bg-muted p-3 text-[11px]">{unsavedDraftSnapshot}</pre>
-              </details>
-            )}
-          </div>
-
-          <div className="min-h-0">
-            <Tabs className="h-full" onValueChange={(value) => setSideTab(value as typeof sideTab)} value={sideTab}>
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="simulate">Simulate</TabsTrigger>
-                <TabsTrigger value="logs">Logs</TabsTrigger>
-                <TabsTrigger value="metadata">Metadata</TabsTrigger>
-              </TabsList>
-
-              <TabsContent className="mt-3" value="simulate">
-                <SimulatePanel
-                  disabled={!canSimulate(suggestion.status)}
-                  errorMessage={simulateError}
-                  isSubmitting={simulateMutation.isPending}
-                  onSimulate={handleSimulate}
-                  result={simulateResult}
-                />
-              </TabsContent>
-
-              <TabsContent className="mt-3" value="logs">
-                <SuggestionLogs
-                  errorMessage={getSuggestionErrorMessage(logsQuery.error, "Failed to load logs")}
-                  isError={logsQuery.isError}
-                  isLoading={logsQuery.isLoading}
-                  logs={logsQuery.data ?? []}
-                />
-              </TabsContent>
-
-              <TabsContent className="mt-3" value="metadata">
-                <Card className="space-y-3 p-4">
-                  <p className="text-sm font-semibold">Metadata</p>
-                  <div className="space-y-1 text-xs text-muted-foreground">
-                    <p>dedupe_key: {suggestion.dedupe_key}</p>
-                    <p>created_by: {suggestion.created_by}</p>
-                    <p>type: {suggestion.type}</p>
-                    <p>status: {suggestion.status}</p>
-                  </div>
-                  <details className="rounded-md border p-2 text-xs">
-                    <summary className="cursor-pointer font-medium text-muted-foreground">draft</summary>
-                    <pre className="mt-2 overflow-auto rounded-md bg-muted p-2 text-[11px]">
-                      {JSON.stringify(suggestion.draft, null, 2)}
-                    </pre>
-                  </details>
-                  {suggestion.applied_result_json && (
-                    <details className="rounded-md border p-2 text-xs" open>
-                      <summary className="cursor-pointer font-medium text-muted-foreground">applied_result_json</summary>
-                      <pre className="mt-2 overflow-auto rounded-md bg-muted p-2 text-[11px]">
-                        {JSON.stringify(suggestion.applied_result_json, null, 2)}
-                      </pre>
-                    </details>
-                  )}
-                </Card>
-              </TabsContent>
-            </Tabs>
-          </div>
-        </div>
+        <SuggestionTechnicalDetails
+          duplicateInsight={duplicateInsight}
+          logs={logsQuery.data ?? []}
+          logsError={logsQuery.isError}
+          logsErrorMessage={getSuggestionErrorMessage(logsQuery.error, "Failed to load logs")}
+          logsLoading={logsQuery.isLoading}
+          suggestion={suggestion}
+          unsavedDraftSnapshot={unsavedDraftSnapshot}
+        />
       </div>
+
+      <SuggestionActionDialog
+        confirmLabel={confirmMutation.isPending ? "Confirming..." : "Confirm"}
+        description="This will move suggestion status to approved and lock draft editing."
+        isBusy={confirmMutation.isPending}
+        onClose={() => setIsConfirmDialogOpen(false)}
+        onConfirm={() => void handleConfirm()}
+        open={isConfirmDialogOpen}
+        title="Confirm suggestion"
+      />
+
+      <SuggestionActionDialog
+        confirmLabel={rejectMutation.isPending ? "Rejecting..." : "Reject"}
+        description="Rejecting will mark this suggestion as rejected."
+        isBusy={rejectMutation.isPending}
+        onClose={() => setIsRejectDialogOpen(false)}
+        onConfirm={() => void handleReject()}
+        open={isRejectDialogOpen}
+        title="Reject suggestion"
+      >
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">Reason (optional)</p>
+          <Textarea
+            onChange={(event) => setRejectReasonInput(event.target.value)}
+            placeholder="Why are you rejecting this suggestion?"
+            rows={3}
+            value={rejectReasonInput}
+          />
+        </div>
+      </SuggestionActionDialog>
+
+      <SuggestionActionDialog
+        confirmLabel={applyMutation.isPending ? "Applying..." : "Apply"}
+        description="This will apply the approved suggestion to real rule data."
+        isBusy={applyMutation.isPending}
+        onClose={() => setIsApplyDialogOpen(false)}
+        onConfirm={() => void handleApply()}
+        open={isApplyDialogOpen}
+        title="Apply suggestion"
+      />
+
+      <SuggestionRuleInspectorDialog
+        candidateName={selectedDuplicateCandidate?.name}
+        candidateSimilarity={selectedDuplicateCandidate?.similarity}
+        draft={draftState ?? suggestion.draft}
+        duplicateDecision={duplicateInsight?.duplicateRisk}
+        errorMessage={ruleInspectorError}
+        existingRule={selectedRuleDetail}
+        isLoading={isRuleInspectorLoading}
+        mode={ruleInspectorMode}
+        onClose={handleCloseRuleInspector}
+        onContinueAnyway={handleContinueAnywayFromCompare}
+        onEditExistingRule={handleEditExistingRule}
+        onRetry={handleRetryLoadRuleDetail}
+        open={isRuleInspectorOpen}
+      />
     </section>
   );
-}
-
-function parseSafeJson(value: string): unknown {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
 }

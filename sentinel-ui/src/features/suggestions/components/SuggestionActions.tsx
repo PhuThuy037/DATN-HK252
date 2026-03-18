@@ -16,9 +16,9 @@ type SuggestionActionsProps = {
   isApplying?: boolean;
   onSaveDraft: () => Promise<void> | void;
   onOpenSimulate: () => void;
-  onConfirm: () => Promise<void> | void;
-  onReject: (reason?: string | null) => Promise<void> | void;
-  onApply: () => Promise<void> | void;
+  onOpenConfirm: () => void;
+  onOpenReject: () => void;
+  onOpenApply: () => void;
 };
 
 export function SuggestionActions({
@@ -30,9 +30,9 @@ export function SuggestionActions({
   isApplying = false,
   onSaveDraft,
   onOpenSimulate,
-  onConfirm,
-  onReject,
-  onApply,
+  onOpenConfirm,
+  onOpenReject,
+  onOpenApply,
 }: SuggestionActionsProps) {
   const isReadOnly = !canSimulate(status) && !canReject(status) && !canApply(status);
 
@@ -51,36 +51,19 @@ export function SuggestionActions({
       )}
 
       {canConfirm(status) && (
-        <Button disabled={isConfirming} onClick={() => void onConfirm()} type="button" variant="outline">
+        <Button disabled={isConfirming} onClick={onOpenConfirm} type="button" variant="outline">
           {isConfirming ? "Confirming..." : "Confirm"}
         </Button>
       )}
 
       {canReject(status) && (
-        <Button
-          disabled={isRejecting}
-          onClick={() => {
-            const reason = window.prompt("Reject reason (optional)", "") ?? "";
-            void onReject(reason.trim() || null);
-          }}
-          type="button"
-          variant="outline"
-        >
+        <Button disabled={isRejecting} onClick={onOpenReject} type="button" variant="outline">
           {isRejecting ? "Rejecting..." : "Reject"}
         </Button>
       )}
 
       {canApply(status) && (
-        <Button
-          disabled={isApplying}
-          onClick={() => {
-            const confirmed = window.confirm("Apply this approved suggestion?");
-            if (confirmed) {
-              void onApply();
-            }
-          }}
-          type="button"
-        >
+        <Button disabled={isApplying} onClick={onOpenApply} type="button">
           {isApplying ? "Applying..." : "Apply"}
         </Button>
       )}

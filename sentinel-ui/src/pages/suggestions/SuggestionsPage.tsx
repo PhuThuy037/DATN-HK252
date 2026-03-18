@@ -66,10 +66,19 @@ export function SuggestionsPage() {
       });
       toast({
         title: "Suggestion generated",
-        description: "Moved to suggestion detail page.",
+        description: "Review duplicate signal before continuing to draft.",
         variant: "success",
       });
-      navigate(`/app/suggestions/${generated.id}`);
+      navigate(`/app/suggestions/${generated.id}`, {
+        state: {
+          initialStep: "generate",
+          generationInsights: {
+            suggestionId: generated.id,
+            duplicate: generated.duplicate,
+            duplicate_check: generated.duplicate_check,
+          },
+        },
+      });
     } catch (error) {
       toast({
         title: "Generate failed",
