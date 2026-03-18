@@ -76,16 +76,12 @@ function validateConditionsNode(node: unknown): { ok: boolean; message?: string 
 
   return {
     ok: false,
-    message:
-      "Unsupported conditions node. Use one of: any, all, not, entity_type, signal.",
+    message: "Unsupported conditions node. Use one of: any, all, not, entity_type, signal.",
   };
 }
 
 const ruleFormSchema = z.object({
-  stable_key: z
-    .string()
-    .trim()
-    .max(200, "Stable key must be <= 200 chars"),
+  stable_key: z.string().trim().max(200, "Stable key must be <= 200 chars"),
   name: z.string().trim().min(1, "Name is required").max(300, "Name must be <= 300 chars"),
   description: z.string().max(2000, "Description must be <= 2000 chars").optional(),
   scope: z.enum(["prompt", "chat", "file", "api"]),
@@ -94,31 +90,6 @@ const ruleFormSchema = z.object({
   priority: z.coerce.number().int().default(0),
   rag_mode: z.enum(["off", "explain", "verify"]),
   enabled: z.boolean().default(true),
-  condition_type: z.enum(["entity_match"]),
-  entity_type: z.string().trim().min(1, "Entity type is required"),
-  min_score: z.coerce
-    .number()
-    .min(0, "Min score must be >= 0")
-    .max(1, "Min score must be <= 1"),
-  conditions_json: z
-    .string()
-    .min(2, "Conditions JSON is required")
-    .refine((value) => {
-      try {
-        const parsed = JSON.parse(value);
-        return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
-      } catch {
-        return false;
-      }
-    }, "Conditions must be valid JSON object")
-    .refine((value) => {
-      try {
-        const parsed = JSON.parse(value) as unknown;
-        return validateConditionsNode(parsed).ok;
-      } catch {
-        return false;
-      }
-    }, "Conditions schema is invalid (expected any/all/not/entity_type/signal)."),
 });
 
 type RuleFormValues = z.infer<typeof ruleFormSchema>;
@@ -128,14 +99,21 @@ const actionOptions = ["allow", "mask", "block", "warn"] as const;
 const severityOptions = ["low", "medium", "high"] as const;
 const ragModeOptions = ["off", "explain", "verify"] as const;
 const entityTypeOptions = [
+  "CUSTOM_SECRET",
+  "INTERNAL_CODE",
+  "PROPRIETARY_IDENTIFIER",
+  "API_SECRET",
   "PHONE",
   "EMAIL",
   "CCCD",
   "PERSON",
   "ADDRESS",
   "ORG",
+  "TAX_ID",
+  "CREDIT_CARD",
   "OTHER",
 ] as const;
+const signalFieldOptions = ["context_keywords"] as const;
 
 function getEnumValue<T extends readonly string[]>(
   options: T,
@@ -156,65 +134,224 @@ type RuleFormProps = {
   onSubmit: (payload: CreateRuleRequest | UpdateRuleRequest) => Promise<void> | void;
 };
 
-const defaultConditionsJson = JSON.stringify(
-  {
-    any: [{ entity_type: "PHONE", min_score: 0.8 }],
-  },
-  null,
-  2
-);
+type BuilderLogic = "any" | "all";
+type BuilderConditionType = "entity_match" | "signal_keyword_match";
 
-type SimpleConditions = {
-  conditionType: "entity_match";
+type BuilderCondition = {
+  id: string;
+  type: BuilderConditionType;
   entityType: string;
-  minScore: number;
+  minScore: string;
+  signalField: string;
+  keywordsText: string;
 };
 
-function extractSimpleConditions(
-  conditions: Record<string, unknown> | null | undefined
-): SimpleConditions | null {
-  if (!conditions || typeof conditions !== "object" || Array.isArray(conditions)) {
+function normalizeEntityType(value: string | null | undefined): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .toUpperCase();
+}
+
+function parseJsonObject(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
     return null;
   }
+}
 
-  const anyNode = (conditions as Record<string, unknown>).any;
-  if (!Array.isArray(anyNode) || anyNode.length !== 1) {
-    return null;
+function makeConditionId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
   }
+  return `cond_${Math.random().toString(16).slice(2, 10)}`;
+}
 
-  const first = anyNode[0];
-  if (!first || typeof first !== "object" || Array.isArray(first)) {
-    return null;
-  }
-
-  const item = first as Record<string, unknown>;
-  const entityType = String(item.entity_type ?? "").trim();
-  const minScoreRaw = item.min_score;
-  const minScore =
-    typeof minScoreRaw === "number"
-      ? minScoreRaw
-      : Number.parseFloat(String(minScoreRaw ?? "0"));
-
-  if (!entityType || Number.isNaN(minScore)) {
-    return null;
-  }
-
+function makeDefaultEntityCondition(entityType = "CUSTOM_SECRET", minScore = "0.8"): BuilderCondition {
   return {
-    conditionType: "entity_match",
-    entityType,
+    id: makeConditionId(),
+    type: "entity_match",
+    entityType: normalizeEntityType(entityType) || "CUSTOM_SECRET",
     minScore,
+    signalField: "context_keywords",
+    keywordsText: "",
   };
 }
 
-function buildSimpleConditions(values: RuleFormValues): Record<string, unknown> {
+function makeDefaultSignalCondition(): BuilderCondition {
   return {
-    any: [
-      {
-        entity_type: values.entity_type.trim(),
-        min_score: values.min_score,
-      },
-    ],
+    id: makeConditionId(),
+    type: "signal_keyword_match",
+    entityType: "CUSTOM_SECRET",
+    minScore: "0.8",
+    signalField: "context_keywords",
+    keywordsText: "",
   };
+}
+
+function builderConditionToJsonNode(condition: BuilderCondition): Record<string, unknown> {
+  if (condition.type === "entity_match") {
+    const normalizedType = normalizeEntityType(condition.entityType) || "CUSTOM_SECRET";
+    const minScoreRaw = condition.minScore.trim();
+    if (!minScoreRaw) {
+      return { entity_type: normalizedType };
+    }
+    const minScore = Number.parseFloat(minScoreRaw);
+    if (Number.isNaN(minScore)) {
+      return { entity_type: normalizedType };
+    }
+    return {
+      entity_type: normalizedType,
+      min_score: minScore,
+    };
+  }
+
+  const keywords = condition.keywordsText
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return {
+    signal: {
+      field: condition.signalField || "context_keywords",
+      any_of: keywords,
+    },
+  };
+}
+
+function parseSupportedBuilderFromConditions(conditions: unknown): {
+  canParseRoot: boolean;
+  logic: BuilderLogic;
+  conditions: BuilderCondition[];
+  unsupportedNodes: unknown[];
+} {
+  if (!conditions || typeof conditions !== "object" || Array.isArray(conditions)) {
+    return {
+      canParseRoot: false,
+      logic: "any",
+      conditions: [],
+      unsupportedNodes: [],
+    };
+  }
+
+  const root = conditions as Record<string, unknown>;
+  const hasAny = Array.isArray(root.any);
+  const hasAll = Array.isArray(root.all);
+  if (!hasAny && !hasAll) {
+    return {
+      canParseRoot: false,
+      logic: "any",
+      conditions: [],
+      unsupportedNodes: [],
+    };
+  }
+
+  const logic: BuilderLogic = hasAll ? "all" : "any";
+  const items = (root[logic] as unknown[]) ?? [];
+  const mapped: BuilderCondition[] = [];
+  const unsupportedNodes: unknown[] = [];
+
+  for (const item of items) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      unsupportedNodes.push(item);
+      continue;
+    }
+
+    const node = item as Record<string, unknown>;
+
+    if (typeof node.entity_type === "string" && node.entity_type.trim()) {
+      const minScore =
+        node.min_score === undefined || node.min_score === null ? "0.8" : String(node.min_score);
+      mapped.push(makeDefaultEntityCondition(node.entity_type, minScore));
+      continue;
+    }
+
+    const signalNode = node.signal;
+    if (signalNode && typeof signalNode === "object" && !Array.isArray(signalNode)) {
+      const signal = signalNode as Record<string, unknown>;
+      const field = String(signal.field ?? "").trim();
+      const rawAnyOf = signal.any_of;
+      const anyOf = Array.isArray(rawAnyOf)
+        ? rawAnyOf.map((value) => String(value ?? "").trim()).filter(Boolean)
+        : [];
+
+      if (field === "context_keywords") {
+        const signalCondition = makeDefaultSignalCondition();
+        signalCondition.signalField = field;
+        signalCondition.keywordsText = anyOf.join("\n");
+        mapped.push(signalCondition);
+        continue;
+      }
+    }
+
+    unsupportedNodes.push(item);
+  }
+
+  return {
+    canParseRoot: true,
+    logic,
+    conditions: mapped,
+    unsupportedNodes,
+  };
+}
+
+function buildConditionsJsonFromBuilder(
+  logic: BuilderLogic,
+  conditions: BuilderCondition[],
+  unsupportedNodes: unknown[]
+): Record<string, unknown> {
+  const builderNodes = conditions.map(builderConditionToJsonNode);
+  return {
+    [logic]: [...builderNodes, ...unsupportedNodes],
+  };
+}
+
+function getHumanReadablePreview(
+  logic: BuilderLogic,
+  conditions: BuilderCondition[],
+  unsupportedCount: number
+): string[] {
+  if (conditions.length === 0 && unsupportedCount === 0) {
+    return ["No conditions configured yet."];
+  }
+
+  const lines: string[] = [];
+  lines.push(`This rule triggers when matching ${logic === "any" ? "any" : "all"} condition(s):`);
+
+  for (const condition of conditions) {
+    if (condition.type === "entity_match") {
+      const minScore = condition.minScore.trim();
+      if (minScore) {
+        lines.push(`- entity is ${normalizeEntityType(condition.entityType)} with min score ${minScore}`);
+      } else {
+        lines.push(`- entity is ${normalizeEntityType(condition.entityType)}`);
+      }
+      continue;
+    }
+
+    const keywords = condition.keywordsText
+      .split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    if (keywords.length === 0) {
+      lines.push(`- ${condition.signalField} has at least one matching keyword`);
+    } else {
+      const quoted = keywords.map((keyword) => `"${keyword}"`).join(", ");
+      lines.push(`- ${condition.signalField} matches keyword ${quoted}`);
+    }
+  }
+
+  if (unsupportedCount > 0) {
+    lines.push(`- plus ${unsupportedCount} advanced condition node(s) preserved in JSON`);
+  }
+
+  return lines;
 }
 
 export function RuleForm({
@@ -224,14 +361,6 @@ export function RuleForm({
   onCancel,
   onSubmit,
 }: RuleFormProps) {
-  const parsedSimpleConditions = useMemo(
-    () => extractSimpleConditions(initialRule?.conditions),
-    [initialRule?.conditions]
-  );
-  const [isAdvancedMode, setIsAdvancedMode] = useState(
-    Boolean(initialRule && !parsedSimpleConditions)
-  );
-
   const defaultValues = useMemo<RuleFormValues>(
     () => ({
       stable_key: initialRule?.stable_key ?? "",
@@ -243,14 +372,8 @@ export function RuleForm({
       priority: initialRule?.priority ?? 0,
       rag_mode: getEnumValue(ragModeOptions, initialRule?.rag_mode, "off"),
       enabled: initialRule?.enabled ?? true,
-      condition_type: parsedSimpleConditions?.conditionType ?? "entity_match",
-      entity_type: parsedSimpleConditions?.entityType ?? "PHONE",
-      min_score: parsedSimpleConditions?.minScore ?? 0.8,
-      conditions_json: initialRule?.conditions
-        ? JSON.stringify(initialRule.conditions, null, 2)
-        : defaultConditionsJson,
     }),
-    [initialRule, parsedSimpleConditions]
+    [initialRule]
   );
 
   const form = useForm<RuleFormValues>({
@@ -258,30 +381,164 @@ export function RuleForm({
     defaultValues,
   });
 
+  const [builderLogic, setBuilderLogic] = useState<BuilderLogic>("any");
+  const [builderConditions, setBuilderConditions] = useState<BuilderCondition[]>([
+    makeDefaultEntityCondition(),
+  ]);
+  const [unsupportedNodes, setUnsupportedNodes] = useState<unknown[]>([]);
+
+  const [showAdvancedJson, setShowAdvancedJson] = useState(false);
+  const [advancedJsonText, setAdvancedJsonText] = useState<string>(
+    JSON.stringify({ any: [builderConditionToJsonNode(makeDefaultEntityCondition())] }, null, 2)
+  );
+  const [advancedJsonError, setAdvancedJsonError] = useState<string | null>(null);
+  const [advancedModeWarning, setAdvancedModeWarning] = useState<string | null>(null);
+  const [saveFromAdvancedJson, setSaveFromAdvancedJson] = useState(false);
+  const [isBuilderAvailable, setIsBuilderAvailable] = useState(true);
+
   useEffect(() => {
     form.reset(defaultValues);
-  }, [defaultValues, form]);
 
-  useEffect(() => {
-    setIsAdvancedMode(Boolean(initialRule && !parsedSimpleConditions));
-  }, [initialRule, parsedSimpleConditions]);
+    const initialConditions = initialRule?.conditions ?? {
+      any: [{ entity_type: "CUSTOM_SECRET", min_score: 0.8 }],
+    };
 
-  const watchedEntityType = form.watch("entity_type");
-  const watchedMinScore = form.watch("min_score");
+    const parseResult = parseSupportedBuilderFromConditions(initialConditions);
+    if (parseResult.canParseRoot) {
+      setIsBuilderAvailable(true);
+      setBuilderLogic(parseResult.logic);
+      setBuilderConditions(
+        parseResult.conditions.length > 0
+          ? parseResult.conditions
+          : [makeDefaultEntityCondition()]
+      );
+      setUnsupportedNodes(parseResult.unsupportedNodes);
+      setSaveFromAdvancedJson(false);
+      setAdvancedModeWarning(
+        parseResult.unsupportedNodes.length > 0
+          ? "Some advanced nodes are preserved and can be edited in Advanced JSON."
+          : null
+      );
+    } else {
+      setIsBuilderAvailable(false);
+      setBuilderLogic("any");
+      setBuilderConditions([makeDefaultEntityCondition()]);
+      setUnsupportedNodes([]);
+      setSaveFromAdvancedJson(Boolean(initialRule?.conditions));
+      setAdvancedModeWarning(
+        initialRule?.conditions
+          ? "Current conditions are not fully supported by builder. Use Advanced JSON for full editing."
+          : null
+      );
+    }
 
-  const simplePreview = useMemo(
-    () =>
-      JSON.stringify(
-        buildSimpleConditions({
-          ...defaultValues,
-          entity_type: watchedEntityType,
-          min_score: watchedMinScore,
-        } as RuleFormValues),
-        null,
-        2
-      ),
-    [defaultValues, watchedEntityType, watchedMinScore]
+    setShowAdvancedJson(false);
+    setAdvancedJsonText(JSON.stringify(initialConditions, null, 2));
+    setAdvancedJsonError(null);
+  }, [defaultValues, form, initialRule]);
+
+  const generatedConditionsJsonObject = useMemo(
+    () => buildConditionsJsonFromBuilder(builderLogic, builderConditions, unsupportedNodes),
+    [builderConditions, builderLogic, unsupportedNodes]
   );
+
+  const generatedConditionsJsonString = useMemo(
+    () => JSON.stringify(generatedConditionsJsonObject, null, 2),
+    [generatedConditionsJsonObject]
+  );
+
+  const humanPreviewLines = useMemo(
+    () => getHumanReadablePreview(builderLogic, builderConditions, unsupportedNodes.length),
+    [builderConditions, builderLogic, unsupportedNodes.length]
+  );
+
+  const addCondition = (type: BuilderConditionType) => {
+    setBuilderConditions((previous) => [
+      ...previous,
+      type === "entity_match" ? makeDefaultEntityCondition() : makeDefaultSignalCondition(),
+    ]);
+  };
+
+  const updateCondition = (id: string, patch: Partial<BuilderCondition>) => {
+    setBuilderConditions((previous) =>
+      previous.map((condition) => {
+        if (condition.id !== id) {
+          return condition;
+        }
+        const next = { ...condition, ...patch };
+        if (patch.type && patch.type !== condition.type) {
+          if (patch.type === "entity_match") {
+            return {
+              ...next,
+              entityType: condition.entityType || "CUSTOM_SECRET",
+              minScore: condition.minScore || "0.8",
+            };
+          }
+          return {
+            ...next,
+            signalField: "context_keywords",
+            keywordsText: condition.keywordsText || "",
+          };
+        }
+        return next;
+      })
+    );
+  };
+
+  const removeCondition = (id: string) => {
+    setBuilderConditions((previous) => previous.filter((condition) => condition.id !== id));
+  };
+
+  const toggleAdvancedJson = () => {
+    const next = !showAdvancedJson;
+    setShowAdvancedJson(next);
+    if (next && !saveFromAdvancedJson) {
+      setAdvancedJsonText(generatedConditionsJsonString);
+    }
+  };
+
+  const syncJsonToBuilder = () => {
+    const parsed = parseJsonObject(advancedJsonText);
+    if (!parsed) {
+      setAdvancedJsonError("Conditions JSON must be a valid JSON object.");
+      setSaveFromAdvancedJson(true);
+      return;
+    }
+
+    const validation = validateConditionsNode(parsed);
+    if (!validation.ok) {
+      setAdvancedJsonError(validation.message ?? "Conditions schema is invalid.");
+      setSaveFromAdvancedJson(true);
+      return;
+    }
+
+    const parseResult = parseSupportedBuilderFromConditions(parsed);
+    if (parseResult.canParseRoot) {
+      setIsBuilderAvailable(true);
+      setBuilderLogic(parseResult.logic);
+      setBuilderConditions(
+        parseResult.conditions.length > 0
+          ? parseResult.conditions
+          : [makeDefaultEntityCondition()]
+      );
+      setUnsupportedNodes(parseResult.unsupportedNodes);
+      setAdvancedJsonError(null);
+      setSaveFromAdvancedJson(false);
+      setAdvancedModeWarning(
+        parseResult.unsupportedNodes.length > 0
+          ? "Some advanced nodes are preserved and can be edited in Advanced JSON."
+          : null
+      );
+      return;
+    }
+
+    setAdvancedJsonError(null);
+    setSaveFromAdvancedJson(true);
+    setIsBuilderAvailable(false);
+    setAdvancedModeWarning(
+      "JSON is valid but outside builder support. Rule will be saved from Advanced JSON."
+    );
+  };
 
   const handleSubmit = form.handleSubmit(async (values) => {
     if (mode === "create" && !values.stable_key.trim()) {
@@ -289,9 +546,41 @@ export function RuleForm({
       return;
     }
 
-    const conditions = isAdvancedMode
-      ? (JSON.parse(values.conditions_json) as Record<string, unknown>)
-      : buildSimpleConditions(values);
+    let conditions: Record<string, unknown>;
+    if (saveFromAdvancedJson || !isBuilderAvailable) {
+      const parsed = parseJsonObject(advancedJsonText);
+      if (!parsed) {
+        setAdvancedJsonError("Conditions JSON must be a valid JSON object.");
+        return;
+      }
+
+      const validation = validateConditionsNode(parsed);
+      if (!validation.ok) {
+        setAdvancedJsonError(validation.message ?? "Conditions schema is invalid.");
+        return;
+      }
+
+      const parseResult = parseSupportedBuilderFromConditions(parsed);
+      if (parseResult.canParseRoot) {
+        setIsBuilderAvailable(true);
+        setBuilderLogic(parseResult.logic);
+        setBuilderConditions(
+          parseResult.conditions.length > 0
+            ? parseResult.conditions
+            : [makeDefaultEntityCondition()]
+        );
+        setUnsupportedNodes(parseResult.unsupportedNodes);
+        setSaveFromAdvancedJson(false);
+      }
+
+      conditions = parsed;
+    } else {
+      if (builderConditions.length === 0 && unsupportedNodes.length === 0) {
+        setAdvancedModeWarning("Please add at least one condition.");
+        return;
+      }
+      conditions = generatedConditionsJsonObject;
+    }
 
     if (mode === "create") {
       const payload: CreateRuleRequest = {
@@ -325,7 +614,6 @@ export function RuleForm({
   });
 
   const canEditAction = initialRule?.can_edit_action ?? true;
-  const isUnsupportedSimpleMapping = Boolean(initialRule && !parsedSimpleConditions);
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
@@ -338,9 +626,7 @@ export function RuleForm({
           {...form.register("stable_key")}
         />
         {mode === "edit" && (
-          <p className="text-[11px] text-muted-foreground">
-            Stable key is fixed after creation.
-          </p>
+          <p className="text-[11px] text-muted-foreground">Stable key is fixed after creation.</p>
         )}
         {form.formState.errors.stable_key && (
           <p className="text-xs text-destructive">{form.formState.errors.stable_key.message}</p>
@@ -425,123 +711,214 @@ export function RuleForm({
       </div>
 
       <div className="flex items-center gap-2">
-        <input
-          className="h-4 w-4"
-          id="enabled"
-          type="checkbox"
-          {...form.register("enabled")}
-        />
+        <input className="h-4 w-4" id="enabled" type="checkbox" {...form.register("enabled")} />
         <Label htmlFor="enabled">Enabled</Label>
       </div>
 
       <CardSection title="Conditions">
-        <div className="space-y-1.5">
-          <Label htmlFor="condition_type">Condition type</Label>
-          <select
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-            disabled={isAdvancedMode}
-            id="condition_type"
-            {...form.register("condition_type")}
-          >
-            <option value="entity_match">Entity match</option>
-          </select>
-        </div>
+        {isBuilderAvailable ? (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="conditions_logic">Logic</Label>
+              <select
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                id="conditions_logic"
+                onChange={(event) => setBuilderLogic(event.target.value as BuilderLogic)}
+                value={builderLogic}
+              >
+                <option value="any">Match any conditions</option>
+                <option value="all">Match all conditions</option>
+              </select>
+            </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="entity_type">Entity type</Label>
-            <select
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-              disabled={isAdvancedMode}
-              id="entity_type"
-              {...form.register("entity_type")}
-            >
-              {entityTypeOptions.map((entityType) => (
-                <option key={entityType} value={entityType}>
-                  {entityType}
-                </option>
-              ))}
-            </select>
-            {form.formState.errors.entity_type && (
-              <p className="text-xs text-destructive">
-                {form.formState.errors.entity_type.message}
-              </p>
-            )}
+            {builderConditions.map((condition, index) => (
+              <div className="space-y-3 rounded-md border p-3" key={condition.id}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">Condition #{index + 1}</p>
+                  <Button
+                    disabled={builderConditions.length <= 1}
+                    onClick={() => removeCondition(condition.id)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    Remove
+                  </Button>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Type</Label>
+                  <select
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                    onChange={(event) =>
+                      updateCondition(condition.id, {
+                        type: event.target.value as BuilderConditionType,
+                      })
+                    }
+                    value={condition.type}
+                  >
+                    <option value="entity_match">Entity match</option>
+                    <option value="signal_keyword_match">Signal keyword match</option>
+                  </select>
+                </div>
+
+                {condition.type === "entity_match" && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label>Entity type</Label>
+                      <select
+                        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        onChange={(event) =>
+                          updateCondition(condition.id, { entityType: event.target.value })
+                        }
+                        value={normalizeEntityType(condition.entityType)}
+                      >
+                        {entityTypeOptions.map((entityType) => (
+                          <option key={entityType} value={entityType}>
+                            {entityType}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label>Min score</Label>
+                      <Input
+                        max="1"
+                        min="0"
+                        onChange={(event) =>
+                          updateCondition(condition.id, { minScore: event.target.value })
+                        }
+                        placeholder="0.8"
+                        step="0.01"
+                        type="number"
+                        value={condition.minScore}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {condition.type === "signal_keyword_match" && (
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label>Signal field</Label>
+                      <select
+                        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        onChange={(event) =>
+                          updateCondition(condition.id, { signalField: event.target.value })
+                        }
+                        value={condition.signalField}
+                      >
+                        {signalFieldOptions.map((signalField) => (
+                          <option key={signalField} value={signalField}>
+                            {signalField}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label>Keywords (one per line)</Label>
+                      <Textarea
+                        className="min-h-[100px]"
+                        onChange={(event) =>
+                          updateCondition(condition.id, { keywordsText: event.target.value })
+                        }
+                        placeholder="dt-thuy-1234"
+                        value={condition.keywordsText}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => addCondition("entity_match")} type="button" variant="outline">
+                + Add entity condition
+              </Button>
+              <Button
+                onClick={() => addCondition("signal_keyword_match")}
+                type="button"
+                variant="outline"
+              >
+                + Add signal condition
+              </Button>
+            </div>
+
+            <div className="rounded-md border bg-muted/30 p-3">
+              <p className="text-xs font-medium text-muted-foreground">Human-readable preview</p>
+              <div className="mt-2 space-y-1 text-sm">
+                {humanPreviewLines.map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Builder cannot represent current JSON safely. Use Advanced JSON, then click{" "}
+            <span className="font-medium">Sync JSON to builder</span> after simplifying structure.
           </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="min_score">Min score</Label>
-            <Input
-              disabled={isAdvancedMode}
-              id="min_score"
-              max="1"
-              min="0"
-              step="0.01"
-              type="number"
-              {...form.register("min_score")}
-            />
-            {form.formState.errors.min_score && (
-              <p className="text-xs text-destructive">
-                {form.formState.errors.min_score.message}
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-md border bg-muted/30 p-2">
-          <p className="mb-1 text-xs font-medium text-muted-foreground">
-            Generated conditions (preview)
-          </p>
-          <pre className="overflow-auto text-xs">{simplePreview}</pre>
-        </div>
-
-        {isUnsupportedSimpleMapping && (
-          <p className="text-xs text-muted-foreground">
-            This rule uses advanced conditions format. Switch to Advanced JSON to edit
-            full logic.
-          </p>
         )}
-      </CardSection>
 
-      <div className="flex items-center justify-between rounded-md border border-dashed px-3 py-2">
-        <p className="text-xs text-muted-foreground">
-          Need full control? Use advanced JSON editor.
-        </p>
-        <Button
-          onClick={() => {
-            const nextValue = !isAdvancedMode;
-            if (nextValue) {
-              form.setValue("conditions_json", simplePreview, { shouldValidate: true });
-            }
-            setIsAdvancedMode(nextValue);
-          }}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          {isAdvancedMode ? "Use simple mode" : "Advanced JSON"}
-        </Button>
-      </div>
+        {advancedModeWarning && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {advancedModeWarning}
+          </div>
+        )}
 
-      {isAdvancedMode && (
-        <div className="space-y-1.5">
-          <Label htmlFor="conditions_json">Raw conditions JSON</Label>
-          <Textarea
-            className="min-h-[220px] font-mono text-xs"
-            id="conditions_json"
-            {...form.register("conditions_json")}
-          />
-          <p className="text-[11px] text-muted-foreground">
-            Supported DSL nodes: <code>any</code>, <code>all</code>, <code>not</code>,
-            <code> entity_type</code>, <code>signal.field</code>.
-          </p>
-          {form.formState.errors.conditions_json && (
-            <p className="text-xs text-destructive">
-              {form.formState.errors.conditions_json.message}
-            </p>
+        <div className="space-y-2 rounded-md border border-dashed p-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">Advanced mode for raw JSON editing.</p>
+            <Button onClick={toggleAdvancedJson} size="sm" type="button" variant="outline">
+              {showAdvancedJson ? "Hide advanced JSON" : "Show advanced JSON"}
+            </Button>
+          </div>
+
+          {showAdvancedJson && (
+            <div className="space-y-2">
+              <Textarea
+                className="min-h-[220px] font-mono text-xs"
+                onChange={(event) => {
+                  setAdvancedJsonText(event.target.value);
+                  setSaveFromAdvancedJson(true);
+                  setAdvancedJsonError(null);
+                }}
+                value={advancedJsonText}
+              />
+              {advancedJsonError && <p className="text-xs text-destructive">{advancedJsonError}</p>}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => {
+                    setAdvancedJsonText(generatedConditionsJsonString);
+                    setSaveFromAdvancedJson(false);
+                    setAdvancedJsonError(null);
+                    setIsBuilderAvailable(true);
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Reset JSON from builder
+                </Button>
+                <Button onClick={syncJsonToBuilder} size="sm" type="button" variant="outline">
+                  Sync JSON to builder
+                </Button>
+              </div>
+            </div>
           )}
         </div>
-      )}
+
+        <details className="rounded-md border p-2">
+          <summary className="cursor-pointer text-xs text-muted-foreground">
+            Preview generated JSON
+          </summary>
+          <pre className="mt-2 overflow-auto rounded bg-muted p-2 text-xs">
+            {generatedConditionsJsonString}
+          </pre>
+        </details>
+      </CardSection>
 
       <div className="flex justify-end gap-2">
         <Button onClick={onCancel} type="button" variant="outline">
