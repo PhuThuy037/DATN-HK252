@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import re
 from dataclasses import dataclass
@@ -23,6 +24,7 @@ from app.suggestion.schemas import (
 
 
 EMBED_DIM = 1536
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -371,6 +373,25 @@ def _to_candidate_out(c: _Candidate) -> RuleDuplicateCandidateOut:
     )
 
 
+def _is_similar_rule_candidate(*, candidate: _Candidate, near_threshold: float) -> bool:
+    return bool(
+        candidate.similarity >= near_threshold
+        or candidate.hybrid_score >= near_threshold
+        or candidate.lexical_score >= 0.78
+    )
+
+
+def _candidate_log_row(candidate: _Candidate) -> dict[str, Any]:
+    return {
+        "rule_id": str(candidate.rule_id),
+        "stable_key": candidate.stable_key,
+        "origin": candidate.origin,
+        "similarity": round(float(candidate.similarity), 6),
+        "lexical_score": round(float(candidate.lexical_score), 6),
+        "hybrid_score": round(float(candidate.hybrid_score), 6),
+    }
+
+
 def _ensure_rule_embedding(
     *,
     session: Session,
@@ -673,6 +694,7 @@ def build_duplicate_check(
         key=lambda x: (x.hybrid_score, x.similarity, x.lexical_score),
         reverse=True,
     )
+    ranked_top = scored[:top_k]
     compatible = [
         c
         for c in scored
@@ -680,17 +702,42 @@ def build_duplicate_check(
     ]
     ranking_pool = compatible
     top = ranking_pool[:top_k]
+    similar_candidates = [
+        c
+        for c in ranking_pool
+        if _is_similar_rule_candidate(candidate=c, near_threshold=near_th)
+    ][:top_k]
+
+    logger.debug(
+        "duplicate_check_scoring draft_key=%s top_k=%d thresholds={exact:%.3f,near:%.3f} "
+        "candidate_counts={all:%d,compatible:%d,similar:%d} ranked_top=%s compatible_top=%s similar_top=%s",
+        draft_rule.stable_key,
+        top_k,
+        exact_th,
+        near_th,
+        len(scored),
+        len(compatible),
+        len(similar_candidates),
+        json.dumps([_candidate_log_row(c) for c in ranked_top], ensure_ascii=False),
+        json.dumps([_candidate_log_row(c) for c in top], ensure_ascii=False),
+        json.dumps([_candidate_log_row(c) for c in similar_candidates], ensure_ascii=False),
+    )
 
     # Hard deterministic checks first, evaluated on full candidate set.
     same_key = [c for c in scored if c.stable_key == draft_rule.stable_key]
     if same_key:
         c = same_key[0]
+        logger.debug(
+            "duplicate_check_deterministic draft_key=%s reason=stable_key_conflict matched_rule_id=%s",
+            draft_rule.stable_key,
+            str(c.rule_id),
+        )
         return RuleDuplicateCheckOut(
             decision=DuplicateDecision.exact_duplicate,
             confidence=1.0,
             rationale="stable_key_conflict",
             matched_rule_ids=[c.rule_id],
-            candidates=[_to_candidate_out(x) for x in top],
+            candidates=[_to_candidate_out(x) for x in similar_candidates],
             top_k=top_k,
             exact_threshold=exact_th,
             near_threshold=near_th,
@@ -700,12 +747,17 @@ def build_duplicate_check(
     same_sig = [c for c in scored if c.signature_hash == draft_sig]
     if same_sig:
         c = same_sig[0]
+        logger.debug(
+            "duplicate_check_deterministic draft_key=%s reason=normalized_signature_match matched_rule_id=%s",
+            draft_rule.stable_key,
+            str(c.rule_id),
+        )
         return RuleDuplicateCheckOut(
             decision=DuplicateDecision.exact_duplicate,
             confidence=1.0,
             rationale="normalized_signature_match",
             matched_rule_ids=[c.rule_id],
-            candidates=[_to_candidate_out(x) for x in top],
+            candidates=[_to_candidate_out(x) for x in similar_candidates],
             top_k=top_k,
             exact_threshold=exact_th,
             near_threshold=near_th,
@@ -715,12 +767,17 @@ def build_duplicate_check(
     same_semantic = [c for c in scored if c.semantic_hash == draft_semantic]
     if same_semantic:
         c = same_semantic[0]
+        logger.debug(
+            "duplicate_check_deterministic draft_key=%s reason=semantic_signature_match matched_rule_id=%s",
+            draft_rule.stable_key,
+            str(c.rule_id),
+        )
         return RuleDuplicateCheckOut(
             decision=DuplicateDecision.exact_duplicate,
             confidence=min(1.0, max(c.similarity, c.hybrid_score)),
             rationale="semantic_signature_match",
             matched_rule_ids=[c.rule_id],
-            candidates=[_to_candidate_out(x) for x in top],
+            candidates=[_to_candidate_out(x) for x in similar_candidates],
             top_k=top_k,
             exact_threshold=exact_th,
             near_threshold=near_th,
@@ -764,12 +821,23 @@ def build_duplicate_check(
     if decision != DuplicateDecision.different and not matched_ids and top:
         matched_ids = [top[0].rule_id]
 
+    logger.debug(
+        "duplicate_check_final draft_key=%s source=%s decision=%s confidence=%.4f rationale=%s matched_rule_ids=%s similar_rules=%s",
+        draft_rule.stable_key,
+        source,
+        decision.value,
+        float(conf),
+        rationale,
+        json.dumps([str(x) for x in matched_ids]),
+        json.dumps([_candidate_log_row(c) for c in similar_candidates], ensure_ascii=False),
+    )
+
     return RuleDuplicateCheckOut(
         decision=decision,
         confidence=conf,
         rationale=rationale,
         matched_rule_ids=matched_ids,
-        candidates=[_to_candidate_out(x) for x in top],
+        candidates=[_to_candidate_out(x) for x in similar_candidates],
         top_k=top_k,
         exact_threshold=exact_th,
         near_threshold=near_th,

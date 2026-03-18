@@ -39,7 +39,11 @@ from app.suggestion.models.rule_suggestion import RuleSuggestion
 from app.suggestion.models.rule_suggestion_log import RuleSuggestionLog
 from app.suggestion.duplicate_checker import build_duplicate_check
 from app.suggestion.schemas import (
+    DuplicateLevel,
     DuplicateDecision,
+    RuleDuplicateCandidateOut,
+    RuleDuplicateCheckOut,
+    RuleDuplicateOut,
     RuleSuggestionApplyIn,
     RuleSuggestionApplyOut,
     RuleSuggestionConfirmIn,
@@ -903,10 +907,124 @@ def _summary_text(*, draft: RuleSuggestionDraftPayload) -> str:
     )
 
 
+def _parse_duplicate_candidates(value: Any) -> list[RuleDuplicateCandidateOut]:
+    if not isinstance(value, list):
+        return []
+    out: list[RuleDuplicateCandidateOut] = []
+    for item in value:
+        try:
+            out.append(RuleDuplicateCandidateOut.model_validate(item))
+        except Exception:
+            continue
+    return out
+
+
+def _duplicate_level_from_meta(duplicate_meta: dict[str, Any]) -> DuplicateLevel:
+    raw = str(duplicate_meta.get("level") or "").strip().lower()
+    if raw == DuplicateLevel.strong.value:
+        return DuplicateLevel.strong
+    if raw == DuplicateLevel.weak.value:
+        return DuplicateLevel.weak
+    if raw == DuplicateLevel.none.value:
+        return DuplicateLevel.none
+
+    similar_rules = _parse_duplicate_candidates(
+        duplicate_meta.get("similar_rules") or duplicate_meta.get("candidates")
+    )
+    if similar_rules:
+        return DuplicateLevel.strong
+
+    decision = str(duplicate_meta.get("decision") or "").strip().upper()
+    has_semantic_signal = (
+        decision in {DuplicateDecision.exact_duplicate.value, DuplicateDecision.near_duplicate.value}
+        or bool(duplicate_meta.get("matched_rule_ids"))
+    )
+    if has_semantic_signal:
+        return DuplicateLevel.weak
+    return DuplicateLevel.none
+
+
+def _duplicate_reason_for_level(*, level: DuplicateLevel, raw_reason: str | None) -> str:
+    reason = str(raw_reason or "").strip()
+    if reason:
+        return reason
+    if level == DuplicateLevel.strong:
+        return "similar_rules_detected"
+    if level == DuplicateLevel.weak:
+        return "semantic_signal_without_similar_rules"
+    return "no_duplicate_signal"
+
+
+def _duplicate_out_from_meta(duplicate_meta: dict[str, Any]) -> RuleDuplicateOut:
+    level = _duplicate_level_from_meta(duplicate_meta)
+    similar_rules = _parse_duplicate_candidates(
+        duplicate_meta.get("similar_rules") or duplicate_meta.get("candidates")
+    )
+    if level != DuplicateLevel.strong:
+        similar_rules = []
+    elif not similar_rules:
+        level = DuplicateLevel.weak
+
+    return RuleDuplicateOut(
+        level=level,
+        reason=_duplicate_reason_for_level(
+            level=level,
+            raw_reason=str(duplicate_meta.get("reason") or duplicate_meta.get("rationale") or ""),
+        ),
+        similar_rules=similar_rules,
+    )
+
+
+def _duplicate_out_from_check(duplicate_check: RuleDuplicateCheckOut) -> RuleDuplicateOut:
+    if duplicate_check.candidates:
+        return RuleDuplicateOut(
+            level=DuplicateLevel.strong,
+            reason=_duplicate_reason_for_level(
+                level=DuplicateLevel.strong,
+                raw_reason=duplicate_check.rationale,
+            ),
+            similar_rules=list(duplicate_check.candidates),
+        )
+
+    has_semantic_signal = (
+        duplicate_check.decision != DuplicateDecision.different
+        or bool(duplicate_check.matched_rule_ids)
+    )
+    level = DuplicateLevel.weak if has_semantic_signal else DuplicateLevel.none
+    return RuleDuplicateOut(
+        level=level,
+        reason=_duplicate_reason_for_level(level=level, raw_reason=duplicate_check.rationale),
+        similar_rules=[],
+    )
+
+
+def _duplicate_meta_from_check(
+    duplicate_check: RuleDuplicateCheckOut,
+    duplicate: RuleDuplicateOut,
+) -> dict[str, Any]:
+    return {
+        "level": duplicate.level.value,
+        "reason": duplicate.reason,
+        "similar_rules": [x.model_dump(mode="json") for x in duplicate.similar_rules],
+        "decision": duplicate_check.decision.value,
+        "source": str(duplicate_check.source),
+        "llm_provider": duplicate_check.llm_provider,
+        "llm_model": duplicate_check.llm_model,
+        "llm_fallback_used": bool(duplicate_check.llm_fallback_used),
+        "rationale": str(duplicate_check.rationale),
+        "confidence": float(duplicate_check.confidence),
+        "matched_rule_ids": [str(x) for x in duplicate_check.matched_rule_ids],
+        "candidates": [x.model_dump(mode="json") for x in duplicate_check.candidates],
+        "top_k": int(duplicate_check.top_k),
+        "exact_threshold": float(duplicate_check.exact_threshold),
+        "near_threshold": float(duplicate_check.near_threshold),
+    }
+
+
 def _action_reason_text(
     *,
     action: RuleAction,
-    duplicate_decision: str,
+    duplicate_level: str,
 ) -> str:
     if action == RuleAction.block:
         reason = "Prompt intent indicates strict prevention, so action is set to block."
@@ -915,10 +1033,10 @@ def _action_reason_text(
     else:
         reason = f"Prompt intent aligns with action '{action.value}'."
 
-    if duplicate_decision == DuplicateDecision.exact_duplicate.value:
+    if duplicate_level == DuplicateLevel.strong.value:
         return reason + " Duplicate check indicates high overlap with an existing rule."
-    if duplicate_decision == DuplicateDecision.near_duplicate.value:
-        return reason + " Duplicate check indicates partial overlap with existing rules."
+    if duplicate_level == DuplicateLevel.weak.value:
+        return reason + " Duplicate check indicates a weak semantic overlap signal."
     return reason
 
 
@@ -940,14 +1058,12 @@ def _to_float(value: Any, *, default: float) -> float:
         return float(default)
 
 
-def _duplicate_risk(decision: str, confidence: float) -> str:
-    if decision == DuplicateDecision.exact_duplicate.value:
+def _duplicate_risk(level: str, confidence: float) -> str:
+    if level == DuplicateLevel.strong.value:
         return "high"
-    if decision == DuplicateDecision.near_duplicate.value:
-        return "high" if confidence >= 0.8 else "medium"
-    if decision == DuplicateDecision.different.value:
-        return "low" if confidence >= 0.75 else "medium"
-    return "medium"
+    if level == DuplicateLevel.weak.value:
+        return "medium" if confidence >= 0.5 else "low"
+    return "low"
 
 
 def _intent_confidence(
@@ -997,12 +1113,12 @@ def _build_suggestion_explanation(
     draft: RuleSuggestionDraftPayload,
     duplicate_meta: dict[str, Any],
 ) -> RuleSuggestionExplanationOut:
-    decision = str(duplicate_meta.get("decision") or DuplicateDecision.different.value).upper()
+    duplicate_level = _duplicate_level_from_meta(duplicate_meta).value
     return RuleSuggestionExplanationOut(
         summary=_summary_text(draft=draft),
         detected_intent=_detected_intent(prompt, draft),
         derived_terms=_derive_terms(prompt, draft),
-        action_reason=_action_reason_text(action=draft.rule.action, duplicate_decision=decision),
+        action_reason=_action_reason_text(action=draft.rule.action, duplicate_level=duplicate_level),
     )
 
 
@@ -1013,10 +1129,10 @@ def _build_quality_signals(
     duplicate_meta: dict[str, Any],
     generation_meta: dict[str, Any],
 ) -> RuleSuggestionQualitySignalsOut:
-    decision = str(duplicate_meta.get("decision") or DuplicateDecision.different.value).upper()
+    level = _duplicate_level_from_meta(duplicate_meta).value
     confidence = _to_float(duplicate_meta.get("confidence"), default=0.0)
     source = _normalize_generation_source(str(generation_meta.get("source") or "unknown"))
-    duplicate_risk = _duplicate_risk(decision, confidence)
+    duplicate_risk = _duplicate_risk(level, confidence)
     retrieval_context = _build_retrieval_context(generation_meta=generation_meta)
     guard_meta = _extract_intent_guard_meta(generation_meta=generation_meta)
     runtime_meta = _extract_runtime_usability_meta(
@@ -1152,7 +1268,9 @@ def _load_generate_telemetry(
 
     payload = row.after_json
     generation_meta = payload.get("draft_generation")
-    duplicate_meta = payload.get("duplicate_check")
+    duplicate_meta = payload.get("duplicate")
+    if not isinstance(duplicate_meta, dict):
+        duplicate_meta = payload.get("duplicate_check")
     if not isinstance(generation_meta, dict):
         generation_meta = {}
     if not isinstance(duplicate_meta, dict):
@@ -2317,11 +2435,151 @@ class SuggestionContextRetriever:
             return []
 
 
+_LITERAL_GENERIC_TERMS = {
+    "phone",
+    "phone number",
+    "email",
+    "cccd",
+    "tax id",
+    "tax code",
+    "mst",
+    "ma so thue",
+    "hotline",
+    "sdt",
+    "so dien thoai",
+    "mask",
+    "block",
+    "allow",
+    "secret",
+    "token",
+    "internal",
+    "internal code",
+    "custom secret",
+}
+
+
+_FINGERPRINT_SECRET_ENTITY_TYPES = {
+    "INTERNAL_CODE",
+    "CUSTOM_SECRET",
+    "PROPRIETARY_IDENTIFIER",
+    "API_SECRET",
+}
+
+
+_FINGERPRINT_PII_ENTITY_TYPES = {
+    "PHONE",
+    "EMAIL",
+    "CCCD",
+    "TAX_ID",
+    "CREDIT_CARD",
+}
+
+
+def _slug_segment(value: str) -> str:
+    text = _fold_text(value)
+    text = re.sub(r"[^a-z0-9_]+", "_", text)
+    text = re.sub(r"_+", "_", text).strip("_")
+    return text
+
+
+def _normalized_context_term_rows(
+    draft: RuleSuggestionDraftPayload,
+) -> list[tuple[str, str, str]]:
+    rows: set[tuple[str, str, str]] = set()
+    for row in list(draft.context_terms or []):
+        entity_type = str(getattr(row, "entity_type", "") or "").strip().upper()
+        term = _fold_text(str(getattr(row, "term", "") or ""))
+        lang = _fold_text(str(getattr(row, "lang", "") or "vi")) or "vi"
+        if not entity_type or not term:
+            continue
+        rows.add((entity_type, term, lang))
+    return sorted(rows, key=lambda x: (x[0], x[1], x[2]))
+
+
+def _looks_literal_specific_term(term: str) -> bool:
+    text = _fold_text(term)
+    if not text:
+        return False
+    if text in _LITERAL_GENERIC_TERMS or text in _ABSTRACT_CONTEXT_KEYWORDS:
+        return False
+
+    has_digit = bool(re.search(r"\d", text))
+    has_alpha = bool(re.search(r"[a-z]", text))
+    has_sep = bool(re.search(r"[-_/.:]", text))
+    has_code_shape = bool(re.search(r"[a-z0-9]{2,}(?:[-_][a-z0-9]{1,}){1,}", text))
+
+    if has_code_shape and (has_digit or len(text) >= 10):
+        return True
+    if has_digit and has_alpha:
+        return True
+    if has_digit and has_sep:
+        return True
+    if has_digit and len(text) >= 12:
+        return True
+    return False
+
+
+def is_literal_specific(draft: RuleSuggestionDraftPayload) -> bool:
+    rows = _normalized_context_term_rows(draft)
+    if not rows:
+        return False
+    if len(rows) > 5:
+        return False
+
+    specific_terms = [term for _et, term, _lang in rows if _looks_literal_specific_term(term)]
+    if not specific_terms:
+        return False
+    return True
+
+
+def _literal_terms_fingerprint(draft: RuleSuggestionDraftPayload) -> str:
+    rows = _normalized_context_term_rows(draft)
+    if not rows:
+        return ""
+    body = [{"entity_type": et, "term": term, "lang": lang} for et, term, lang in rows]
+    raw = json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:8]
+
+
+def _fingerprint_category_and_entity(draft: RuleSuggestionDraftPayload) -> tuple[str, str]:
+    rows = _normalized_context_term_rows(draft)
+    entity_type = rows[0][0] if rows else "LITERAL"
+    if entity_type in _FINGERPRINT_SECRET_ENTITY_TYPES:
+        category = "secret"
+    elif entity_type in _FINGERPRINT_PII_ENTITY_TYPES:
+        category = "pii"
+    elif entity_type.startswith("PERSONA_"):
+        category = "context"
+    else:
+        category = "literal"
+
+    entity_segment = entity_type.lower()
+    if entity_type.startswith("PERSONA_"):
+        entity_segment = entity_type.removeprefix("PERSONA_").lower()
+    return _slug_segment(category) or "literal", _slug_segment(entity_segment) or "literal"
+
+
+def _build_literal_specific_stable_key(draft: RuleSuggestionDraftPayload) -> str:
+    fingerprint = _literal_terms_fingerprint(draft)
+    if not fingerprint:
+        return ""
+    category, entity = _fingerprint_category_and_entity(draft)
+    action = _slug_segment(str(draft.rule.action.value))
+    key = f"personal.{category}.{entity}.{action or 'mask'}.{fingerprint}"
+    return key[:200].strip(".")
+
+
 def _ensure_company_stable_key(
     *,
     prompt: str,
     draft: RuleSuggestionDraftPayload,
 ) -> RuleSuggestionDraftPayload:
+    if is_literal_specific(draft):
+        literal_key = _build_literal_specific_stable_key(draft)
+        if literal_key:
+            rule = draft.rule.model_copy(update={"stable_key": literal_key})
+            return draft.model_copy(update={"rule": rule})
+
     h = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:10]
     stable_key = str(draft.rule.stable_key or "").strip().lower()
     stable_key = re.sub(r"[^a-z0-9._-]+", ".", stable_key)
@@ -2540,15 +2798,8 @@ def generate_rule_suggestion(
         draft_rule=draft.rule,
     )
     key = _dedupe_key(company_id=company_id, payload=draft)
-    duplicate_meta = {
-        "decision": duplicate_check.decision.value,
-        "source": str(duplicate_check.source),
-        "llm_provider": duplicate_check.llm_provider,
-        "llm_model": duplicate_check.llm_model,
-        "llm_fallback_used": bool(duplicate_check.llm_fallback_used),
-        "rationale": str(duplicate_check.rationale),
-        "confidence": float(duplicate_check.confidence),
-    }
+    duplicate = _duplicate_out_from_check(duplicate_check)
+    duplicate_meta = _duplicate_meta_from_check(duplicate_check, duplicate)
 
     existed = _find_active_duplicate(
         session=session,
@@ -2581,6 +2832,7 @@ def generate_rule_suggestion(
             before_json=None,
             after_json={
                 "draft_generation": generation_meta,
+                "duplicate": duplicate_meta,
                 "duplicate_check": duplicate_meta,
             },
         )
@@ -2601,6 +2853,7 @@ def generate_rule_suggestion(
         retrieval_context = _build_retrieval_context(generation_meta=generation_meta)
         return RuleSuggestionGenerateOut(
             **existed_out.model_dump(),
+            duplicate=duplicate,
             duplicate_check=duplicate_check,
             explanation=explanation,
             quality_signals=quality_signals,
@@ -2644,6 +2897,7 @@ def generate_rule_suggestion(
         before_json=None,
         after_json={
             "draft_generation": generation_meta,
+            "duplicate": duplicate_meta,
             "duplicate_check": duplicate_meta,
         },
     )
@@ -2664,6 +2918,7 @@ def generate_rule_suggestion(
     retrieval_context = _build_retrieval_context(generation_meta=generation_meta)
     return RuleSuggestionGenerateOut(
         **created_out.model_dump(),
+        duplicate=duplicate,
         duplicate_check=duplicate_check,
         explanation=explanation,
         quality_signals=quality_signals,
@@ -2729,6 +2984,7 @@ def get_rule_suggestion(
     )
     return RuleSuggestionGetOut(
         **out.model_dump(),
+        duplicate=_duplicate_out_from_meta(duplicate_meta),
         explanation=explanation,
         quality_signals=quality_signals,
     )
@@ -2983,8 +3239,10 @@ def confirm_rule_suggestion(
         company_id=company_id,
         draft_rule=draft.rule,
     )
+    duplicate = _duplicate_out_from_check(duplicate_check)
     if (
-        duplicate_check.decision == DuplicateDecision.exact_duplicate
+        duplicate.level == DuplicateLevel.strong
+        and duplicate_check.decision == DuplicateDecision.exact_duplicate
         and duplicate_check.matched_rule_ids
         and duplicate_check.rationale != "stable_key_conflict"
     ):
@@ -2997,6 +3255,7 @@ def confirm_rule_suggestion(
                     "field": "draft.rule",
                     "reason": "exact_duplicate_rule",
                     "extra": {
+                        "duplicate_level": duplicate.level.value,
                         "matched_rule_ids": [str(x) for x in duplicate_check.matched_rule_ids],
                         "duplicate_rationale": duplicate_check.rationale,
                     },

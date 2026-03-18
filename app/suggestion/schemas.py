@@ -25,6 +25,12 @@ class DuplicateDecision(str, Enum):
     different = "DIFFERENT"
 
 
+class DuplicateLevel(str, Enum):
+    none = "none"
+    weak = "weak"
+    strong = "strong"
+
+
 class RuleSuggestionDraftRule(BaseModel):
     stable_key: str = PydanticField(min_length=1, max_length=200)
     name: str = PydanticField(min_length=1, max_length=300)
@@ -150,6 +156,12 @@ class RuleDuplicateCheckOut(BaseModel):
     llm_fallback_used: bool = False
 
 
+class RuleDuplicateOut(BaseModel):
+    level: DuplicateLevel
+    reason: str
+    similar_rules: list[RuleDuplicateCandidateOut] = PydanticField(default_factory=list)
+
+
 class RuleSuggestionExplanationOut(BaseModel):
     summary: str
     detected_intent: str
@@ -192,6 +204,7 @@ class RuleSuggestionOut(BaseModel):
 
 
 class RuleSuggestionGenerateOut(RuleSuggestionOut):
+    duplicate: RuleDuplicateOut
     duplicate_check: RuleDuplicateCheckOut
     explanation: RuleSuggestionExplanationOut
     quality_signals: RuleSuggestionQualitySignalsOut
@@ -199,6 +212,7 @@ class RuleSuggestionGenerateOut(RuleSuggestionOut):
 
 
 class RuleSuggestionGetOut(RuleSuggestionOut):
+    duplicate: RuleDuplicateOut
     explanation: RuleSuggestionExplanationOut
     quality_signals: RuleSuggestionQualitySignalsOut
 

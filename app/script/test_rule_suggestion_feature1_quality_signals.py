@@ -1,8 +1,14 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+
+from uuid import uuid4
 
 from app.common.enums import RagMode, RuleAction, RuleScope, RuleSeverity
 from app.suggestion import service as suggestion_service
 from app.suggestion.schemas import (
+    DuplicateDecision,
+    DuplicateLevel,
+    RuleDuplicateCandidateOut,
+    RuleDuplicateCheckOut,
     RuleSuggestionDraftContextTerm,
     RuleSuggestionDraftPayload,
     RuleSuggestionDraftRule,
@@ -164,3 +170,46 @@ def test_runtime_usability_auto_repair_for_exact_secret_prompt() -> None:
         "zxq-unseen-9981",
     )
 
+
+
+def test_duplicate_contract_strong_when_similar_rules_exist() -> None:
+    duplicate_check = RuleDuplicateCheckOut(
+        decision=DuplicateDecision.different,
+        confidence=0.2,
+        rationale="unit_test",
+        matched_rule_ids=[],
+        candidates=[
+            RuleDuplicateCandidateOut(
+                rule_id=uuid4(),
+                stable_key="personal.custom.dup.1",
+                name="dup rule",
+                origin="personal_rule",
+                similarity=0.86,
+                lexical_score=0.72,
+            )
+        ],
+        top_k=5,
+        exact_threshold=0.92,
+        near_threshold=0.82,
+        source="unit_test",
+    )
+    duplicate = suggestion_service._duplicate_out_from_check(duplicate_check)  # type: ignore[attr-defined]
+    assert duplicate.level == DuplicateLevel.strong
+    assert len(duplicate.similar_rules) == 1
+
+
+def test_duplicate_contract_weak_for_semantic_signal_without_similar_rules() -> None:
+    duplicate_check = RuleDuplicateCheckOut(
+        decision=DuplicateDecision.exact_duplicate,
+        confidence=0.91,
+        rationale="semantic_signature_match",
+        matched_rule_ids=[uuid4()],
+        candidates=[],
+        top_k=5,
+        exact_threshold=0.92,
+        near_threshold=0.82,
+        source="unit_test",
+    )
+    duplicate = suggestion_service._duplicate_out_from_check(duplicate_check)  # type: ignore[attr-defined]
+    assert duplicate.level == DuplicateLevel.weak
+    assert duplicate.similar_rules == []
