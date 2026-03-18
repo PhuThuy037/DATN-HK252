@@ -6,6 +6,7 @@ import type {
   DebugEvaluateRequest,
   DebugEvaluateResponse,
   EffectiveRule,
+  RuleDetail,
   Rule,
   RuleChangeLog,
   RuleSetSummary,
@@ -59,6 +60,13 @@ export async function getRuleSetRules(ruleSetId: string) {
     `/v1/rule-sets/${ruleSetId}/rules`
   );
   return unwrapEnvelope(response.data, "Failed to load rules");
+}
+
+export async function getRuleDetail(ruleId: string) {
+  const response = await httpClient.get<ApiEnvelope<RuleDetail>>(
+    `/v1/rules/${ruleId}`
+  );
+  return unwrapEnvelope(response.data, "Failed to load rule detail");
 }
 
 export async function getRuleChangeLogs(

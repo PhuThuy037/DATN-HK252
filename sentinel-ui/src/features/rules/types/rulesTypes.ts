@@ -19,6 +19,35 @@ export type Rule = {
   updated_at?: string;
 };
 
+export type RuleContextTerm = {
+  id: string;
+  entity_type: string;
+  term: string;
+  lang: string;
+  weight: number;
+  window_1: number;
+  window_2: number;
+  enabled: boolean;
+  created_at: string;
+};
+
+export type RuleDetail = {
+  id: string;
+  stable_key: string;
+  name: string;
+  description?: string | null;
+  scope: string;
+  conditions: Record<string, unknown>;
+  action: string;
+  severity: string;
+  priority: number;
+  rag_mode: string;
+  enabled: boolean;
+  context_terms: RuleContextTerm[];
+  created_at: string;
+  updated_at: string;
+};
+
 export type RuleChangeLog = {
   id?: string;
   rule_set_id?: string;
