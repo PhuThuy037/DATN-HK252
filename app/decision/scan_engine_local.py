@@ -174,6 +174,7 @@ class ScanEngineLocal:
         text: str,
         exact_terms: list[str],
         limit: int = 20,
+        min_length: int = 2,
     ) -> list[str]:
         if not exact_terms:
             return []
@@ -186,7 +187,7 @@ class ScanEngineLocal:
 
         for term in exact_terms:
             normalized_term = str(term or "").strip().lower()
-            if len(normalized_term) < 4:
+            if len(normalized_term) < max(1, int(min_length)):
                 continue
             if normalized_term in seen:
                 continue

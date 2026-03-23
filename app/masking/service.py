@@ -41,11 +41,17 @@ class MaskService:
         entities: list,
         *,
         extra_terms: list[str] | None = None,
+        force_terms: list[str] | None = None,
     ) -> str:
         if not text:
             return text
 
         raw_extra_terms = list(extra_terms or [])
+        raw_force_terms = [
+            str(term or "").strip()
+            for term in list(force_terms or [])
+            if str(term or "").strip()
+        ]
         code_like_terms = [
             term
             for term in raw_extra_terms
@@ -80,9 +86,14 @@ class MaskService:
             )
 
         if not spans:
-            if not code_like_terms:
+            if not code_like_terms and not raw_force_terms:
                 return text
-            return self._mask_exact_terms(text, code_like_terms)
+            out = text
+            if code_like_terms:
+                out = self._mask_exact_terms(out, code_like_terms)
+            if raw_force_terms:
+                out = self._mask_exact_terms(out, raw_force_terms)
+            return out
 
         # 1) sort theo start asc, rồi chọn span tốt nhất khi overlap
         spans.sort(key=lambda s: (s.start, -(s.end - s.start), -s.score))
@@ -132,6 +143,8 @@ class MaskService:
             label = f"[{s.type}]"
             out = out[: s.start] + label + out[s.end :]
 
-        if not code_like_terms:
-            return out
-        return self._mask_exact_terms(out, code_like_terms)
+        if code_like_terms:
+            out = self._mask_exact_terms(out, code_like_terms)
+        if raw_force_terms:
+            out = self._mask_exact_terms(out, raw_force_terms)
+        return out

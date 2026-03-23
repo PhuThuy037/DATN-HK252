@@ -17,6 +17,9 @@ export function useSendMessage() {
       queryClient.invalidateQueries({
         queryKey: ["messages", variables.conversationId],
       });
+      queryClient.invalidateQueries({
+        queryKey: ["messages-infinite", variables.conversationId],
+      });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
       queryClient.invalidateQueries({
         queryKey: ["message-detail", variables.conversationId],

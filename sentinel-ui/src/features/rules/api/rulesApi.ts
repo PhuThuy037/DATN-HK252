@@ -20,7 +20,11 @@ type RuleChangeLogsParams = {
 
 function unwrapEnvelope<T>(envelope: ApiEnvelope<T>, fallbackMessage: string) {
   if (!envelope.ok || !envelope.data) {
-    throw new Error(envelope.error?.message ?? fallbackMessage);
+    const error = new Error(envelope.error?.message ?? fallbackMessage) as Error & {
+      response?: { data?: unknown };
+    };
+    error.response = { data: envelope };
+    throw error;
   }
   return envelope.data;
 }

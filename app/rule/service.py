@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import re
 from typing import Any
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from app.decision.context_term_runtime import invalidate_context_runtime_cache
 from app.permissions.core import forbid, not_found
 from app.permissions.loaders.conversation import load_company_member_active_or_403
 from app.rag.models.context_term import ContextTerm
+from app.rule.company_rule_override import CompanyRuleOverride
 from app.rule.engine import RuleEngine
 from app.rule.model import Rule
 from app.rule.schemas import (
@@ -32,6 +34,17 @@ from app.rule.schemas import (
 )
 from app.rule.user_rule_override import UserRuleOverride
 from app.rule_change_log.model import RuleChangeLog
+
+_STABLE_KEY_PATTERN = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
+_MIN_RULE_PRIORITY = -100000
+_MAX_RULE_PRIORITY = 100000
+_DELETED_RULE_PREFIX = "__deleted__."
+
+
+def _is_rule_deleted(*, rule: Rule) -> bool:
+    return bool(getattr(rule, "is_deleted", False)) or str(rule.stable_key or "").startswith(
+        _DELETED_RULE_PREFIX
+    )
 
 
 def _load_company_or_404(*, session: Session, company_id: UUID) -> Company:
@@ -107,7 +120,15 @@ def _normalize_non_empty(*, value: str | None, field: str) -> str:
 
 
 def _normalize_stable_key(*, stable_key: str) -> str:
-    return _normalize_non_empty(value=stable_key, field="stable_key")
+    normalized = _normalize_non_empty(value=stable_key, field="stable_key")
+    if not _STABLE_KEY_PATTERN.fullmatch(normalized):
+        raise AppError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Invalid stable_key format",
+            details=[{"field": "stable_key", "reason": "invalid_format"}],
+        )
+    return normalized
 
 
 def _validate_conditions_node(node: Any) -> None:
@@ -132,6 +153,13 @@ def _validate_conditions_node(node: Any) -> None:
                     "Invalid rule conditions",
                     details=[{"field": "conditions.any", "reason": "must_be_list"}],
                 )
+            if len(children) == 0:
+                raise AppError(
+                    422,
+                    ErrorCode.VALIDATION_ERROR,
+                    "Invalid rule conditions",
+                    details=[{"field": "conditions.any", "reason": "empty_list"}],
+                )
             for child in children:
                 _validate_conditions_node(child)
             return
@@ -144,6 +172,13 @@ def _validate_conditions_node(node: Any) -> None:
                     ErrorCode.VALIDATION_ERROR,
                     "Invalid rule conditions",
                     details=[{"field": "conditions.all", "reason": "must_be_list"}],
+                )
+            if len(children) == 0:
+                raise AppError(
+                    422,
+                    ErrorCode.VALIDATION_ERROR,
+                    "Invalid rule conditions",
+                    details=[{"field": "conditions.all", "reason": "empty_list"}],
                 )
             for child in children:
                 _validate_conditions_node(child)
@@ -180,6 +215,64 @@ def _validate_conditions_node(node: Any) -> None:
                 "Invalid rule conditions",
                 details=[{"field": "conditions.signal.field", "reason": "empty"}],
             )
+        has_operator = any(
+            op in signal
+            for op in (
+                "exists",
+                "equals",
+                "in",
+                "contains",
+                "startswith",
+                "regex",
+                "lt",
+                "lte",
+                "gt",
+                "gte",
+                "any_of",
+                "all_of",
+            )
+        )
+        if not has_operator:
+            raise AppError(
+                422,
+                ErrorCode.VALIDATION_ERROR,
+                "Invalid rule conditions",
+                details=[
+                    {
+                        "field": "conditions.signal",
+                        "reason": "operator_required",
+                    }
+                ],
+            )
+        for list_operator in ("in", "any_of", "all_of"):
+            if list_operator not in signal:
+                continue
+            raw = signal.get(list_operator)
+            if not isinstance(raw, list):
+                raise AppError(
+                    422,
+                    ErrorCode.VALIDATION_ERROR,
+                    "Invalid rule conditions",
+                    details=[
+                        {
+                            "field": f"conditions.signal.{list_operator}",
+                            "reason": "must_be_list",
+                        }
+                    ],
+                )
+            cleaned = [str(item or "").strip() for item in raw if str(item or "").strip()]
+            if not cleaned:
+                raise AppError(
+                    422,
+                    ErrorCode.VALIDATION_ERROR,
+                    "Invalid rule conditions",
+                    details=[
+                        {
+                            "field": f"conditions.signal.{list_operator}",
+                            "reason": "empty_list",
+                        }
+                    ],
+                )
         return
 
     raise AppError(
@@ -194,8 +287,32 @@ def _validate_conditions(*, conditions: dict[str, Any]) -> None:
     _validate_conditions_node(conditions)
 
 
+def _validate_priority(*, value: int, field: str = "priority") -> int:
+    if value < _MIN_RULE_PRIORITY or value > _MAX_RULE_PRIORITY:
+        raise AppError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Invalid priority",
+            details=[
+                {
+                    "field": field,
+                    "reason": "out_of_range",
+                    "extra": {
+                        "min": _MIN_RULE_PRIORITY,
+                        "max": _MAX_RULE_PRIORITY,
+                    },
+                }
+            ],
+        )
+    return value
+
+
 def _global_stable_keys(*, session: Session) -> set[str]:
-    rows = session.exec(select(Rule.stable_key).where(Rule.company_id.is_(None))).all()
+    rows = session.exec(
+        select(Rule.stable_key)
+        .where(Rule.company_id.is_(None))
+        .where(Rule.is_deleted.is_(False))
+    ).all()
     return {str(x) for x in rows}
 
 
@@ -230,6 +347,34 @@ def _to_rule_out(
         origin=origin,
         can_edit_action=is_admin and origin == RuleOrigin.personal_custom,
         can_soft_delete=is_admin and origin != RuleOrigin.global_default,
+    )
+
+
+def _to_global_rule_out_with_enabled(
+    *,
+    rule: Rule,
+    enabled: bool,
+) -> CompanyRuleOut:
+    return CompanyRuleOut(
+        id=rule.id,
+        rule_set_id=None,
+        stable_key=rule.stable_key,
+        name=rule.name,
+        description=rule.description,
+        scope=rule.scope,
+        conditions=rule.conditions,
+        conditions_version=rule.conditions_version,
+        action=rule.action,
+        severity=rule.severity,
+        priority=rule.priority,
+        rag_mode=rule.rag_mode,
+        enabled=bool(enabled),
+        created_by=rule.created_by,
+        created_at=rule.created_at,
+        updated_at=rule.updated_at,
+        origin=RuleOrigin.global_default,
+        can_edit_action=False,
+        can_soft_delete=False,
     )
 
 
@@ -349,6 +494,30 @@ def _extract_context_keyword_terms_from_conditions(node: Any) -> set[str]:
     return out
 
 
+def _build_auto_context_terms_from_conditions(
+    *,
+    conditions: dict[str, Any] | None,
+) -> list[RuleContextTermIn]:
+    keywords = sorted(
+        _extract_context_keyword_terms_from_conditions(conditions or {})
+    )
+    if not keywords:
+        return []
+
+    return [
+        RuleContextTermIn(
+            entity_type="CUSTOM_SECRET",
+            term=term,
+            lang="vi",
+            weight=1.0,
+            window_1=60,
+            window_2=20,
+            enabled=True,
+        )
+        for term in keywords
+    ]
+
+
 def _list_context_terms_for_rule(
     *,
     session: Session,
@@ -393,6 +562,15 @@ def _snapshot_rule(*, rule: Rule) -> dict[str, Any]:
         "priority": int(rule.priority),
         "rag_mode": rule.rag_mode.value,
         "enabled": bool(rule.enabled),
+        "is_deleted": bool(getattr(rule, "is_deleted", False)),
+    }
+
+
+def _snapshot_company_override(*, company_id: UUID, stable_key: str, enabled: bool) -> dict[str, Any]:
+    return {
+        "company_id": str(company_id),
+        "stable_key": stable_key,
+        "enabled": bool(enabled),
     }
 
 
@@ -517,6 +695,7 @@ def _load_company_rule_by_stable_key(
     rows = session.exec(
         select(Rule)
         .where(Rule.company_id == company_id)
+        .where(Rule.is_deleted.is_(False))
         .where(Rule.stable_key == stable_key)
         .order_by(Rule.created_at.desc())
     ).all()
@@ -529,6 +708,49 @@ def _load_company_rule_by_stable_key(
     return rows[0] if rows else None
 
 
+def _load_company_global_override_map(
+    *,
+    session: Session,
+    company_id: UUID,
+) -> dict[str, bool]:
+    rows = list(
+        session.exec(
+            select(CompanyRuleOverride).where(CompanyRuleOverride.company_id == company_id)
+        ).all()
+    )
+    return {
+        str(row.stable_key): bool(row.enabled)
+        for row in rows
+        if str(row.stable_key or "").strip()
+    }
+
+
+def _load_company_legacy_override_map(
+    *,
+    session: Session,
+    company_id: UUID,
+    global_keys: set[str],
+) -> dict[str, bool]:
+    if not global_keys:
+        return {}
+
+    rows = list(
+        session.exec(
+            select(Rule)
+            .where(Rule.company_id == company_id)
+            .where(Rule.is_deleted.is_(False))
+            .where(Rule.stable_key.in_(sorted(global_keys)))
+            .order_by(Rule.created_at.desc(), Rule.id.desc())
+        ).all()
+    )
+    out: dict[str, bool] = {}
+    for row in rows:
+        key = str(row.stable_key or "")
+        if key and key not in out:
+            out[key] = bool(row.enabled)
+    return out
+
+
 def get_rule_detail(
     *,
     session: Session,
@@ -536,7 +758,7 @@ def get_rule_detail(
     actor_user_id: UUID,
 ) -> RuleDetailOut:
     row = session.get(Rule, rule_id)
-    if not row:
+    if not row or _is_rule_deleted(rule=row):
         raise not_found("Rule not found", field="rule_id")
 
     if row.company_id is None:
@@ -586,29 +808,72 @@ def list_company_rules(
     )
     is_admin = True
 
-    runtime_rules = RuleEngine().load_rules(session=session, company_id=company_id)
-    rule_ids = [x.rule_id for x in runtime_rules]
-    if not rule_ids:
-        return []
+    global_rows = list(
+        session.exec(
+            select(Rule)
+            .where(Rule.company_id.is_(None))
+            .where(Rule.is_deleted.is_(False))
+            .order_by(Rule.created_at.desc(), Rule.id.desc())
+        ).all()
+    )
+    company_rows = list(
+        session.exec(
+            select(Rule)
+            .where(Rule.company_id == company_id)
+            .where(Rule.is_deleted.is_(False))
+            .order_by(Rule.created_at.desc(), Rule.id.desc())
+        ).all()
+    )
 
-    row_map = {
-        r.id: r for r in session.exec(select(Rule).where(Rule.id.in_(rule_ids))).all()
-    }
-    global_keys = _global_stable_keys(session=session)
+    global_by_key: dict[str, Rule] = {}
+    for row in global_rows:
+        if row.stable_key not in global_by_key:
+            global_by_key[row.stable_key] = row
 
-    out: list[CompanyRuleOut] = []
-    for runtime in runtime_rules:
-        row = row_map.get(runtime.rule_id)
-        if row is None:
+    global_keys = set(global_by_key.keys())
+    override_enabled_map = _load_company_global_override_map(
+        session=session,
+        company_id=company_id,
+    )
+    legacy_override_enabled_map = _load_company_legacy_override_map(
+        session=session,
+        company_id=company_id,
+        global_keys=global_keys,
+    )
+    custom_rows: list[CompanyRuleOut] = []
+    for row in company_rows:
+        if _is_rule_deleted(rule=row):
             continue
-        out.append(
+        if row.stable_key in global_keys:
+            continue
+        custom_rows.append(
             _to_rule_out(
                 rule=row,
-                origin=_classify_origin(rule=row, global_keys=global_keys),
+                origin=RuleOrigin.personal_custom,
                 is_admin=is_admin,
             )
         )
-    return out
+
+    resolved_global_rows: list[CompanyRuleOut] = []
+    for stable_key, global_row in global_by_key.items():
+        effective_enabled = override_enabled_map.get(
+            stable_key,
+            legacy_override_enabled_map.get(stable_key, bool(global_row.enabled)),
+        )
+        resolved_global_rows.append(
+            _to_global_rule_out_with_enabled(
+                rule=global_row,
+                enabled=effective_enabled,
+            )
+        )
+
+    combined = [*resolved_global_rows, *custom_rows]
+    combined.sort(
+        key=lambda r: (int(r.priority or 0), r.updated_at, r.created_at, str(r.id)),
+        reverse=True,
+    )
+
+    return combined
 
 
 def list_company_rule_change_logs(
@@ -652,6 +917,7 @@ def create_company_custom_rule(
     name = _normalize_non_empty(value=payload.name, field="name")
     description = (payload.description or "").strip() or None
     _validate_conditions(conditions=payload.conditions)
+    priority = _validate_priority(value=int(payload.priority))
 
     global_keys = _global_stable_keys(session=session)
     if stable_key in global_keys:
@@ -674,7 +940,12 @@ def create_company_custom_rule(
             field="stable_key",
         )
 
-    normalized_context_terms = _normalize_context_terms(context_terms=context_terms)
+    auto_context_terms = _build_auto_context_terms_from_conditions(
+        conditions=payload.conditions
+    )
+    normalized_context_terms = _normalize_context_terms(
+        context_terms=[*(context_terms or []), *auto_context_terms]
+    )
 
     row = Rule(
         company_id=company_id,
@@ -686,9 +957,10 @@ def create_company_custom_rule(
         conditions_version=1,
         action=payload.action,
         severity=payload.severity,
-        priority=int(payload.priority),
+        priority=priority,
         rag_mode=payload.rag_mode,
         enabled=bool(payload.enabled),
+        is_deleted=False,
         created_by=actor_user_id,
     )
     session.add(row)
@@ -746,7 +1018,7 @@ def update_company_rule(
     )
 
     row = session.get(Rule, rule_id)
-    if not row:
+    if not row or _is_rule_deleted(rule=row):
         raise not_found("Rule not found", field="rule_id")
     if row.company_id != company_id:
         raise not_found("Rule not found", field="rule_id")
@@ -783,14 +1055,16 @@ def update_company_rule(
         row.description = (payload.description or "").strip() or None
     if "scope" in changed_fields and payload.scope is not None:
         row.scope = payload.scope
-    if "conditions" in changed_fields and payload.conditions is not None:
+    conditions_changed = "conditions" in changed_fields and payload.conditions is not None
+
+    if conditions_changed:
         _validate_conditions(conditions=payload.conditions)
         row.conditions = payload.conditions
         row.conditions_version = int(row.conditions_version or 1) + 1
     if "severity" in changed_fields and payload.severity is not None:
         row.severity = payload.severity
     if "priority" in changed_fields and payload.priority is not None:
-        row.priority = int(payload.priority)
+        row.priority = _validate_priority(value=int(payload.priority))
     if "rag_mode" in changed_fields and payload.rag_mode is not None:
         row.rag_mode = payload.rag_mode
     if "enabled" in changed_fields and payload.enabled is not None:
@@ -808,7 +1082,21 @@ def update_company_rule(
 
     after_json = _snapshot_rule(rule=row)
 
+    auto_context_terms: list[RuleContextTermIn] = []
+    if conditions_changed:
+        auto_context_terms = _normalize_context_terms(
+            context_terms=_build_auto_context_terms_from_conditions(
+                conditions=row.conditions,
+            )
+        )
+
     session.add(row)
+    if auto_context_terms:
+        _upsert_company_context_terms(
+            session=session,
+            company_id=company_id,
+            context_terms=auto_context_terms,
+        )
     _append_rule_change_log(
         session=session,
         company_id=company_id,
@@ -822,6 +1110,8 @@ def update_company_rule(
     session.commit()
     session.refresh(row)
     RuleEngine.invalidate_cache(company_id)
+    if conditions_changed:
+        invalidate_context_runtime_cache(company_id)
     return _to_rule_out(rule=row, origin=origin)
 
 
@@ -838,16 +1128,24 @@ def soft_delete_company_rule(
     )
 
     row = session.get(Rule, rule_id)
-    if not row:
+    if not row or _is_rule_deleted(rule=row):
         raise not_found("Rule not found", field="rule_id")
     if row.company_id != company_id:
         raise not_found("Rule not found", field="rule_id")
 
     global_keys = _global_stable_keys(session=session)
     origin = _classify_origin(rule=row, global_keys=global_keys)
+    if origin != RuleOrigin.personal_custom:
+        raise AppError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Only custom rule can be deleted",
+            details=[{"field": "rule_id", "reason": "delete_not_allowed_for_global"}],
+        )
 
     before_json = _snapshot_rule(rule=row)
     row.enabled = False
+    row.is_deleted = True
     after_json = _snapshot_rule(rule=row)
 
     session.add(row)
@@ -856,8 +1154,8 @@ def soft_delete_company_rule(
         company_id=company_id,
         rule_id=row.id,
         actor_user_id=actor_user_id,
-        action="rule.soft_delete",
-        changed_fields=["enabled"],
+        action="rule.delete",
+        changed_fields=["enabled", "is_deleted"],
         before_json=before_json,
         after_json=after_json,
     )
@@ -885,46 +1183,77 @@ def toggle_global_rule_for_company(
     global_rule = session.exec(
         select(Rule)
         .where(Rule.company_id.is_(None))
+        .where(Rule.is_deleted.is_(False))
         .where(Rule.stable_key == normalized_key)
         .order_by(Rule.created_at.desc())
     ).first()
     if not global_rule:
         raise not_found("Global rule not found", field="stable_key")
 
-    override = _load_company_rule_by_stable_key(
+    override = session.exec(
+        select(CompanyRuleOverride)
+        .where(CompanyRuleOverride.company_id == company_id)
+        .where(CompanyRuleOverride.stable_key == normalized_key)
+        .order_by(CompanyRuleOverride.created_at.desc(), CompanyRuleOverride.id.desc())
+    ).first()
+    legacy_enabled_map = _load_company_legacy_override_map(
         session=session,
         company_id=company_id,
+        global_keys={normalized_key},
+    )
+    before_enabled = (
+        bool(override.enabled)
+        if override is not None
+        else legacy_enabled_map.get(normalized_key, bool(global_rule.enabled))
+    )
+    before_json = _snapshot_company_override(
+        company_id=company_id,
         stable_key=normalized_key,
+        enabled=before_enabled,
     )
 
-    before_json = _snapshot_rule(rule=override) if override is not None else None
+    target_enabled = bool(enabled)
+    default_enabled = bool(global_rule.enabled)
+    has_override = target_enabled != default_enabled
 
-    if override is None:
-        override = Rule(
-            company_id=company_id,
-            stable_key=global_rule.stable_key,
-            name=global_rule.name,
-            description=global_rule.description,
-            scope=global_rule.scope,
-            conditions=deepcopy(global_rule.conditions),
-            conditions_version=global_rule.conditions_version,
-            action=global_rule.action,
-            severity=global_rule.severity,
-            priority=global_rule.priority,
-            rag_mode=global_rule.rag_mode,
-            enabled=bool(enabled),
-            created_by=actor_user_id,
-        )
-    else:
-        override.enabled = bool(enabled)
+    if has_override:
+        if override is None:
+            override = CompanyRuleOverride(
+                company_id=company_id,
+                stable_key=normalized_key,
+                enabled=target_enabled,
+            )
+        else:
+            override.enabled = target_enabled
+        session.add(override)
+    elif override is not None:
+        session.delete(override)
 
-    after_json = _snapshot_rule(rule=override)
+    # Retire legacy rule-row overrides so domain state is centralized.
+    legacy_rows = list(
+        session.exec(
+            select(Rule)
+            .where(Rule.company_id == company_id)
+            .where(Rule.stable_key == normalized_key)
+            .where(Rule.is_deleted.is_(False))
+            .order_by(Rule.created_at.desc(), Rule.id.desc())
+        ).all()
+    )
+    for row in legacy_rows:
+        row.enabled = False
+        row.is_deleted = True
+        session.add(row)
 
-    session.add(override)
+    after_json = _snapshot_company_override(
+        company_id=company_id,
+        stable_key=normalized_key,
+        enabled=target_enabled,
+    )
+
     _append_rule_change_log(
         session=session,
         company_id=company_id,
-        rule_id=override.id,
+        rule_id=global_rule.id,
         actor_user_id=actor_user_id,
         action="rule.toggle_global_enabled",
         changed_fields=["enabled"],
@@ -932,9 +1261,8 @@ def toggle_global_rule_for_company(
         after_json=after_json,
     )
     session.commit()
-    session.refresh(override)
     RuleEngine.invalidate_cache(company_id)
-    return _to_rule_out(rule=override, origin=RuleOrigin.personal_override)
+    return _to_global_rule_out_with_enabled(rule=global_rule, enabled=target_enabled)
 
 
 def list_personal_rules(
@@ -948,6 +1276,7 @@ def list_personal_rules(
         session.exec(
             select(Rule)
             .where(Rule.company_id.is_(None))
+            .where(Rule.is_deleted.is_(False))
             .order_by(Rule.priority.desc(), Rule.created_at.desc(), Rule.id.desc())
         ).all()
     )
@@ -983,6 +1312,7 @@ def toggle_personal_rule_enabled(
     global_rule = session.exec(
         select(Rule)
         .where(Rule.company_id.is_(None))
+        .where(Rule.is_deleted.is_(False))
         .where(Rule.stable_key == normalized_key)
         .order_by(Rule.created_at.desc())
     ).first()

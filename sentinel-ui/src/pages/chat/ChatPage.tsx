@@ -5,7 +5,7 @@ import { useConversation } from "@/features/conversations/hooks/useConversation"
 import { EmptyChatState } from "@/features/messages/components/EmptyChatState";
 import { MessageComposer } from "@/features/messages/components/MessageComposer";
 import { MessageList } from "@/features/messages/components/MessageList";
-import { useMessages } from "@/features/messages/hooks/useMessages";
+import { useInfiniteMessages } from "@/features/messages/hooks/useInfiniteMessages";
 import { useSendMessage } from "@/features/messages/hooks/useSendMessage";
 import { useChatUiStore } from "@/features/messages/store/chatUiStore";
 import { Card } from "@/shared/ui/card";
@@ -32,7 +32,7 @@ export function ChatPage() {
 
   const conversationsQuery = useConversations();
   const conversationQuery = useConversation(conversationId);
-  const messagesQuery = useMessages(conversationId);
+  const messagesQuery = useInfiniteMessages(conversationId);
   const sendMessageMutation = useSendMessage();
 
   const conversations = useMemo(
@@ -40,8 +40,12 @@ export function ChatPage() {
     [conversationsQuery.data?.items]
   );
   const messages = useMemo(
-    () => messagesQuery.data?.items ?? [],
-    [messagesQuery.data?.items]
+    () =>
+      (messagesQuery.data?.pages ?? [])
+        .slice()
+        .reverse()
+        .flatMap((page) => page.items),
+    [messagesQuery.data?.pages]
   );
 
   useEffect(() => {
@@ -172,6 +176,17 @@ export function ChatPage() {
     [failedMessageIds, setSelectedMessageId]
   );
 
+  const handleLoadOlderMessages = useCallback(async () => {
+    if (!messagesQuery.hasNextPage || messagesQuery.isFetchingNextPage) {
+      return;
+    }
+    await messagesQuery.fetchNextPage();
+  }, [
+    messagesQuery.fetchNextPage,
+    messagesQuery.hasNextPage,
+    messagesQuery.isFetchingNextPage,
+  ]);
+
   if (!conversationId) {
     return (
       <section className="flex h-full items-center justify-center p-6">
@@ -231,8 +246,11 @@ export function ChatPage() {
             failedMessageIds={failedMessageIds}
             isError={messagesQuery.isError}
             isLoading={messagesQuery.isLoading}
+            isFetchingMore={messagesQuery.isFetchingNextPage}
             isSending={sendMessageMutation.isPending}
             messages={mergedMessages}
+            hasMore={Boolean(messagesQuery.hasNextPage)}
+            onLoadMore={handleLoadOlderMessages}
             onRetryMessage={handleRetryFailedMessage}
             onSelectMessage={handleSelectMessage}
             retryingMessageIds={retryingMessageIds}

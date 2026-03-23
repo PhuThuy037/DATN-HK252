@@ -16,7 +16,7 @@ export function Toaster() {
   const dismiss = useToastStore((state) => state.dismiss);
 
   return (
-    <div className="pointer-events-none fixed right-4 top-4 z-[100] flex w-[320px] max-w-[90vw] flex-col gap-2">
+    <div className="pointer-events-none fixed left-1/2 top-4 z-[100] flex w-[420px] max-w-[95vw] -translate-x-1/2 flex-col gap-2">
       {toasts.map((item) => (
         <div
           className={cn(

@@ -3,6 +3,7 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { cn } from "@/shared/lib/utils";
 import { ScrollArea } from "@/shared/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/tabs";
 import { Textarea } from "@/shared/ui/textarea";
@@ -40,7 +41,7 @@ function formatDateTime(value?: string) {
 
 function isGlobalRule(rule: Rule) {
   const origin = (rule.origin ?? "").toLowerCase();
-  return origin.includes("global");
+  return origin.includes("global") || origin.includes("override");
 }
 
 function RuleModal({
@@ -137,11 +138,15 @@ export function RulesPage() {
       });
       setCreateOpen(false);
     } catch (error) {
-      toast({
-        title: "Create failed",
-        description: error instanceof Error ? error.message : "Failed to create rule.",
-        variant: "destructive",
-      });
+      const status = (error as { response?: { status?: number } } | null)?.response?.status;
+      if (status !== 422) {
+        toast({
+          title: "Create failed",
+          description: error instanceof Error ? error.message : "Failed to create rule.",
+          variant: "destructive",
+        });
+      }
+      throw error;
     }
   };
 
@@ -161,11 +166,15 @@ export function RulesPage() {
       });
       setEditingRule(null);
     } catch (error) {
-      toast({
-        title: "Update failed",
-        description: error instanceof Error ? error.message : "Failed to update rule.",
-        variant: "destructive",
-      });
+      const status = (error as { response?: { status?: number } } | null)?.response?.status;
+      if (status !== 422) {
+        toast({
+          title: "Update failed",
+          description: error instanceof Error ? error.message : "Failed to update rule.",
+          variant: "destructive",
+        });
+      }
+      throw error;
     }
   };
 
@@ -467,7 +476,7 @@ export function RulesPage() {
           isSubmitting={createRuleMutation.isPending}
           mode="create"
           onCancel={() => setCreateOpen(false)}
-          onSubmit={(payload) => void handleCreateRule(payload)}
+          onSubmit={handleCreateRule}
         />
       </RuleModal>
 
@@ -481,7 +490,7 @@ export function RulesPage() {
           isSubmitting={updateRuleMutation.isPending}
           mode="edit"
           onCancel={() => setEditingRule(null)}
-          onSubmit={(payload) => void handleUpdateRule(payload)}
+          onSubmit={handleUpdateRule}
         />
       </RuleModal>
     </section>
@@ -545,7 +554,13 @@ function RuleTable({
             const global = isGlobalRule(rule);
             const canToggleGlobal = global && Boolean(rule.stable_key);
             return (
-              <tr className="border-b align-top" key={rule.id}>
+              <tr
+                className={cn(
+                  "border-b align-top",
+                  !rule.enabled && "bg-muted/20"
+                )}
+                key={rule.id}
+              >
                 <td className="px-2 py-2">
                   <p className="font-medium">{rule.name}</p>
                   <p className="text-xs text-muted-foreground">{rule.stable_key ?? "-"}</p>
@@ -563,7 +578,15 @@ function RuleTable({
                       onChange={(event) => onToggleEnabled(rule, event.target.checked)}
                       type="checkbox"
                     />
-                    <span className="text-xs">{rule.enabled ? "On" : "Off"}</span>
+                    <Badge
+                      className={
+                        rule.enabled
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                          : "border-slate-300 bg-slate-100 text-slate-700"
+                      }
+                    >
+                      {rule.enabled ? "Enabled" : "Disabled"}
+                    </Badge>
                   </label>
                 </td>
                 {showOrigin && (

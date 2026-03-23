@@ -29,6 +29,7 @@ from app.masking.service import MaskService
 from app.messages.model import Message
 from app.permissions.core import not_found
 from app.permissions.loaders.conversation import load_rule_set_owner_active_or_403
+from app.rule.model import Rule
 
 _chat = ChatService()
 _scan = ScanEngineLocal(context_yaml_path="app/config/context_base.yaml")
@@ -83,6 +84,72 @@ def _extract_code_like_mask_terms(scan_payload: dict) -> list[str]:
             continue
         seen.add(lowered)
         out.append(term)
+    return out
+
+
+def _extract_context_keyword_terms_from_conditions(node: object) -> set[str]:
+    out: set[str] = set()
+    if isinstance(node, dict):
+        signal = node.get("signal")
+        if isinstance(signal, dict):
+            field = str(signal.get("field") or "").strip().lower()
+            if field == "context_keywords":
+                for op in ("equals", "contains", "startswith", "regex"):
+                    if op in signal:
+                        value = str(signal.get(op) or "").strip()
+                        if value:
+                            out.add(value)
+                for op in ("in", "any_of"):
+                    raw = signal.get(op)
+                    if isinstance(raw, list):
+                        for item in raw:
+                            value = str(item or "").strip()
+                            if value:
+                                out.add(value)
+                    elif isinstance(raw, str):
+                        value = raw.strip()
+                        if value:
+                            out.add(value)
+        for value in node.values():
+            out.update(_extract_context_keyword_terms_from_conditions(value))
+        return out
+
+    if isinstance(node, list):
+        for item in node:
+            out.update(_extract_context_keyword_terms_from_conditions(item))
+    return out
+
+
+def _extract_forced_mask_terms_from_matches(
+    *,
+    session: Session,
+    matches: list[object],
+    limit: int = 40,
+) -> list[str]:
+    rule_ids: list[UUID] = []
+    for row in matches:
+        rule_id = getattr(row, "rule_id", None)
+        if isinstance(rule_id, UUID):
+            rule_ids.append(rule_id)
+    if not rule_ids:
+        return []
+
+    rows = list(
+        session.exec(select(Rule.conditions).where(Rule.id.in_(rule_ids))).all()
+    )
+    seen: set[str] = set()
+    out: list[str] = []
+    safe_limit = max(1, int(limit))
+
+    for conditions in rows:
+        for term in _extract_context_keyword_terms_from_conditions(conditions):
+            lowered = str(term).strip().lower()
+            if not lowered or lowered in seen:
+                continue
+            seen.add(lowered)
+            out.append(str(term).strip())
+            if len(out) >= safe_limit:
+                return out
     return out
 
 
@@ -232,10 +299,15 @@ async def append_user_message_async(
 
     user_masked = None
     if user_final == RuleAction.mask:
+        forced_terms = _extract_forced_mask_terms_from_matches(
+            session=session,
+            matches=user_matches,
+        )
         user_masked = _mask_service.mask(
             content,
             user_entities,
             extra_terms=_extract_code_like_mask_terms(user_scan),
+            force_terms=forced_terms,
         )
 
     user_entities_json = {
@@ -305,10 +377,15 @@ async def append_user_message_async(
 
     asst_masked = None
     if asst_final == RuleAction.mask:
+        forced_terms = _extract_forced_mask_terms_from_matches(
+            session=session,
+            matches=asst_matches,
+        )
         asst_masked = _mask_service.mask(
             assistant_text,
             asst_entities,
             extra_terms=_extract_code_like_mask_terms(assistant_scan),
+            force_terms=forced_terms,
         )
 
     asst_entities_json = {

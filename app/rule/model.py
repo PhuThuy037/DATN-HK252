@@ -18,15 +18,16 @@ class Rule(TimestampMixin, SQLModel, table=True):
             "uq_rules_global_stable_key",
             "stable_key",
             unique=True,
-            postgresql_where=sa.text("company_id IS NULL"),
+            postgresql_where=sa.text("company_id IS NULL AND is_deleted = false"),
         ),
         Index(
             "uq_rules_company_stable_key",
             "company_id",
             "stable_key",
             unique=True,
-            postgresql_where=sa.text("company_id IS NOT NULL"),
+            postgresql_where=sa.text("company_id IS NOT NULL AND is_deleted = false"),
         ),
+        Index("ix_rules_company_deleted_scope", "company_id", "is_deleted", "scope"),
         Index("ix_rules_company_enabled_scope", "company_id", "enabled", "scope"),
         Index("ix_rules_enabled_scope", "enabled", "scope"),
         Index(
@@ -96,6 +97,16 @@ class Rule(TimestampMixin, SQLModel, table=True):
         default=True,
         sa_column=sa.Column(
             sa.Boolean, nullable=False, server_default=sa.text("true"), index=True
+        ),
+    )
+
+    is_deleted: bool = Field(
+        default=False,
+        sa_column=sa.Column(
+            sa.Boolean,
+            nullable=False,
+            server_default=sa.text("false"),
+            index=True,
         ),
     )
 

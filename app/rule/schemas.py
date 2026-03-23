@@ -46,7 +46,7 @@ class CompanyRuleCreateIn(BaseModel):
     conditions: dict[str, Any]
     action: RuleAction = RuleAction.mask
     severity: RuleSeverity = RuleSeverity.medium
-    priority: int = 0
+    priority: int = PydanticField(default=0, ge=-100000, le=100000)
     rag_mode: RagMode = RagMode.off
     enabled: bool = True
 
@@ -73,7 +73,7 @@ class CompanyRuleUpdateIn(BaseModel):
     conditions: Optional[dict[str, Any]] = None
     action: Optional[RuleAction] = None
     severity: Optional[RuleSeverity] = None
-    priority: Optional[int] = None
+    priority: Optional[int] = PydanticField(default=None, ge=-100000, le=100000)
     rag_mode: Optional[RagMode] = None
     enabled: Optional[bool] = None
 

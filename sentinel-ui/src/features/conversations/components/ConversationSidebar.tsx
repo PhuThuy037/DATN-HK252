@@ -48,6 +48,11 @@ export function ConversationSidebar({
   const setRuleSetResolved = useRuleSetStore((state) => state.setRuleSetResolved);
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [renamingConversationId, setRenamingConversationId] = useState<string | null>(
+    null
+  );
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
 
   const conversationsQuery = useConversations();
   const createConversationMutation = useCreateConversation();
@@ -63,6 +68,7 @@ export function ConversationSidebar({
     createConversationMutation.isPending ||
     updateConversationMutation.isPending ||
     deleteConversationMutation.isPending;
+  const CONVERSATION_TITLE_MAX_LENGTH = 300;
 
   const handleOpenConversation = (conversationId: string) => {
     navigate(`/app/chat/${conversationId}`);
@@ -98,30 +104,75 @@ export function ConversationSidebar({
   const isPoliciesRoute = location.pathname.startsWith("/app/policies");
   const isChatRoute = location.pathname.startsWith("/app/chat");
 
-  const handleRenameConversation = async (item: ConversationListItemType) => {
-    const nextTitle = window.prompt(
-      "Rename conversation",
-      item.title?.trim() || "Untitled conversation"
-    );
+  const startRenameConversation = (item: ConversationListItemType) => {
+    setRenamingConversationId(item.id);
+    setRenameDraft(item.title?.trim() || "");
+    setRenameError(null);
+  };
 
-    if (!nextTitle || !nextTitle.trim()) {
+  const cancelRenameConversation = () => {
+    setRenamingConversationId(null);
+    setRenameDraft("");
+    setRenameError(null);
+  };
+
+  const resolveRenameErrorMessage = (error: unknown) => {
+    const message = extractAuthErrorMessage(error);
+    const normalized = String(message || "").toLowerCase();
+    if (normalized.includes("at most 300") || normalized.includes("max_length")) {
+      return "Conversation name is too long.";
+    }
+    if (normalized.includes("empty") || normalized.includes("blank")) {
+      return "Conversation name cannot be empty.";
+    }
+    return message || "Unable to rename conversation.";
+  };
+
+  const updateRenameDraft = (value: string) => {
+    setRenameDraft(value);
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setRenameError("Conversation name cannot be empty.");
+      return;
+    }
+    if (trimmed.length > CONVERSATION_TITLE_MAX_LENGTH) {
+      setRenameError("Conversation name is too long.");
+      return;
+    }
+    setRenameError(null);
+  };
+
+  const submitRenameConversation = async () => {
+    if (!renamingConversationId) {
+      return;
+    }
+    const normalized = renameDraft.trim();
+    if (!normalized) {
+      setRenameError("Conversation name cannot be empty.");
+      return;
+    }
+    if (normalized.length > CONVERSATION_TITLE_MAX_LENGTH) {
+      setRenameError("Conversation name is too long.");
       return;
     }
 
     try {
       await updateConversationMutation.mutateAsync({
-        conversationId: item.id,
-        payload: { title: nextTitle.trim() },
+        conversationId: renamingConversationId,
+        payload: { title: normalized },
       });
       toast({
         title: "Conversation renamed",
         description: "Title updated successfully.",
         variant: "success",
       });
+      cancelRenameConversation();
     } catch (error) {
+      const message = resolveRenameErrorMessage(error);
+      setRenameError(message);
       toast({
         title: "Rename failed",
-        description: extractAuthErrorMessage(error),
+        description: message,
         variant: "destructive",
       });
     }
@@ -330,12 +381,22 @@ export function ConversationSidebar({
             {conversations.map((item) => (
               <ConversationListItem
                 isActive={activeConversationId === item.id}
+                isRenameSubmitting={
+                  updateConversationMutation.isPending &&
+                  renamingConversationId === item.id
+                }
+                isRenaming={renamingConversationId === item.id}
                 item={item}
                 key={item.id}
                 onArchive={(value) => void handleArchiveConversation(value)}
                 onDelete={(value) => void handleDeleteConversation(value)}
                 onOpen={handleOpenConversation}
-                onRename={(value) => void handleRenameConversation(value)}
+                onRenameCancel={cancelRenameConversation}
+                onRenameChange={updateRenameDraft}
+                onRenameStart={startRenameConversation}
+                onRenameSubmit={() => void submitRenameConversation()}
+                renameError={renamingConversationId === item.id ? renameError : null}
+                renameValue={renamingConversationId === item.id ? renameDraft : ""}
               />
             ))}
           </div>

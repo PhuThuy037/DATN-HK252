@@ -70,6 +70,7 @@ type CompareFieldDiff = {
 type CompareViewModel = {
   identical: boolean;
   changedFields: string[];
+  matchedFields: string[];
   fieldDiff: CompareFieldDiff;
   conditionsDiff: ListDiff;
   contextTermsDiff: ListDiff;
@@ -504,9 +505,21 @@ function buildCompareViewModel(
     fieldDiff.scope ? "Scope" : null,
   ].filter((value): value is string => Boolean(value));
 
+  const matchedFields = [
+    !fieldDiff.conditions ? "Conditions" : null,
+    !fieldDiff.contextTerms ? "Context terms" : null,
+    !fieldDiff.action ? "Action" : null,
+    !fieldDiff.priority ? "Priority" : null,
+    !fieldDiff.severity ? "Severity" : null,
+    !fieldDiff.enabled ? "Enabled" : null,
+    !fieldDiff.ragMode ? "RAG mode" : null,
+    !fieldDiff.scope ? "Scope" : null,
+  ].filter((value): value is string => Boolean(value));
+
   return {
     identical: changedFields.length === 0,
     changedFields,
+    matchedFields,
     fieldDiff,
     conditionsDiff,
     contextTermsDiff,
@@ -575,16 +588,21 @@ function DuplicateWarningBanner({
 function DiffSummaryCard({ compare, state }: { compare: CompareViewModel; state: DuplicateUiState }) {
   if (compare.identical) {
     return (
-      <Card className="border-emerald-300 bg-emerald-50 p-3">
+      <Card className="border-sky-300 bg-sky-50 p-3">
         <div className="flex items-start gap-2">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-700" />
-          <div className="space-y-1">
-            <p className="text-sm font-semibold text-emerald-800">
-              No differences found. This rule is identical.
+          <Info className="mt-0.5 h-4 w-4 text-sky-700" />
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-sky-900">Matched sections</p>
+            <p className="text-xs text-sky-800">
+              The draft is an exact match with the existing rule in these sections:
             </p>
-            <p className="text-xs text-emerald-700">
-              Recommended action: edit the existing rule instead of creating a duplicate.
-            </p>
+            <div className="flex flex-wrap gap-1">
+              {compare.matchedFields.map((field) => (
+                <Badge className="border border-sky-300 bg-sky-100 text-sky-900" key={field}>
+                  {field}
+                </Badge>
+              ))}
+            </div>
           </div>
         </div>
       </Card>
@@ -623,6 +641,18 @@ function DiffSummaryCard({ compare, state }: { compare: CompareViewModel; state:
               </Badge>
             ))}
           </div>
+          {compare.matchedFields.length > 0 && (
+            <>
+              <p className="text-xs font-medium text-sky-800">Matched fields:</p>
+              <div className="flex flex-wrap gap-1">
+                {compare.matchedFields.map((field) => (
+                  <Badge className="border border-sky-300 bg-sky-100 text-sky-900" key={`matched-${field}`}>
+                    {field}
+                  </Badge>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </Card>
@@ -652,13 +682,19 @@ function DiffChip({
   );
 }
 
-function ContextTermsTable({ terms }: { terms: CompareContextTerm[] }) {
+function ContextTermsTable({
+  terms,
+  wrapperClassName,
+}: {
+  terms: CompareContextTerm[];
+  wrapperClassName?: string;
+}) {
   if (!terms.length) {
     return <p className="text-xs text-muted-foreground">No context terms.</p>;
   }
 
   return (
-    <div className="overflow-auto rounded-md border">
+    <div className={cn("overflow-auto rounded-md border", wrapperClassName)}>
       <table className="w-full text-left text-xs">
         <thead className="bg-muted/40">
           <tr>
@@ -689,19 +725,30 @@ function CompareFieldRow({
   label,
   value,
   changed,
+  identicalHighlight = false,
 }: {
   label: string;
   value: string;
   changed: boolean;
+  identicalHighlight?: boolean;
 }) {
   return (
     <p
       className={cn(
-        "rounded px-2 py-1",
-        changed ? "border border-amber-300 bg-amber-50 text-amber-900" : "border border-transparent"
+        "flex items-center justify-between gap-2 rounded px-2 py-1",
+        changed
+          ? "border border-amber-300 bg-amber-50 text-amber-900"
+          : identicalHighlight
+            ? "border border-sky-200 bg-sky-50 text-sky-900"
+            : "border border-transparent"
       )}
     >
-      {label}: {value || "-"}
+      <span>{label}: {value || "-"}</span>
+      {!changed && identicalHighlight && (
+        <span className="rounded border border-sky-300 bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-900">
+          Match
+        </span>
+      )}
     </p>
   );
 }
@@ -717,6 +764,7 @@ function RuleSnapshotCard({
   conditionsDiff,
   contextTermsDiff,
   contextTermsIdentical = false,
+  highlightIdentical = false,
 }: {
   heading: string;
   rule: RuleSummary;
@@ -728,6 +776,7 @@ function RuleSnapshotCard({
   conditionsDiff?: ListDiff;
   contextTermsDiff?: ListDiff;
   contextTermsIdentical?: boolean;
+  highlightIdentical?: boolean;
 }) {
   const compactId = compactStableKey(rule.stableKey);
   const showConditionDiff = mode === "compare" && fieldDiff?.conditions && conditionsDiff;
@@ -737,7 +786,8 @@ function RuleSnapshotCard({
   const showExistingContextRemoved =
     side === "existing" && (contextTermsDiff?.removed.length ?? 0) > 0;
   const showDraftContextAdded = side === "draft" && (contextTermsDiff?.added.length ?? 0) > 0;
-  const showCollapsedTerms = mode === "compare" && contextTermsIdentical;
+  const showConditionsIdentical = mode === "compare" && !fieldDiff?.conditions;
+  const showContextIdentical = mode === "compare" && contextTermsIdentical;
 
   return (
     <Card className="space-y-3 p-3">
@@ -756,31 +806,37 @@ function RuleSnapshotCard({
       <div className="grid gap-2 text-xs md:grid-cols-2">
         <CompareFieldRow
           changed={Boolean(fieldDiff?.action)}
+          identicalHighlight={Boolean(highlightIdentical && !fieldDiff?.action)}
           label="Action"
           value={toTitleCase(rule.action)}
         />
         <CompareFieldRow
           changed={Boolean(fieldDiff?.scope)}
+          identicalHighlight={Boolean(highlightIdentical && !fieldDiff?.scope)}
           label="Scope"
           value={toTitleCase(rule.scope)}
         />
         <CompareFieldRow
           changed={Boolean(fieldDiff?.severity)}
+          identicalHighlight={Boolean(highlightIdentical && !fieldDiff?.severity)}
           label="Severity"
           value={toTitleCase(rule.severity)}
         />
         <CompareFieldRow
           changed={Boolean(fieldDiff?.priority)}
+          identicalHighlight={Boolean(highlightIdentical && !fieldDiff?.priority)}
           label="Priority"
           value={String(rule.priority)}
         />
         <CompareFieldRow
           changed={Boolean(fieldDiff?.ragMode)}
+          identicalHighlight={Boolean(highlightIdentical && !fieldDiff?.ragMode)}
           label="RAG mode"
           value={toTitleCase(rule.ragMode)}
         />
         <CompareFieldRow
           changed={Boolean(fieldDiff?.enabled)}
+          identicalHighlight={Boolean(highlightIdentical && !fieldDiff?.enabled)}
           label="Enabled"
           value={rule.enabled ? "Yes" : "No"}
         />
@@ -794,21 +850,36 @@ function RuleSnapshotCard({
       )}
 
       <div className="space-y-1">
-        <p className="text-xs font-medium text-muted-foreground">Conditions</p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-medium text-muted-foreground">Conditions</p>
+          {showConditionsIdentical && (
+            <Badge className="border border-sky-300 bg-sky-100 text-sky-900">Identical</Badge>
+          )}
+        </div>
         <div
           className={cn(
             "space-y-2 rounded-md border bg-muted/20 p-3",
-            fieldDiff?.conditions && "border-amber-300 bg-amber-50/60"
+            fieldDiff?.conditions && "border-amber-300 bg-amber-50/60",
+            showConditionsIdentical && "border-sky-200 bg-sky-50/70"
           )}
         >
-          {mode === "compare" && !fieldDiff?.conditions && (
-            <p className="text-xs text-muted-foreground">Conditions: identical</p>
+          {showConditionsIdentical && (
+            <p className="rounded-md border border-sky-200 bg-sky-100/60 px-2 py-1 text-xs font-medium text-sky-900">
+              Exact match: same as existing rule.
+            </p>
           )}
           <p className="text-xs font-medium">{conditions.title}</p>
           {conditions.badges.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {conditions.badges.map((badge) => (
-                <Badge className="bg-muted text-muted-foreground" key={badge}>
+                <Badge
+                  className={cn(
+                    showConditionsIdentical
+                      ? "border border-sky-200 bg-sky-100 text-sky-900"
+                      : "bg-muted text-muted-foreground"
+                  )}
+                  key={badge}
+                >
                   {badge}
                 </Badge>
               ))}
@@ -856,63 +927,61 @@ function RuleSnapshotCard({
       </div>
 
       <div className="space-y-1">
-        <p className="text-xs font-medium text-muted-foreground">Context terms</p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-medium text-muted-foreground">Context terms</p>
+          {showContextIdentical && (
+            <Badge className="border border-sky-300 bg-sky-100 text-sky-900">Identical</Badge>
+          )}
+        </div>
         <div
           className={cn(
             "space-y-2 rounded-md border bg-muted/10 p-2",
-            fieldDiff?.contextTerms && "border-amber-300 bg-amber-50/40"
+            fieldDiff?.contextTerms && "border-amber-300 bg-amber-50/40",
+            showContextIdentical && "border-sky-200 bg-sky-50/70"
           )}
         >
-          {showCollapsedTerms ? (
-            <>
-              <p className="text-xs text-muted-foreground">Context terms: identical</p>
-              <details>
-                <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-                  View context terms
-                </summary>
-                <div className="mt-2">
-                  <ContextTermsTable terms={rule.contextTerms} />
-                </div>
-              </details>
-            </>
-          ) : (
-            <>
-              <ContextTermsTable terms={rule.contextTerms} />
-              {showContextTermsDiff && (
-                <div className="space-y-2 rounded-md border bg-background p-2">
-                  <p className="text-xs font-medium text-amber-800">Context terms changes</p>
-                  {showExistingContextRemoved && (
-                    <ul className="space-y-1">
-                      {contextTermsDiff.removed.map((value) => (
-                        <DiffChip
-                          key={`context-removed-${value}`}
-                          label={value}
-                          prefix="-"
-                          tone="removed"
-                        />
-                      ))}
-                    </ul>
-                  )}
-                  {showDraftContextAdded && (
-                    <ul className="space-y-1">
-                      {contextTermsDiff.added.map((value) => (
-                        <DiffChip
-                          key={`context-added-${value}`}
-                          label={value}
-                          prefix="+"
-                          tone="added"
-                        />
-                      ))}
-                    </ul>
-                  )}
-                  {!showExistingContextRemoved && !showDraftContextAdded && (
-                    <p className="text-xs text-muted-foreground">
-                      Changes detected, but added or removed context terms are not available.
-                    </p>
-                  )}
-                </div>
+          {showContextIdentical && (
+            <p className="rounded-md border border-sky-200 bg-sky-100/60 px-2 py-1 text-xs font-medium text-sky-900">
+              Exact match: same as existing rule.
+            </p>
+          )}
+          <ContextTermsTable
+            terms={rule.contextTerms}
+            wrapperClassName={showContextIdentical ? "border-sky-200 bg-sky-100/40" : undefined}
+          />
+          {showContextTermsDiff && (
+            <div className="space-y-2 rounded-md border bg-background p-2">
+              <p className="text-xs font-medium text-amber-800">Context terms changes</p>
+              {showExistingContextRemoved && (
+                <ul className="space-y-1">
+                  {contextTermsDiff.removed.map((value) => (
+                    <DiffChip
+                      key={`context-removed-${value}`}
+                      label={value}
+                      prefix="-"
+                      tone="removed"
+                    />
+                  ))}
+                </ul>
               )}
-            </>
+              {showDraftContextAdded && (
+                <ul className="space-y-1">
+                  {contextTermsDiff.added.map((value) => (
+                    <DiffChip
+                      key={`context-added-${value}`}
+                      label={value}
+                      prefix="+"
+                      tone="added"
+                    />
+                  ))}
+                </ul>
+              )}
+              {!showExistingContextRemoved && !showDraftContextAdded && (
+                <p className="text-xs text-muted-foreground">
+                  Changes detected, but added or removed context terms are not available.
+                </p>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -1087,6 +1156,7 @@ export function SuggestionRuleInspectorDialog({
                   contextTermsIdentical={Boolean(compare?.contextTermsIdentical)}
                   fieldDiff={compare?.fieldDiff}
                   heading="Existing rule"
+                  highlightIdentical={Boolean(compare)}
                   mode="compare"
                   rule={existingSummary}
                   side="existing"
@@ -1098,6 +1168,7 @@ export function SuggestionRuleInspectorDialog({
                   contextTermsIdentical={Boolean(compare?.contextTermsIdentical)}
                   fieldDiff={compare?.fieldDiff}
                   heading="Draft suggestion"
+                  highlightIdentical={Boolean(compare)}
                   mode="compare"
                   rule={draftSummary}
                   side="draft"

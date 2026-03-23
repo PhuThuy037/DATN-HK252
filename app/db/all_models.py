@@ -19,4 +19,5 @@ from app.rule_change_log.model import RuleChangeLog
 from app.suggestion.models.rule_suggestion import RuleSuggestion
 from app.suggestion.models.rule_suggestion_log import RuleSuggestionLog
 
+from app.rule.company_rule_override import CompanyRuleOverride
 from app.rule.user_rule_override import UserRuleOverride

@@ -12,8 +12,11 @@ from uuid import UUID
 from sqlmodel import Session, select
 
 from app.common.enums import RuleAction
+from app.rule.company_rule_override import CompanyRuleOverride
 from app.rule.model import Rule
 from app.rule.user_rule_override import UserRuleOverride
+
+_DELETED_RULE_PREFIX = "__deleted__."
 
 
 @dataclass(slots=True)
@@ -41,11 +44,10 @@ class RuleEngine:
 
     Runtime layering:
     - Personal: enabled global rules, with optional per-user enabled override.
-    - Rule-set scope (legacy company_id storage):
-      1) personal rules are loaded from rule.company_id == current scope id
-      2) personal_rule > global_rule at match resolution time
-      3) legacy override(enabled=false) still disables matching global stable_key
-         for backward compatibility
+    - Rule-set scope:
+      1) global rules + company custom rules
+      2) company-level global enabled overrides are stored in company_rule_overrides
+      3) legacy company rule-row overrides are respected as fallback
     """
 
     _CACHE_TTL_SECONDS = 5.0
@@ -131,6 +133,7 @@ class RuleEngine:
             stmt = (
                 select(Rule)
                 .where(Rule.company_id.is_(None))
+                .where(Rule.is_deleted.is_(False))
                 .order_by(Rule.priority.desc(), Rule.created_at.desc(), Rule.id.desc())
             )
             rows = list(session.exec(stmt).all())
@@ -163,6 +166,7 @@ class RuleEngine:
             session.exec(
                 select(Rule)
                 .where(Rule.company_id.is_(None))
+                .where(Rule.is_deleted.is_(False))
                 .order_by(Rule.created_at.desc(), Rule.id.desc())
             ).all()
         )
@@ -170,7 +174,15 @@ class RuleEngine:
             session.exec(
                 select(Rule)
                 .where(Rule.company_id == company_id)
+                .where(Rule.is_deleted.is_(False))
                 .order_by(Rule.created_at.desc(), Rule.id.desc())
+            ).all()
+        )
+        override_rows = list(
+            session.exec(
+                select(CompanyRuleOverride).where(
+                    CompanyRuleOverride.company_id == company_id
+                )
             ).all()
         )
 
@@ -181,27 +193,27 @@ class RuleEngine:
 
         global_keys = set(global_by_key.keys())
 
-        override_by_key: dict[str, Rule] = {}
+        override_enabled_by_key: dict[str, bool] = {
+            str(row.stable_key): bool(row.enabled)
+            for row in override_rows
+            if str(row.stable_key or "").strip()
+        }
         custom_enabled: list[Rule] = []
         for c in company_rows:
+            if str(c.stable_key).startswith(_DELETED_RULE_PREFIX):
+                continue
             if c.stable_key in global_keys:
-                if c.stable_key not in override_by_key:
-                    override_by_key[c.stable_key] = c
+                if c.stable_key not in override_enabled_by_key:
+                    override_enabled_by_key[c.stable_key] = bool(c.enabled)
                 continue
             if c.enabled:
                 custom_enabled.append(c)
 
         resolved: list[Rule] = []
         for stable_key, g in global_by_key.items():
-            override = override_by_key.get(stable_key)
-            if override is None:
-                if g.enabled:
-                    resolved.append(g)
-                continue
-
-            if override.enabled:
-                resolved.append(override)
-            # else: explicit company disable, skip both override and global.
+            effective_enabled = override_enabled_by_key.get(stable_key, bool(g.enabled))
+            if effective_enabled:
+                resolved.append(g)
 
         resolved.extend(custom_enabled)
         resolved.sort(key=lambda r: int(r.priority), reverse=True)

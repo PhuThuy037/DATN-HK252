@@ -1,10 +1,13 @@
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, type UIEvent } from "react";
 import { MessageBubble } from "@/features/messages/components/MessageBubble";
 import { EmptyChatState } from "@/features/messages/components/EmptyChatState";
 import { MessageSkeleton } from "@/features/messages/components/MessageSkeleton";
 import { TypingIndicator } from "@/features/messages/components/TypingIndicator";
 import { ScrollArea } from "@/shared/ui/scroll-area";
 import type { MessageListItem } from "@/shared/types";
+
+const TOP_LOAD_THRESHOLD_PX = 48;
+const BOTTOM_STICK_THRESHOLD_PX = 96;
 
 type MessageListProps = {
   messages: MessageListItem[];
@@ -13,6 +16,9 @@ type MessageListProps = {
   isLoading?: boolean;
   isError?: boolean;
   isSending?: boolean;
+  hasMore?: boolean;
+  isFetchingMore?: boolean;
+  onLoadMore?: () => Promise<unknown> | void;
   failedMessageIds?: string[];
   retryingMessageIds?: string[];
   onRetryMessage?: (messageId: string) => void;
@@ -25,32 +31,115 @@ function MessageListComponent({
   isLoading = false,
   isError = false,
   isSending = false,
+  hasMore = false,
+  isFetchingMore = false,
+  onLoadMore,
   failedMessageIds = [],
   retryingMessageIds = [],
   onRetryMessage,
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const prevMessageCountRef = useRef(0);
+  const prevFirstMessageIdRef = useRef<string | null>(null);
+  const prevLastMessageIdRef = useRef<string | null>(null);
+  const isLoadingMoreRef = useRef(false);
+  const shouldStickToBottomRef = useRef(true);
+  const pendingPrependRef = useRef<{
+    prevScrollTop: number;
+    prevScrollHeight: number;
+    firstMessageId: string | null;
+  } | null>(null);
   const failedSet = useMemo(() => new Set(failedMessageIds), [failedMessageIds]);
   const retryingSet = useMemo(
     () => new Set(retryingMessageIds),
     [retryingMessageIds]
   );
 
+  const firstMessageId = messages[0]?.id ?? null;
+  const lastMessageId = messages[messages.length - 1]?.id ?? null;
+
+  const handleScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      const el = event.currentTarget;
+      const distanceToBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
+      shouldStickToBottomRef.current = distanceToBottom <= BOTTOM_STICK_THRESHOLD_PX;
+
+      if (
+        !onLoadMore ||
+        !hasMore ||
+        isFetchingMore ||
+        isLoadingMoreRef.current ||
+        el.scrollTop > TOP_LOAD_THRESHOLD_PX
+      ) {
+        return;
+      }
+
+      pendingPrependRef.current = {
+        prevScrollTop: el.scrollTop,
+        prevScrollHeight: el.scrollHeight,
+        firstMessageId,
+      };
+      isLoadingMoreRef.current = true;
+
+      Promise.resolve(onLoadMore())
+        .catch(() => {
+          pendingPrependRef.current = null;
+        })
+        .finally(() => {
+          isLoadingMoreRef.current = false;
+        });
+    },
+    [firstMessageId, hasMore, isFetchingMore, onLoadMore]
+  );
+
+  useEffect(() => {
+    if (!isFetchingMore) {
+      isLoadingMoreRef.current = false;
+    }
+  }, [isFetchingMore]);
+
   useEffect(() => {
     if (!scrollRef.current) {
       return;
     }
 
+    const prevCount = prevMessageCountRef.current;
+    const prevFirstId = prevFirstMessageIdRef.current;
+    const prevLastId = prevLastMessageIdRef.current;
     const hasNewMessage = messages.length > prevMessageCountRef.current;
-    if (hasNewMessage) {
+
+    if (prevCount === 0 && messages.length > 0) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: "auto",
+      });
+    } else if (
+      pendingPrependRef.current &&
+      firstMessageId !== pendingPrependRef.current.firstMessageId
+    ) {
+      const scrollDelta =
+        scrollRef.current.scrollHeight - pendingPrependRef.current.prevScrollHeight;
+      scrollRef.current.scrollTo({
+        top: pendingPrependRef.current.prevScrollTop + scrollDelta,
+        behavior: "auto",
+      });
+      pendingPrependRef.current = null;
+    } else if (
+      hasNewMessage &&
+      prevFirstId === firstMessageId &&
+      prevLastId !== lastMessageId &&
+      shouldStickToBottomRef.current
+    ) {
       scrollRef.current.scrollTo({
         top: scrollRef.current.scrollHeight,
         behavior: "smooth",
       });
     }
+
     prevMessageCountRef.current = messages.length;
-  }, [messages]);
+    prevFirstMessageIdRef.current = firstMessageId;
+    prevLastMessageIdRef.current = lastMessageId;
+  }, [firstMessageId, lastMessageId, messages]);
 
   if (isLoading) {
     return (
@@ -82,8 +171,14 @@ function MessageListComponent({
   }
 
   return (
-    <ScrollArea className="h-full" ref={scrollRef}>
+    <ScrollArea className="h-full" onScroll={handleScroll} ref={scrollRef}>
       <div className="space-y-4 px-4 py-6">
+        {isFetchingMore && (
+          <p className="text-center text-xs text-muted-foreground">
+            Loading older messages...
+          </p>
+        )}
+
         {messages.map((message, index) => {
           const prev = messages[index - 1];
           const next = messages[index + 1];
@@ -134,6 +229,9 @@ function areEqual(prev: MessageListProps, next: MessageListProps) {
     prev.isLoading === next.isLoading &&
     prev.isError === next.isError &&
     prev.isSending === next.isSending &&
+    prev.hasMore === next.hasMore &&
+    prev.isFetchingMore === next.isFetchingMore &&
+    prev.onLoadMore === next.onLoadMore &&
     prev.failedMessageIds === next.failedMessageIds &&
     prev.retryingMessageIds === next.retryingMessageIds &&
     prev.onSelectMessage === next.onSelectMessage &&

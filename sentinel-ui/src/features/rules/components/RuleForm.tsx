@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -6,6 +6,7 @@ import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
 import { Textarea } from "@/shared/ui/textarea";
+import { cn } from "@/shared/lib/utils";
 import type { CreateRuleRequest, Rule, UpdateRuleRequest } from "@/features/rules/types";
 
 function validateConditionsNode(node: unknown): { ok: boolean; message?: string } {
@@ -28,6 +29,9 @@ function validateConditionsNode(node: unknown): { ok: boolean; message?: string 
       if (!Array.isArray(children)) {
         return { ok: false, message: "conditions.any must be an array." };
       }
+      if (children.length === 0) {
+        return { ok: false, message: "At least one condition is required." };
+      }
       for (const child of children) {
         const childResult = validateConditionsNode(child);
         if (!childResult.ok) {
@@ -41,6 +45,9 @@ function validateConditionsNode(node: unknown): { ok: boolean; message?: string 
       const children = objectNode.all;
       if (!Array.isArray(children)) {
         return { ok: false, message: "conditions.all must be an array." };
+      }
+      if (children.length === 0) {
+        return { ok: false, message: "At least one condition is required." };
       }
       for (const child of children) {
         const childResult = validateConditionsNode(child);
@@ -71,6 +78,41 @@ function validateConditionsNode(node: unknown): { ok: boolean; message?: string 
     if (!signalField) {
       return { ok: false, message: "conditions.signal.field is required." };
     }
+    const signalObject = signal as Record<string, unknown>;
+    const operators = [
+      "exists",
+      "equals",
+      "in",
+      "contains",
+      "startswith",
+      "regex",
+      "lt",
+      "lte",
+      "gt",
+      "gte",
+      "any_of",
+      "all_of",
+    ];
+    const hasOperator = operators.some((operator) => operator in signalObject);
+    if (!hasOperator) {
+      return { ok: false, message: "conditions.signal requires at least one operator." };
+    }
+    for (const listOperator of ["in", "any_of", "all_of"] as const) {
+      if (!(listOperator in signalObject)) {
+        continue;
+      }
+      const raw = signalObject[listOperator];
+      if (!Array.isArray(raw)) {
+        return { ok: false, message: `conditions.signal.${listOperator} must be an array.` };
+      }
+      const cleaned = raw.map((value) => String(value ?? "").trim()).filter(Boolean);
+      if (cleaned.length === 0) {
+        return {
+          ok: false,
+          message: "At least one condition is required.",
+        };
+      }
+    }
     return { ok: true };
   }
 
@@ -81,13 +123,23 @@ function validateConditionsNode(node: unknown): { ok: boolean; message?: string 
 }
 
 const ruleFormSchema = z.object({
-  stable_key: z.string().trim().max(200, "Stable key must be <= 200 chars"),
+  stable_key: z
+    .string()
+    .trim()
+    .min(1, "Stable key is required")
+    .max(200, "Stable key must be <= 200 chars"),
   name: z.string().trim().min(1, "Name is required").max(300, "Name must be <= 300 chars"),
   description: z.string().max(2000, "Description must be <= 2000 chars").optional(),
   scope: z.enum(["prompt", "chat", "file", "api"]),
   action: z.enum(["allow", "mask", "block", "warn"]),
   severity: z.enum(["low", "medium", "high"]),
-  priority: z.coerce.number().int().default(0),
+  priority: z.coerce
+    .number()
+    .refine((value) => Number.isFinite(value), "Priority must be a valid number")
+    .int("Priority must be an integer")
+    .min(-100000, "Priority must be between -100000 and 100000")
+    .max(100000, "Priority must be between -100000 and 100000")
+    .default(0),
   rag_mode: z.enum(["off", "explain", "verify"]),
   enabled: z.boolean().default(true),
 });
@@ -145,6 +197,182 @@ type BuilderCondition = {
   signalField: string;
   keywordsText: string;
 };
+
+const STABLE_KEY_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
+const MIN_PRIORITY = -100000;
+const MAX_PRIORITY = 100000;
+
+type RuleFieldErrorKey = keyof RuleFormValues | "conditions";
+
+function mapFieldPathToFormKey(path: string): RuleFieldErrorKey | null {
+  const normalized = String(path || "").trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.includes("stable_key")) {
+    return "stable_key";
+  }
+  if (normalized.includes("name")) {
+    return "name";
+  }
+  if (normalized.includes("scope")) {
+    return "scope";
+  }
+  if (normalized.includes("action")) {
+    return "action";
+  }
+  if (normalized.includes("severity")) {
+    return "severity";
+  }
+  if (normalized.includes("priority")) {
+    return "priority";
+  }
+  if (normalized.includes("rag_mode")) {
+    return "rag_mode";
+  }
+  if (normalized.includes("enabled")) {
+    return "enabled";
+  }
+  if (normalized.includes("condition")) {
+    return "conditions";
+  }
+  return null;
+}
+
+function mapFieldReasonToMessage(field: RuleFieldErrorKey, reason: string): string | null {
+  const normalized = String(reason || "").trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (field === "stable_key") {
+    if (normalized.includes("global_rule_key_reserved")) {
+      return "Stable key is reserved by a global rule.";
+    }
+    if (normalized.includes("exists") || normalized.includes("duplicate")) {
+      return "Stable key already exists.";
+    }
+    if (normalized.includes("empty")) {
+      return "Stable key is required";
+    }
+    if (normalized.includes("invalid_format")) {
+      return "Stable key format is invalid. Use lowercase letters, numbers, dot, underscore, or dash.";
+    }
+  }
+
+  if (field === "name" && normalized.includes("empty")) {
+    return "Name is required";
+  }
+  if (field === "priority") {
+    if (normalized.includes("int")) {
+      return "Priority must be an integer";
+    }
+    if (normalized.includes("out_of_range")) {
+      return `Priority must be between ${MIN_PRIORITY} and ${MAX_PRIORITY}`;
+    }
+    if (normalized.includes("finite") || normalized.includes("number")) {
+      return "Priority must be a valid number";
+    }
+  }
+  if (field === "scope" && normalized.includes("required")) {
+    return "Scope is required";
+  }
+  if (field === "action" && normalized.includes("required")) {
+    return "Action is required";
+  }
+  if (field === "severity" && normalized.includes("required")) {
+    return "Severity is required";
+  }
+  if (field === "conditions") {
+    if (
+      normalized.includes("empty_list") ||
+      normalized.includes("operator_required") ||
+      normalized.includes("must_be_list")
+    ) {
+      return "At least one condition is required";
+    }
+    return "Conditions are invalid. Please check the builder/JSON structure.";
+  }
+
+  return null;
+}
+
+function extractRuleSubmitError(error: unknown): {
+  fieldErrors: Partial<Record<RuleFieldErrorKey, string>>;
+  message: string;
+} {
+  const fieldErrors: Partial<Record<RuleFieldErrorKey, string>> = {};
+  const fallbackMessage =
+    error instanceof Error && error.message ? error.message : "Failed to save rule.";
+
+  const responseData =
+    (error as { response?: { data?: unknown } } | null)?.response?.data ?? null;
+
+  const envelopeError = (
+    responseData && typeof responseData === "object"
+      ? (responseData as { error?: { details?: unknown; message?: unknown } }).error
+      : undefined
+  ) as { details?: unknown; message?: unknown } | undefined;
+  const envelopeDetails = Array.isArray(envelopeError?.details)
+    ? envelopeError?.details
+    : [];
+  const defaultFieldMessage: Record<RuleFieldErrorKey, string> = {
+    stable_key: "Stable key is invalid",
+    name: "Name is invalid",
+    description: "Description is invalid",
+    scope: "Scope is invalid",
+    action: "Action is invalid",
+    severity: "Severity is invalid",
+    priority: "Priority is invalid",
+    rag_mode: "RAG mode is invalid",
+    enabled: "Enabled value is invalid",
+    conditions: "Conditions are invalid",
+  };
+
+  for (const detail of envelopeDetails) {
+    if (!detail || typeof detail !== "object") {
+      continue;
+    }
+    const row = detail as { field?: unknown; reason?: unknown };
+    const key = mapFieldPathToFormKey(String(row.field ?? ""));
+    if (!key) {
+      continue;
+    }
+    const customMessage = mapFieldReasonToMessage(key, String(row.reason ?? ""));
+    fieldErrors[key] = customMessage ?? defaultFieldMessage[key];
+  }
+
+  const fastApiDetails = Array.isArray(
+    (responseData as { detail?: unknown } | null)?.detail
+  )
+    ? ((responseData as { detail?: unknown[] }).detail ?? [])
+    : [];
+  for (const detail of fastApiDetails) {
+    if (!detail || typeof detail !== "object") {
+      continue;
+    }
+    const row = detail as { loc?: unknown; msg?: unknown };
+    const loc = Array.isArray(row.loc) ? row.loc.map((part) => String(part)).join(".") : "";
+    const key = mapFieldPathToFormKey(loc);
+    if (!key) {
+      continue;
+    }
+    const msg = String(row.msg ?? "").trim();
+    if (msg) {
+      fieldErrors[key] = msg;
+    }
+  }
+
+  const serverMessage =
+    typeof envelopeError?.message === "string" && envelopeError.message.trim().length > 0
+      ? envelopeError.message
+      : fallbackMessage;
+
+  return {
+    fieldErrors,
+    message: serverMessage,
+  };
+}
 
 function normalizeEntityType(value: string | null | undefined): string {
   return String(value ?? "")
@@ -354,6 +582,42 @@ function getHumanReadablePreview(
   return lines;
 }
 
+function validateBuilderConditions(
+  conditions: BuilderCondition[],
+  unsupportedCount: number
+): string | null {
+  if (conditions.length === 0 && unsupportedCount === 0) {
+    return "At least one condition is required.";
+  }
+
+  for (const condition of conditions) {
+    if (condition.type === "entity_match") {
+      const entityType = normalizeEntityType(condition.entityType);
+      if (!entityType) {
+        return "Entity type is required.";
+      }
+      const minScoreRaw = condition.minScore.trim();
+      if (minScoreRaw.length > 0) {
+        const minScore = Number.parseFloat(minScoreRaw);
+        if (Number.isNaN(minScore) || minScore < 0 || minScore > 1) {
+          return "Min score must be a number between 0 and 1.";
+        }
+      }
+      continue;
+    }
+
+    const keywords = condition.keywordsText
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (keywords.length === 0) {
+      return "At least one condition is required.";
+    }
+  }
+
+  return null;
+}
+
 export function RuleForm({
   mode,
   initialRule,
@@ -395,6 +659,9 @@ export function RuleForm({
   const [advancedModeWarning, setAdvancedModeWarning] = useState<string | null>(null);
   const [saveFromAdvancedJson, setSaveFromAdvancedJson] = useState(false);
   const [isBuilderAvailable, setIsBuilderAvailable] = useState(true);
+  const [conditionsError, setConditionsError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
 
   useEffect(() => {
     form.reset(defaultValues);
@@ -435,7 +702,30 @@ export function RuleForm({
     setShowAdvancedJson(false);
     setAdvancedJsonText(JSON.stringify(initialConditions, null, 2));
     setAdvancedJsonError(null);
+    setConditionsError(null);
+    setSubmitError(null);
+    setHasSubmitted(false);
   }, [defaultValues, form, initialRule]);
+
+  useEffect(() => {
+    if (!hasSubmitted) {
+      return;
+    }
+
+    const errorKeys = Object.keys(form.formState.errors) as Array<keyof RuleFormValues>;
+    if (errorKeys.length > 0) {
+      const firstKey = errorKeys[0];
+      const target = document.getElementById(String(firstKey));
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+      form.setFocus(firstKey);
+      return;
+    }
+
+    if (conditionsError) {
+      const target = document.getElementById("conditions-section");
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [hasSubmitted, form, form.formState.errors, conditionsError]);
 
   const generatedConditionsJsonObject = useMemo(
     () => buildConditionsJsonFromBuilder(builderLogic, builderConditions, unsupportedNodes),
@@ -540,23 +830,48 @@ export function RuleForm({
     );
   };
 
-  const handleSubmit = form.handleSubmit(async (values) => {
-    if (mode === "create" && !values.stable_key.trim()) {
-      form.setError("stable_key", { message: "Stable key is required" });
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setHasSubmitted(true);
+    setSubmitError(null);
+    setConditionsError(null);
+    setAdvancedJsonError(null);
+    form.clearErrors();
+
+    const isValid = await form.trigger(undefined, { shouldFocus: true });
+    if (!isValid) {
+      setSubmitError("Please fix the highlighted fields before saving.");
       return;
+    }
+
+    const values = form.getValues();
+
+    if (mode === "create") {
+      const stableKey = values.stable_key.trim();
+      if (!STABLE_KEY_PATTERN.test(stableKey)) {
+        form.setError("stable_key", {
+          message:
+            "Stable key format is invalid. Use lowercase letters, numbers, dot, underscore, or dash.",
+        });
+        form.setFocus("stable_key");
+        return;
+      }
     }
 
     let conditions: Record<string, unknown>;
     if (saveFromAdvancedJson || !isBuilderAvailable) {
       const parsed = parseJsonObject(advancedJsonText);
       if (!parsed) {
+        setConditionsError("Conditions JSON must be a valid JSON object.");
         setAdvancedJsonError("Conditions JSON must be a valid JSON object.");
         return;
       }
 
       const validation = validateConditionsNode(parsed);
       if (!validation.ok) {
-        setAdvancedJsonError(validation.message ?? "Conditions schema is invalid.");
+        const message = validation.message ?? "Conditions schema is invalid.";
+        setConditionsError(message);
+        setAdvancedJsonError(message);
         return;
       }
 
@@ -575,8 +890,12 @@ export function RuleForm({
 
       conditions = parsed;
     } else {
-      if (builderConditions.length === 0 && unsupportedNodes.length === 0) {
-        setAdvancedModeWarning("Please add at least one condition.");
+      const builderValidationMessage = validateBuilderConditions(
+        builderConditions,
+        unsupportedNodes.length
+      );
+      if (builderValidationMessage) {
+        setConditionsError(builderValidationMessage);
         return;
       }
       conditions = generatedConditionsJsonObject;
@@ -595,7 +914,22 @@ export function RuleForm({
         enabled: values.enabled,
         conditions,
       };
-      await onSubmit(payload);
+      try {
+        await onSubmit(payload);
+      } catch (error) {
+        const parsedError = extractRuleSubmitError(error);
+        for (const [key, message] of Object.entries(parsedError.fieldErrors)) {
+          if (!message) {
+            continue;
+          }
+          if (key === "conditions") {
+            setConditionsError(message);
+            continue;
+          }
+          form.setError(key as keyof RuleFormValues, { message });
+        }
+        setSubmitError(parsedError.message);
+      }
       return;
     }
 
@@ -610,19 +944,49 @@ export function RuleForm({
       enabled: values.enabled,
       conditions,
     };
-    await onSubmit(payload);
-  });
+    try {
+      await onSubmit(payload);
+    } catch (error) {
+      const parsedError = extractRuleSubmitError(error);
+      for (const [key, message] of Object.entries(parsedError.fieldErrors)) {
+        if (!message) {
+          continue;
+        }
+        if (key === "conditions") {
+          setConditionsError(message);
+          continue;
+        }
+        form.setError(key as keyof RuleFormValues, { message });
+      }
+      setSubmitError(parsedError.message);
+    }
+  };
 
   const canEditAction = initialRule?.can_edit_action ?? true;
+  const hasFieldErrors = Object.keys(form.formState.errors).length > 0 || Boolean(conditionsError);
+  const showErrorSummary = hasSubmitted && (hasFieldErrors || Boolean(submitError));
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
+      {showErrorSummary && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p className="font-medium">Please review the form errors.</p>
+          {submitError && <p className="mt-1 text-xs">{submitError}</p>}
+        </div>
+      )}
       <div className="space-y-1.5">
-        <Label htmlFor="stable_key">Stable key</Label>
+        <Label htmlFor="stable_key">
+          Stable key <span className="text-destructive">*</span>
+        </Label>
         <Input
+          className={cn(form.formState.errors.stable_key && "border-destructive focus-visible:ring-destructive")}
           disabled={mode === "edit"}
           id="stable_key"
+          maxLength={200}
+          pattern={mode === "create" ? STABLE_KEY_PATTERN.source : undefined}
           placeholder="personal.custom.sample.rule"
+          required={mode === "create"}
+          title="Use lowercase letters, numbers, dot, underscore, or dash."
           {...form.register("stable_key")}
         />
         {mode === "edit" && (
@@ -634,8 +998,17 @@ export function RuleForm({
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="name">Name</Label>
-        <Input id="name" placeholder="Rule name" {...form.register("name")} />
+        <Label htmlFor="name">
+          Name <span className="text-destructive">*</span>
+        </Label>
+        <Input
+          className={cn(form.formState.errors.name && "border-destructive focus-visible:ring-destructive")}
+          id="name"
+          maxLength={300}
+          placeholder="Rule name"
+          required
+          {...form.register("name")}
+        />
         {form.formState.errors.name && (
           <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
         )}
@@ -643,15 +1016,21 @@ export function RuleForm({
 
       <div className="space-y-1.5">
         <Label htmlFor="description">Description</Label>
-        <Textarea id="description" rows={2} {...form.register("description")} />
+        <Textarea id="description" maxLength={2000} rows={2} {...form.register("description")} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor="scope">Scope</Label>
+          <Label htmlFor="scope">
+            Scope <span className="text-destructive">*</span>
+          </Label>
           <select
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+            className={cn(
+              "h-10 w-full rounded-md border bg-background px-3 text-sm",
+              form.formState.errors.scope && "border-destructive"
+            )}
             id="scope"
+            required
             {...form.register("scope")}
           >
             <option value="prompt">prompt</option>
@@ -659,14 +1038,23 @@ export function RuleForm({
             <option value="file">file</option>
             <option value="api">api</option>
           </select>
+          {form.formState.errors.scope && (
+            <p className="text-xs text-destructive">{form.formState.errors.scope.message}</p>
+          )}
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="action">Action</Label>
+          <Label htmlFor="action">
+            Action <span className="text-destructive">*</span>
+          </Label>
           <select
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+            className={cn(
+              "h-10 w-full rounded-md border bg-background px-3 text-sm",
+              form.formState.errors.action && "border-destructive"
+            )}
             disabled={!canEditAction && mode === "edit"}
             id="action"
+            required
             {...form.register("action")}
           >
             <option value="allow">allow</option>
@@ -674,26 +1062,51 @@ export function RuleForm({
             <option value="block">block</option>
             <option value="warn">warn</option>
           </select>
+          {form.formState.errors.action && (
+            <p className="text-xs text-destructive">{form.formState.errors.action.message}</p>
+          )}
         </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="space-y-1.5">
-          <Label htmlFor="severity">Severity</Label>
+          <Label htmlFor="severity">
+            Severity <span className="text-destructive">*</span>
+          </Label>
           <select
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+            className={cn(
+              "h-10 w-full rounded-md border bg-background px-3 text-sm",
+              form.formState.errors.severity && "border-destructive"
+            )}
             id="severity"
+            required
             {...form.register("severity")}
           >
             <option value="low">low</option>
             <option value="medium">medium</option>
             <option value="high">high</option>
           </select>
+          {form.formState.errors.severity && (
+            <p className="text-xs text-destructive">{form.formState.errors.severity.message}</p>
+          )}
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="priority">Priority</Label>
-          <Input id="priority" type="number" {...form.register("priority")} />
+          <Label htmlFor="priority">
+            Priority <span className="text-destructive">*</span>
+          </Label>
+          <Input
+            className={cn(form.formState.errors.priority && "border-destructive focus-visible:ring-destructive")}
+            id="priority"
+            max={MAX_PRIORITY}
+            min={MIN_PRIORITY}
+            required
+            type="number"
+            {...form.register("priority")}
+          />
+          {form.formState.errors.priority && (
+            <p className="text-xs text-destructive">{form.formState.errors.priority.message}</p>
+          )}
         </div>
 
         <div className="space-y-1.5">
@@ -722,7 +1135,11 @@ export function RuleForm({
         </Label>
       </div>
 
+      <div id="conditions-section">
       <CardSection title="Conditions">
+        <p className="text-xs text-muted-foreground">
+          Required <span className="text-destructive">*</span>
+        </p>
         {isBuilderAvailable ? (
           <>
             <div className="space-y-1.5">
@@ -925,7 +1342,9 @@ export function RuleForm({
             {generatedConditionsJsonString}
           </pre>
         </details>
+        {conditionsError && <p className="text-xs text-destructive">{conditionsError}</p>}
       </CardSection>
+      </div>
 
       <div className="flex justify-end gap-2">
         <Button onClick={onCancel} type="button" variant="outline">
@@ -935,6 +1354,7 @@ export function RuleForm({
           {isSubmitting ? "Saving..." : mode === "create" ? "Create Rule" : "Save Changes"}
         </Button>
       </div>
+      {submitError && !showErrorSummary && <p className="text-xs text-destructive">{submitError}</p>}
     </form>
   );
 }
