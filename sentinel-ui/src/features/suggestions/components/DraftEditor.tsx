@@ -207,16 +207,23 @@ export function DraftEditor({
           />
         </Field>
 
-        <Field label="Enabled">
-          <label className="inline-flex items-center gap-2 text-sm">
-            <input
-              checked={draft.rule.enabled}
-              disabled={readOnly}
-              onChange={(event) => updateRuleField("enabled", event.target.checked)}
-              type="checkbox"
-            />
-            <span>{draft.rule.enabled ? "On" : "Off"}</span>
-          </label>
+        <Field label="Status">
+          <div>
+            <label
+              className="inline-flex w-fit items-center gap-2 rounded-md border px-3 py-2 text-sm"
+              htmlFor="draft-enabled"
+            >
+              <input
+                className="h-4 w-4 shrink-0 align-middle"
+                checked={draft.rule.enabled}
+                disabled={readOnly}
+                id="draft-enabled"
+                onChange={(event) => updateRuleField("enabled", event.target.checked)}
+                type="checkbox"
+              />
+              <span className="leading-none">Enabled</span>
+            </label>
+          </div>
         </Field>
       </div>
 

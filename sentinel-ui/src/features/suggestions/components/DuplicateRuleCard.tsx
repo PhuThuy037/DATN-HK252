@@ -96,7 +96,7 @@ export function DuplicateRuleCard({
           size="sm"
           type="button"
         >
-          Compare
+          Review differences
         </Button>
       </div>
     </Card>

@@ -15,8 +15,8 @@ const emptyTerm: SuggestionContextTerm = {
   term: "",
   lang: "vi",
   weight: 1,
-  window_1: 3,
-  window_2: 3,
+  window_1: 60,
+  window_2: 20,
   enabled: true,
 };
 
@@ -96,7 +96,12 @@ export function SuggestionContextTermsEditor({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h4 className="text-sm font-semibold">Context terms</h4>
+        <div>
+          <h4 className="text-sm font-semibold">Context terms</h4>
+          <p className="text-xs text-muted-foreground">
+            Standard fields only. Advanced parameters are managed automatically.
+          </p>
+        </div>
         <Button
           disabled={readOnly}
           onClick={addTerm}
@@ -157,28 +162,36 @@ export function SuggestionContextTermsEditor({
                           onChange={(value) => updateTerm(index, "lang", value)}
                           value={term.lang}
                         />
-                        <InputField
-                          disabled={readOnly}
-                          label="Weight"
-                          onChange={(value) => updateTerm(index, "weight", toNumber(value, 1))}
-                          type="number"
-                          value={term.weight}
-                        />
-                        <InputField
-                          disabled={readOnly}
-                          label="Window 1"
-                          onChange={(value) => updateTerm(index, "window_1", toNumber(value, 0))}
-                          type="number"
-                          value={term.window_1}
-                        />
-                        <InputField
-                          disabled={readOnly}
-                          label="Window 2"
-                          onChange={(value) => updateTerm(index, "window_2", toNumber(value, 0))}
-                          type="number"
-                          value={term.window_2}
-                        />
                       </div>
+
+                      <details className="mt-3 rounded-md border bg-muted/20 p-2">
+                        <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+                          Advanced settings
+                        </summary>
+                        <div className="mt-2 grid gap-3 md:grid-cols-3">
+                          <InputField
+                            disabled={readOnly}
+                            label="Weight"
+                            onChange={(value) => updateTerm(index, "weight", toNumber(value, 1))}
+                            type="number"
+                            value={term.weight}
+                          />
+                          <InputField
+                            disabled={readOnly}
+                            label="Window 1"
+                            onChange={(value) => updateTerm(index, "window_1", toNumber(value, 60))}
+                            type="number"
+                            value={term.window_1}
+                          />
+                          <InputField
+                            disabled={readOnly}
+                            label="Window 2"
+                            onChange={(value) => updateTerm(index, "window_2", toNumber(value, 20))}
+                            type="number"
+                            value={term.window_2}
+                          />
+                        </div>
+                      </details>
 
                       <div className="mt-3 flex items-center justify-between gap-2">
                         <label className="inline-flex items-center gap-2 text-sm">

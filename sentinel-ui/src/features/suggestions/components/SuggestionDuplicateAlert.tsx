@@ -4,6 +4,7 @@ import type { SuggestionDuplicateCandidate } from "@/features/suggestions/types"
 import { Button } from "@/shared/ui/button";
 import { DuplicateList } from "@/features/suggestions/components/DuplicateList";
 import { Card } from "@/shared/ui/card";
+import { resolveDuplicateUiState } from "@/features/suggestions/components/duplicateUiState";
 
 type DuplicateInsight = {
   level?: "none" | "weak" | "strong";
@@ -20,13 +21,34 @@ type SuggestionDuplicateAlertProps = {
   insight?: DuplicateInsight | null;
   onViewRule?: (candidate: SuggestionDuplicateCandidate) => void;
   onCompareRule?: (candidate: SuggestionDuplicateCandidate) => void;
+  onContinueToDraft: () => void;
   forceExpand?: boolean;
 };
+
+function formatDuplicateReason(reason?: string | null) {
+  const text = String(reason ?? "").trim();
+  if (!text) {
+    return null;
+  }
+
+  const normalized = text.toLowerCase();
+  if (normalized.includes("semantic_signature_match")) {
+    return "Detected via semantic matching";
+  }
+
+  // Hide raw internal reason codes (snake_case / code-like tokens).
+  if (/^[a-z0-9_]+$/.test(normalized) || normalized.includes("_")) {
+    return null;
+  }
+
+  return text;
+}
 
 export function SuggestionDuplicateAlert({
   insight,
   onViewRule,
   onCompareRule,
+  onContinueToDraft,
   forceExpand = false,
 }: SuggestionDuplicateAlertProps) {
   if (!insight) {
@@ -34,56 +56,76 @@ export function SuggestionDuplicateAlert({
   }
 
   const candidates = insight.similarRules ?? insight.candidates ?? [];
-  const level =
-    insight.level ?? (candidates.length > 0 ? "strong" : "none");
-  if (level === "none") {
+  const duplicateState = resolveDuplicateUiState({
+    decision: insight.duplicateRisk,
+    level: insight.level,
+    candidatesCount: candidates.length,
+    topSimilarity: candidates[0]?.similarity,
+  });
+
+  if (duplicateState === "NO_DUPLICATE") {
     return null;
   }
-  const warning = level === "strong";
+  const isStrongDuplicateSignal =
+    candidates.length > 0 &&
+    ((insight.level ?? "none") === "strong" || duplicateState !== "NO_DUPLICATE");
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
-    if (forceExpand && warning && candidates.length > 0) {
+    if (forceExpand && isStrongDuplicateSignal) {
       setExpanded(true);
     }
-  }, [forceExpand, warning, candidates.length]);
+  }, [forceExpand, isStrongDuplicateSignal]);
 
   const summaryText = useMemo(() => {
-    if (warning) {
-      return `${candidates.length} similar rule${candidates.length > 1 ? "s" : ""} found. Review before continuing.`;
+    if (isStrongDuplicateSignal) {
+      return `${candidates.length} similar rule${candidates.length > 1 ? "s" : ""} found`;
     }
-    return "Weak semantic overlap detected. No strong similar rules were found.";
-  }, [warning, candidates.length]);
+    if (duplicateState === "EXACT_DUPLICATE") {
+      return "Exact duplicate detected. This can create unnecessary redundancy.";
+    }
+    return "Similar rule detected. Review differences before continuing.";
+  }, [candidates.length, duplicateState, isStrongDuplicateSignal]);
 
-  const titleText = warning
-    ? "Possible duplicate detected"
-    : "Potential duplicate signal";
-  const reasonText = insight.reason ?? insight.rationale;
-  const cardClass = warning
-    ? "border-amber-300 bg-amber-50 p-3"
-    : "border-amber-200 bg-amber-50/50 p-3";
+  const titleText = duplicateState === "EXACT_DUPLICATE" ? "Exact duplicate detected" : "Similar rule detected";
+  const reasonText = formatDuplicateReason(insight.reason ?? insight.rationale);
+  const cardClass =
+    duplicateState === "EXACT_DUPLICATE"
+      ? "border-red-300 bg-red-50 p-3"
+      : isStrongDuplicateSignal
+        ? "border-amber-300 bg-amber-50 p-3"
+        : "border-amber-200 bg-amber-50/60 p-3";
+  const titleClass = duplicateState === "EXACT_DUPLICATE" ? "text-red-800" : "text-amber-800";
+  const summaryClass = duplicateState === "EXACT_DUPLICATE" ? "text-red-700" : "text-amber-700";
 
   return (
     <Card className={cardClass}>
       <div className="flex items-start gap-2">
-        {warning && <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-700" />}
+        <AlertTriangle
+          className={duplicateState === "EXACT_DUPLICATE" ? "mt-0.5 h-4 w-4 text-red-700" : "mt-0.5 h-4 w-4 text-amber-700"}
+        />
         <div className="space-y-1">
-          <p className="text-sm font-semibold">{titleText}</p>
-          <p className="text-xs text-muted-foreground">{summaryText}</p>
-          {reasonText && <p className="text-xs text-muted-foreground">{reasonText}</p>}
+          <p className={`text-sm font-semibold ${titleClass}`}>{titleText}</p>
+          <p className={`text-xs ${summaryClass}`}>{summaryText}</p>
+          {reasonText && <p className={`text-xs ${summaryClass}`}>{reasonText}</p>}
         </div>
       </div>
 
-      {warning && candidates.length > 0 && (
+      {isStrongDuplicateSignal && candidates.length > 0 && (
         <div className="mt-3 space-y-3">
-          <Button
-            onClick={() => setExpanded((current) => !current)}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {expanded ? "Hide similar rules" : "View similar rules"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={() => setExpanded((current) => !current)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {expanded ? "Hide similar rules" : "View similar rules"}
+            </Button>
+            <Button onClick={onContinueToDraft} size="sm" type="button">
+              Continue to Draft
+            </Button>
+          </div>
 
           {expanded && (
             <DuplicateList
@@ -92,6 +134,14 @@ export function SuggestionDuplicateAlert({
               onViewRule={onViewRule}
             />
           )}
+        </div>
+      )}
+
+      {!isStrongDuplicateSignal && (
+        <div className="mt-3">
+          <Button onClick={onContinueToDraft} size="sm" type="button">
+            Continue to Draft
+          </Button>
         </div>
       )}
     </Card>

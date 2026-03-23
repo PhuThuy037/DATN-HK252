@@ -25,6 +25,24 @@ type SuggestionTechnicalDetailsProps = {
   } | null;
 };
 
+function formatDuplicateReason(reason?: string | null) {
+  const text = String(reason ?? "").trim();
+  if (!text) {
+    return null;
+  }
+
+  const normalized = text.toLowerCase();
+  if (normalized.includes("semantic_signature_match")) {
+    return "Detected via semantic matching";
+  }
+
+  if (/^[a-z0-9_]+$/.test(normalized) || normalized.includes("_")) {
+    return null;
+  }
+
+  return text;
+}
+
 export function SuggestionTechnicalDetails({
   suggestion,
   logs,
@@ -73,7 +91,7 @@ export function SuggestionTechnicalDetails({
               {JSON.stringify(
                 {
                   level: duplicateInsight?.level,
-                  reason: duplicateInsight?.reason ?? duplicateInsight?.rationale,
+                  reason: formatDuplicateReason(duplicateInsight?.reason ?? duplicateInsight?.rationale),
                   similar_rules: duplicateInsight?.similarRules ?? duplicateInsight?.candidates ?? [],
                 },
                 null,

@@ -642,13 +642,9 @@ export function SuggestionDetailPage() {
       return;
     }
 
-    navigate("/app/settings/rules", {
-      state: {
-        highlightRuleId: selectedDuplicateCandidate.rule_id,
-        openEditForRuleId: selectedDuplicateCandidate.rule_id,
-        source: "suggestion-compare",
-      },
-    });
+    const ruleId = encodeURIComponent(selectedDuplicateCandidate.rule_id);
+    handleCloseRuleInspector();
+    navigate(`/app/settings/rules?editRuleId=${ruleId}&source=suggestion-compare`);
   };
 
   const handleContinueAnywayFromCompare = () => {

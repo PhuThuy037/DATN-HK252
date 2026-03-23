@@ -1,6 +1,10 @@
 import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import type { RuleDetail } from "@/features/rules/types";
 import type { SuggestionDraft } from "@/features/suggestions/types";
+import {
+  type DuplicateUiState,
+  resolveDuplicateUiState,
+} from "@/features/suggestions/components/duplicateUiState";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -68,6 +72,7 @@ type CompareViewModel = {
   changedFields: string[];
   fieldDiff: CompareFieldDiff;
   conditionsDiff: ListDiff;
+  contextTermsDiff: ListDiff;
   contextTermsIdentical: boolean;
 };
 
@@ -425,6 +430,15 @@ function contextTermKey(term: CompareContextTerm) {
   ].join("|");
 }
 
+function contextTermLabel(term: CompareContextTerm) {
+  const entity = term.entity_type || "-";
+  const value = term.term || "-";
+  const lang = term.lang || "-";
+  const weight = Number(term.weight ?? 0);
+  const enabled = term.enabled ? "enabled" : "disabled";
+  return `${entity}:${value} [${lang}, w=${weight}, ${enabled}]`;
+}
+
 function canonicalizeContextTerms(terms: CompareContextTerm[]) {
   return terms.map(contextTermKey).sort();
 }
@@ -459,7 +473,10 @@ function buildCompareViewModel(
   const draftConditionTokens = [...draftConditions.tokens].sort();
   const existingContextKeys = canonicalizeContextTerms(existingRule.contextTerms);
   const draftContextKeys = canonicalizeContextTerms(draftRule.contextTerms);
+  const existingContextLabels = existingRule.contextTerms.map(contextTermLabel).sort();
+  const draftContextLabels = draftRule.contextTerms.map(contextTermLabel).sort();
   const conditionsDiff = diffLists(existingConditionTokens, draftConditionTokens);
+  const contextTermsDiff = diffLists(existingContextLabels, draftContextLabels);
   const conditionsChanged =
     conditionsDiff.added.length > 0 ||
     conditionsDiff.removed.length > 0 ||
@@ -478,13 +495,13 @@ function buildCompareViewModel(
 
   const changedFields = [
     fieldDiff.conditions ? "Conditions" : null,
+    fieldDiff.contextTerms ? "Context terms" : null,
     fieldDiff.action ? "Action" : null,
     fieldDiff.priority ? "Priority" : null,
     fieldDiff.severity ? "Severity" : null,
     fieldDiff.enabled ? "Enabled" : null,
+    fieldDiff.ragMode ? "RAG mode" : null,
     fieldDiff.scope ? "Scope" : null,
-    fieldDiff.ragMode ? "Rag mode" : null,
-    fieldDiff.contextTerms ? "Context terms" : null,
   ].filter((value): value is string => Boolean(value));
 
   return {
@@ -492,21 +509,21 @@ function buildCompareViewModel(
     changedFields,
     fieldDiff,
     conditionsDiff,
+    contextTermsDiff,
     contextTermsIdentical: !fieldDiff.contextTerms,
   };
 }
 
 function DuplicateWarningBanner({
-  decision,
+  state,
   similarity,
 }: {
-  decision?: string | null;
+  state: DuplicateUiState;
   similarity?: number | null;
 }) {
-  const normalized = String(decision || "").trim().toUpperCase();
   const matchPercent = toMatchPercent(similarity);
 
-  if (normalized === "EXACT_DUPLICATE") {
+  if (state === "EXACT_DUPLICATE") {
     return (
       <Card className="border-red-300 bg-red-50 p-3">
         <div className="flex items-start gap-2">
@@ -517,8 +534,7 @@ function DuplicateWarningBanner({
               {typeof matchPercent === "number" ? ` (${matchPercent}% match)` : ""}
             </p>
             <p className="text-xs text-red-700">
-              This rule is effectively identical to an existing rule. Creating a new rule may
-              cause redundancy.
+              This rule is identical to an existing rule. Creating a new rule may cause duplication.
             </p>
           </div>
         </div>
@@ -526,7 +542,7 @@ function DuplicateWarningBanner({
     );
   }
 
-  if (normalized === "NEAR_DUPLICATE") {
+  if (state === "NEAR_DUPLICATE") {
     return (
       <Card className="border-amber-300 bg-amber-50 p-3">
         <div className="flex items-start gap-2">
@@ -534,23 +550,29 @@ function DuplicateWarningBanner({
           <div className="space-y-1">
             <p className="text-sm font-semibold text-amber-800">
               Similar rule detected
-              {typeof matchPercent === "number"
-                ? ` (${matchPercent}% match)`
-                : " (~85-95% match)"}
+              {typeof matchPercent === "number" ? ` (${matchPercent}% match)` : ""}
             </p>
-            <p className="text-xs text-amber-700">
-              Review differences before continuing to avoid overlapping behavior.
-            </p>
+            <p className="text-xs text-amber-700">Review differences before continuing.</p>
           </div>
         </div>
       </Card>
     );
   }
 
-  return null;
+  return (
+    <Card className="border-emerald-300 bg-emerald-50 p-3">
+      <div className="flex items-start gap-2">
+        <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-700" />
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-emerald-800">No similar rules found.</p>
+          <p className="text-xs text-emerald-700">Safe to create new rule.</p>
+        </div>
+      </div>
+    </Card>
+  );
 }
 
-function DiffSummaryCard({ compare }: { compare: CompareViewModel }) {
+function DiffSummaryCard({ compare, state }: { compare: CompareViewModel; state: DuplicateUiState }) {
   if (compare.identical) {
     return (
       <Card className="border-emerald-300 bg-emerald-50 p-3">
@@ -570,15 +592,33 @@ function DiffSummaryCard({ compare }: { compare: CompareViewModel }) {
   }
 
   return (
-    <Card className="border-amber-300 bg-amber-50 p-3">
+    <Card
+      className={cn(
+        "p-3",
+        state === "EXACT_DUPLICATE"
+          ? "border-red-300 bg-red-50"
+          : "border-amber-300 bg-amber-50"
+      )}
+    >
       <div className="flex items-start gap-2">
-        <Info className="mt-0.5 h-4 w-4 text-amber-700" />
+        <Info className={cn("mt-0.5 h-4 w-4", state === "EXACT_DUPLICATE" ? "text-red-700" : "text-amber-700")} />
         <div className="space-y-2">
-          <p className="text-sm font-semibold text-amber-800">Differences found</p>
-          <p className="text-xs text-amber-700">Changed fields:</p>
+          <p className={cn("text-sm font-semibold", state === "EXACT_DUPLICATE" ? "text-red-800" : "text-amber-800")}>
+            Changes detected
+          </p>
+          <p className={cn("text-xs", state === "EXACT_DUPLICATE" ? "text-red-700" : "text-amber-700")}>
+            Changed fields:
+          </p>
           <div className="flex flex-wrap gap-1">
             {compare.changedFields.map((field) => (
-              <Badge className="bg-amber-100 text-amber-800" key={field}>
+              <Badge
+                className={cn(
+                  state === "EXACT_DUPLICATE"
+                    ? "bg-red-100 text-red-800"
+                    : "bg-amber-100 text-amber-800"
+                )}
+                key={field}
+              >
                 {field}
               </Badge>
             ))}
@@ -675,6 +715,7 @@ function RuleSnapshotCard({
   side,
   fieldDiff,
   conditionsDiff,
+  contextTermsDiff,
   contextTermsIdentical = false,
 }: {
   heading: string;
@@ -685,12 +726,17 @@ function RuleSnapshotCard({
   side?: "existing" | "draft";
   fieldDiff?: CompareFieldDiff;
   conditionsDiff?: ListDiff;
+  contextTermsDiff?: ListDiff;
   contextTermsIdentical?: boolean;
 }) {
   const compactId = compactStableKey(rule.stableKey);
   const showConditionDiff = mode === "compare" && fieldDiff?.conditions && conditionsDiff;
   const showExistingRemoved = side === "existing" && (conditionsDiff?.removed.length ?? 0) > 0;
   const showDraftAdded = side === "draft" && (conditionsDiff?.added.length ?? 0) > 0;
+  const showContextTermsDiff = mode === "compare" && fieldDiff?.contextTerms && contextTermsDiff;
+  const showExistingContextRemoved =
+    side === "existing" && (contextTermsDiff?.removed.length ?? 0) > 0;
+  const showDraftContextAdded = side === "draft" && (contextTermsDiff?.added.length ?? 0) > 0;
   const showCollapsedTerms = mode === "compare" && contextTermsIdentical;
 
   return (
@@ -730,7 +776,7 @@ function RuleSnapshotCard({
         />
         <CompareFieldRow
           changed={Boolean(fieldDiff?.ragMode)}
-          label="Rag mode"
+          label="RAG mode"
           value={toTitleCase(rule.ragMode)}
         />
         <CompareFieldRow
@@ -755,6 +801,9 @@ function RuleSnapshotCard({
             fieldDiff?.conditions && "border-amber-300 bg-amber-50/60"
           )}
         >
+          {mode === "compare" && !fieldDiff?.conditions && (
+            <p className="text-xs text-muted-foreground">Conditions: identical</p>
+          )}
           <p className="text-xs font-medium">{conditions.title}</p>
           {conditions.badges.length > 0 && (
             <div className="flex flex-wrap gap-1">
@@ -790,7 +839,7 @@ function RuleSnapshotCard({
               )}
               {!showExistingRemoved && !showDraftAdded && (
                 <p className="text-xs text-muted-foreground">
-                  Conditions changed, but token-level diff is not available.
+                  Changes detected, but token-level diff is not available.
                 </p>
               )}
             </div>
@@ -827,10 +876,101 @@ function RuleSnapshotCard({
               </details>
             </>
           ) : (
-            <ContextTermsTable terms={rule.contextTerms} />
+            <>
+              <ContextTermsTable terms={rule.contextTerms} />
+              {showContextTermsDiff && (
+                <div className="space-y-2 rounded-md border bg-background p-2">
+                  <p className="text-xs font-medium text-amber-800">Context terms changes</p>
+                  {showExistingContextRemoved && (
+                    <ul className="space-y-1">
+                      {contextTermsDiff.removed.map((value) => (
+                        <DiffChip
+                          key={`context-removed-${value}`}
+                          label={value}
+                          prefix="-"
+                          tone="removed"
+                        />
+                      ))}
+                    </ul>
+                  )}
+                  {showDraftContextAdded && (
+                    <ul className="space-y-1">
+                      {contextTermsDiff.added.map((value) => (
+                        <DiffChip
+                          key={`context-added-${value}`}
+                          label={value}
+                          prefix="+"
+                          tone="added"
+                        />
+                      ))}
+                    </ul>
+                  )}
+                  {!showExistingContextRemoved && !showDraftContextAdded && (
+                    <p className="text-xs text-muted-foreground">
+                      Changes detected, but added or removed context terms are not available.
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
+    </Card>
+  );
+}
+
+function CompareActionFooter({
+  duplicateState,
+  onEditExistingRule,
+  onContinueAnyway,
+  onClose,
+}: {
+  duplicateState: DuplicateUiState;
+  onEditExistingRule?: () => void;
+  onContinueAnyway?: () => void;
+  onClose: () => void;
+}) {
+  if (duplicateState === "NO_DUPLICATE") {
+    return (
+      <Card className="flex flex-wrap items-center justify-end gap-2 p-3">
+        <Button onClick={onContinueAnyway ?? onClose} type="button">
+          Create new rule
+        </Button>
+        <Button onClick={onClose} type="button" variant="ghost">
+          Cancel
+        </Button>
+      </Card>
+    );
+  }
+
+  if (duplicateState === "EXACT_DUPLICATE") {
+    return (
+      <Card className="flex flex-wrap items-center justify-end gap-2 p-3">
+        <Button onClick={onEditExistingRule} type="button">
+          Edit existing rule
+        </Button>
+        <Button onClick={onClose} type="button" variant="outline">
+          Cancel
+        </Button>
+        <Button onClick={onContinueAnyway ?? onClose} type="button" variant="ghost">
+          Continue anyway
+        </Button>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="flex flex-wrap items-center justify-end gap-2 p-3">
+      <Button onClick={onEditExistingRule} type="button">
+        Edit existing rule
+      </Button>
+      <Button onClick={onContinueAnyway ?? onClose} type="button" variant="outline">
+        Continue anyway
+      </Button>
+      <Button onClick={onClose} type="button" variant="ghost">
+        Cancel
+      </Button>
     </Card>
   );
 }
@@ -870,6 +1010,16 @@ export function SuggestionRuleInspectorDialog({
     mode === "compare" && existingSummary && existingConditions
       ? buildCompareViewModel(existingSummary, draftSummary, existingConditions, draftConditions)
       : null;
+  const duplicateState: DuplicateUiState =
+    mode !== "compare"
+      ? "NO_DUPLICATE"
+      : compare?.identical
+        ? "EXACT_DUPLICATE"
+        : resolveDuplicateUiState({
+            decision: duplicateDecision,
+            candidatesCount: typeof candidateSimilarity === "number" ? 1 : 0,
+            topSimilarity: candidateSimilarity,
+          });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -890,8 +1040,8 @@ export function SuggestionRuleInspectorDialog({
         <ScrollArea className="max-h-[80vh]">
           {mode === "compare" && (
             <div className="mb-3 space-y-2">
-              <DuplicateWarningBanner decision={duplicateDecision} similarity={candidateSimilarity} />
-              {compare && <DiffSummaryCard compare={compare} />}
+              <DuplicateWarningBanner similarity={candidateSimilarity} state={duplicateState} />
+              {compare && <DiffSummaryCard compare={compare} state={duplicateState} />}
             </div>
           )}
 
@@ -933,6 +1083,7 @@ export function SuggestionRuleInspectorDialog({
                 <RuleSnapshotCard
                   conditions={existingConditions}
                   conditionsDiff={compare?.conditionsDiff}
+                  contextTermsDiff={compare?.contextTermsDiff}
                   contextTermsIdentical={Boolean(compare?.contextTermsIdentical)}
                   fieldDiff={compare?.fieldDiff}
                   heading="Existing rule"
@@ -943,6 +1094,7 @@ export function SuggestionRuleInspectorDialog({
                 <RuleSnapshotCard
                   conditions={draftConditions}
                   conditionsDiff={compare?.conditionsDiff}
+                  contextTermsDiff={compare?.contextTermsDiff}
                   contextTermsIdentical={Boolean(compare?.contextTermsIdentical)}
                   fieldDiff={compare?.fieldDiff}
                   heading="Draft suggestion"
@@ -952,17 +1104,12 @@ export function SuggestionRuleInspectorDialog({
                 />
               </div>
 
-              <Card className="flex flex-wrap items-center justify-end gap-2 p-3">
-                <Button onClick={onEditExistingRule} type="button">
-                  Edit existing rule
-                </Button>
-                <Button onClick={onContinueAnyway ?? onClose} type="button" variant="outline">
-                  Continue anyway
-                </Button>
-                <Button onClick={onClose} type="button" variant="ghost">
-                  Cancel
-                </Button>
-              </Card>
+              <CompareActionFooter
+                duplicateState={duplicateState}
+                onClose={onClose}
+                onContinueAnyway={onContinueAnyway}
+                onEditExistingRule={onEditExistingRule}
+              />
             </div>
           )}
         </ScrollArea>

@@ -1,5 +1,5 @@
-import { FormEvent, type ReactNode, useMemo, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -20,6 +20,12 @@ import {
 } from "@/features/rules/hooks";
 import { useRuleSetStore } from "@/features/rules/store/ruleSetStore";
 import type { CreateRuleRequest, Rule, UpdateRuleRequest } from "@/features/rules/types";
+
+type RulesPageLocationState = {
+  highlightRuleId?: string;
+  openEditForRuleId?: string;
+  source?: string;
+};
 
 function formatDateTime(value?: string) {
   if (!value) {
@@ -68,6 +74,11 @@ function RuleModal({
 }
 
 export function RulesPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const locationState = (location.state as RulesPageLocationState | null) ?? null;
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const editRuleIdFromQuery = searchParams.get("editRuleId")?.trim() ?? "";
   const [createOpen, setCreateOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [debugContent, setDebugContent] = useState("");
@@ -94,6 +105,27 @@ export function RulesPage() {
     () => effectiveRulesQuery.data ?? [],
     [effectiveRulesQuery.data]
   );
+
+  useEffect(() => {
+    const targetRuleId = editRuleIdFromQuery || locationState?.openEditForRuleId?.trim() || "";
+    if (!targetRuleId || rules.length === 0) {
+      return;
+    }
+
+    const targetRule = rules.find((rule) => rule.id === targetRuleId);
+    if (targetRule) {
+      setActiveTab(isGlobalRule(targetRule) ? "global-rules" : "my-rules");
+      setEditingRule(targetRule);
+    } else {
+      toast({
+        title: "Rule not found",
+        description: "Unable to open the requested rule for editing.",
+        variant: "destructive",
+      });
+    }
+
+    navigate(location.pathname, { replace: true });
+  }, [editRuleIdFromQuery, location.pathname, locationState?.openEditForRuleId, navigate, rules]);
 
   const handleCreateRule = async (payload: CreateRuleRequest | UpdateRuleRequest) => {
     try {

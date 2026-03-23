@@ -710,9 +710,16 @@ export function RuleForm({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <input className="h-4 w-4" id="enabled" type="checkbox" {...form.register("enabled")} />
-        <Label htmlFor="enabled">Enabled</Label>
+      <div className="inline-flex items-center gap-2 rounded-md border px-3 py-2">
+        <input
+          className="h-4 w-4 shrink-0 align-middle"
+          id="enabled"
+          type="checkbox"
+          {...form.register("enabled")}
+        />
+        <Label className="cursor-pointer leading-none" htmlFor="enabled">
+          Enabled
+        </Label>
       </div>
 
       <CardSection title="Conditions">
