@@ -1362,6 +1362,83 @@ def _action_hint_from_prompt(prompt: str) -> RuleAction:
     return RuleAction.mask
 
 
+def _looks_like_rule_request_prompt(prompt: str) -> bool:
+    p = _fold_text(prompt)
+    if not p:
+        return False
+
+    if _has_any(
+        p,
+        [
+            "allow",
+            "cho phep",
+            "cho phép",
+            "mask",
+            "che",
+            "an",
+            "ẩn",
+            "block",
+            "chan",
+            "chặn",
+            "rule",
+            "quy tac",
+            "quy tắc",
+        ],
+    ):
+        return True
+
+    if _extract_code_like_tokens(prompt, limit=2):
+        return True
+
+    return _has_any(
+        p,
+        [
+            "email",
+            "gmail",
+            "phone",
+            "sdt",
+            "so dien thoai",
+            "số điện thoại",
+            "hotline",
+            "cccd",
+            "cmnd",
+            "can cuoc",
+            "căn cước",
+            "tax",
+            "mst",
+            "ma so thue",
+            "mã số thuế",
+            "token",
+            "secret",
+            "noi bo",
+            "nội bộ",
+            "internal code",
+            "payroll",
+            "salary",
+            "luong",
+            "lương",
+            "bang luong",
+            "bảng lương",
+            "external email",
+            "email ca nhan",
+            "email cá nhân",
+            "keyword",
+            "context",
+        ],
+    )
+
+
+def _validate_generate_prompt_intent(prompt: str) -> None:
+    if _looks_like_rule_request_prompt(prompt):
+        return
+    raise AppError(
+        422,
+        ErrorCode.VALIDATION_ERROR,
+        "Prompt does not describe a rule request clearly enough",
+        details=[{"field": "prompt", "reason": "prompt_not_rule_like"}],
+    )
+
+
 def _contains_entity_leaf(conditions: Any) -> bool:
     if isinstance(conditions, dict):
         if "entity_type" in conditions:
@@ -2871,6 +2948,54 @@ def _load_suggestion_or_404(
     return _expire_if_needed(session=session, row=row)
 
 
+def _validate_draft_stable_key_against_existing_rules(
+    *,
+    session: Session,
+    company_id: UUID,
+    stable_key: str,
+) -> None:
+    normalized_key = str(stable_key or "").strip().lower()
+    if not normalized_key:
+        return
+
+    global_row = session.exec(
+        select(Rule)
+        .where(Rule.company_id.is_(None))
+        .where(Rule.stable_key == normalized_key)
+    ).first()
+    if global_row is not None:
+        raise AppError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "stable_key is reserved by global rule",
+            details=[{"field": "draft.rule.stable_key", "reason": "global_rule_key_reserved"}],
+        )
+
+    existing_rule = session.exec(
+        select(Rule)
+        .where(Rule.company_id == company_id)
+        .where(Rule.is_deleted.is_(False))
+        .where(Rule.stable_key == normalized_key)
+        .order_by(Rule.created_at.desc())
+    ).first()
+    if existing_rule is not None:
+        raise AppError(
+            409,
+            ErrorCode.CONFLICT,
+            "Draft stable_key would overwrite an existing rule",
+            details=[
+                {
+                    "field": "draft.rule.stable_key",
+                    "reason": "existing_rule_would_be_overwritten",
+                    "extra": {
+                        "rule_id": str(existing_rule.id),
+                        "stable_key": str(existing_rule.stable_key),
+                    },
+                }
+            ],
+        )
+
+
 def generate_rule_suggestion(
     *,
     session: Session,
@@ -2880,6 +3005,7 @@ def generate_rule_suggestion(
 ) -> RuleSuggestionGenerateOut:
     _load_company_or_404(session=session, company_id=company_id)
     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
+    _validate_generate_prompt_intent(payload.prompt)
 
     draft, generation_meta = _generate_draft_from_prompt(
         session=session,
@@ -3066,6 +3192,13 @@ def get_rule_suggestion(
         session=session,
         suggestion_id=row.id,
     )
+    live_duplicate_check = build_duplicate_check(
+        session=session,
+        company_id=company_id,
+        draft_rule=out.draft.rule,
+    )
+    live_duplicate = _duplicate_out_from_check(live_duplicate_check)
+    duplicate_meta = _duplicate_meta_from_check(live_duplicate_check, live_duplicate)
     explanation = _build_suggestion_explanation(
         prompt=out.nl_input,
         draft=out.draft,
@@ -3079,7 +3212,7 @@ def get_rule_suggestion(
     )
     return RuleSuggestionGetOut(
         **out.model_dump(),
-        duplicate=_duplicate_out_from_meta(duplicate_meta),
+        duplicate=live_duplicate,
         explanation=explanation,
         quality_signals=quality_signals,
     )
@@ -3274,6 +3407,11 @@ def edit_rule_suggestion(
         prompt=str(row.nl_input or ""),
         draft=normalized,
     )
+    _validate_draft_stable_key_against_existing_rules(
+        session=session,
+        company_id=company_id,
+        stable_key=normalized.rule.stable_key,
+    )
     key = _dedupe_key(company_id=company_id, payload=normalized)
     existed = _find_active_duplicate(
         session=session,
@@ -3460,6 +3598,7 @@ def _apply_rule_draft(
         select(Rule)
         .where(Rule.company_id == company_id)
         .where(Rule.stable_key == rule_draft.stable_key)
+        .where(Rule.is_deleted.is_(False))
         .order_by(Rule.created_at.desc())
     ).first()
     if row is None:
@@ -3483,20 +3622,18 @@ def _apply_rule_draft(
         upsert_rule_embedding(session=session, rule=row)
         return row
 
-    row.name = rule_draft.name
-    row.description = rule_draft.description
-    row.scope = rule_draft.scope
-    row.conditions = rule_draft.conditions
-    row.conditions_version = int(row.conditions_version or 1) + 1
-    row.action = rule_draft.action
-    row.severity = rule_draft.severity
-    row.priority = int(rule_draft.priority)
-    row.rag_mode = rule_draft.rag_mode
-    row.enabled = bool(rule_draft.enabled)
-    session.add(row)
-    session.flush()
-    upsert_rule_embedding(session=session, rule=row)
-    return row
+    raise AppError(
+        409,
+        ErrorCode.CONFLICT,
+        "Applying this suggestion would overwrite an existing rule",
+        details=[
+            {
+                "field": "draft.rule.stable_key",
+                "reason": "existing_rule_would_be_overwritten",
+                "extra": {"rule_id": str(row.id), "stable_key": str(row.stable_key)},
+            }
+        ],
+    )
 
 
 def _apply_context_terms(

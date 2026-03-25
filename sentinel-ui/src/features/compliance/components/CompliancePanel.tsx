@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import { useMessageDetail } from "@/features/messages/hooks/useMessageDetail";
 import { useChatUiStore } from "@/features/messages/store/chatUiStore";
-import { Badge } from "@/shared/ui/badge";
 import { Card } from "@/shared/ui/card";
+import type { MessageMatchedRule } from "@/shared/types";
 
 type CompliancePanelProps = {
   conversationId?: string;
@@ -20,6 +20,64 @@ function formatJson(value: unknown) {
   }
 }
 
+type ComplianceMatchedRuleItem = {
+  key: string;
+  name: string;
+  stableKey?: string | null;
+  ruleId?: string | null;
+};
+
+function buildMatchedRuleItems(
+  matchedRules?: MessageMatchedRule[] | null,
+  matchedRuleIds?: string[] | null
+) {
+  const items: ComplianceMatchedRuleItem[] = [];
+  const seen = new Set<string>();
+
+  for (const rule of matchedRules ?? []) {
+    const ruleId = rule.rule_id?.trim() || null;
+    const stableKey = rule.stable_key?.trim() || null;
+    const name = rule.name?.trim() || "";
+    const key = ruleId || stableKey || name;
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    items.push({
+      key,
+      name: name || "Unknown rule",
+      stableKey,
+      ruleId,
+    });
+  }
+
+  for (const ruleId of matchedRuleIds ?? []) {
+    const normalizedId = String(ruleId ?? "").trim();
+    if (!normalizedId || seen.has(normalizedId)) {
+      continue;
+    }
+    seen.add(normalizedId);
+    items.push({
+      key: normalizedId,
+      name: "Unknown rule",
+      ruleId: normalizedId,
+    });
+  }
+
+  return items;
+}
+
+function formatShortRuleId(ruleId?: string | null) {
+  const value = String(ruleId ?? "").trim();
+  if (!value) {
+    return null;
+  }
+  if (value.length <= 12) {
+    return value;
+  }
+  return `${value.slice(0, 8)}...`;
+}
+
 export function CompliancePanel({
   conversationId,
   className,
@@ -28,9 +86,13 @@ export function CompliancePanel({
 
   const detailQuery = useMessageDetail(conversationId, selectedMessageId);
 
-  const matchedRuleIds = useMemo(
-    () => detailQuery.data?.matched_rule_ids ?? [],
-    [detailQuery.data?.matched_rule_ids]
+  const matchedRules = useMemo(
+    () =>
+      buildMatchedRuleItems(
+        detailQuery.data?.matched_rules,
+        detailQuery.data?.matched_rule_ids
+      ),
+    [detailQuery.data?.matched_rule_ids, detailQuery.data?.matched_rules]
   );
 
   return (
@@ -87,10 +149,24 @@ export function CompliancePanel({
               <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
                 Matched Rules
               </p>
-              <div className="flex flex-wrap gap-1">
-                {matchedRuleIds.length === 0 && <span>-</span>}
-                {matchedRuleIds.map((ruleId) => (
-                  <Badge key={ruleId}>{ruleId}</Badge>
+              <div className="space-y-2">
+                {matchedRules.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No matched rules.</p>
+                )}
+                {matchedRules.map((rule) => (
+                  <div className="rounded-lg border bg-muted/30 p-2.5" key={rule.key}>
+                    <p className="text-sm font-medium">{rule.name}</p>
+                    {rule.stableKey && (
+                      <p className="mt-1 break-all text-xs text-muted-foreground">
+                        {rule.stableKey}
+                      </p>
+                    )}
+                    {!rule.stableKey && rule.ruleId && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        ID: {formatShortRuleId(rule.ruleId)}
+                      </p>
+                    )}
+                  </div>
                 ))}
               </div>
             </section>

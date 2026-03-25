@@ -22,6 +22,14 @@ export type MessagesPage = {
   };
 };
 
+export type MessageMatchedRule = {
+  rule_id?: UUID | null;
+  stable_key?: string | null;
+  name?: string | null;
+  action?: string | null;
+  priority?: number | null;
+};
+
 export type MessageDetail = {
   id: UUID;
   conversation_id: UUID;
@@ -35,6 +43,7 @@ export type MessageDetail = {
   risk_score?: number | null;
   ambiguous?: boolean;
   matched_rule_ids?: string[];
+  matched_rules?: MessageMatchedRule[] | null;
   entities_json?: Record<string, unknown> | null;
   rag_evidence_json?: Record<string, unknown> | null;
   latency_ms?: number | null;
@@ -58,6 +67,7 @@ export type SendMessageResponseData = {
   final_action?: string | null;
   risk_score?: number | null;
   matched_rule_ids?: string[];
+  matched_rules?: MessageMatchedRule[] | null;
   entities_json?: Record<string, unknown> | null;
   rag_evidence_json?: Record<string, unknown> | null;
   blocked?: boolean;

@@ -61,6 +61,8 @@ type DuplicateInsight = {
   candidates?: SuggestionDuplicateCandidate[];
 };
 
+const SUGGESTION_STEP_STORAGE_PREFIX = "suggestion-detail-step:";
+
 function mapStatusToInitialStep(status: RuleSuggestionGetOut["status"]): SuggestionStepKey {
   if (status === "draft") {
     return "draft";
@@ -72,6 +74,43 @@ function mapStatusToInitialStep(status: RuleSuggestionGetOut["status"]): Suggest
     return "apply";
   }
   return "review";
+}
+
+function getSuggestionStepStorageKey(suggestionId: string) {
+  return `${SUGGESTION_STEP_STORAGE_PREFIX}${suggestionId}`;
+}
+
+function getStoredSuggestionStep(suggestionId: string): SuggestionStepKey | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(getSuggestionStepStorageKey(suggestionId));
+    if (
+      raw === "generate" ||
+      raw === "draft" ||
+      raw === "simulate" ||
+      raw === "review" ||
+      raw === "decision" ||
+      raw === "apply"
+    ) {
+      return raw;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function persistSuggestionStep(suggestionId: string, step: SuggestionStepKey) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(getSuggestionStepStorageKey(suggestionId), step);
+  } catch {
+    // Ignore storage failures and keep the in-memory step only.
+  }
 }
 
 function isStaleVersionConflict(error: SuggestionApiError) {
@@ -354,13 +393,17 @@ export function SuggestionDetailPage() {
     const isNewSuggestion = initializedSuggestionIdRef.current !== detailQuery.data.id;
     if (isNewSuggestion) {
       initializedSuggestionIdRef.current = detailQuery.data.id;
+      const storedStep = getStoredSuggestionStep(detailQuery.data.id);
 
       const shouldStartAtGenerate =
         locationState?.initialStep === "generate" &&
-        locationState?.generationInsights?.suggestionId === detailQuery.data.id;
+        (!locationState?.generationInsights ||
+          locationState.generationInsights.suggestionId === detailQuery.data.id);
 
       setActiveStep(
-        shouldStartAtGenerate ? "generate" : mapStatusToInitialStep(detailQuery.data.status)
+        shouldStartAtGenerate
+          ? "generate"
+          : storedStep ?? mapStatusToInitialStep(detailQuery.data.status)
       );
 
       if (shouldStartAtGenerate) {
@@ -379,6 +422,13 @@ export function SuggestionDetailPage() {
     locationState?.initialStep,
     navigate,
   ]);
+
+  useEffect(() => {
+    if (!detailQuery.data?.id) {
+      return;
+    }
+    persistSuggestionStep(detailQuery.data.id, activeStep);
+  }, [activeStep, detailQuery.data?.id]);
 
   const hasDirtyDraft = useMemo(() => {
     if (!detailQuery.data || !draftState) {
@@ -437,6 +487,12 @@ export function SuggestionDetailPage() {
           "Suggestion was updated elsewhere. Please review the latest data and apply your changes again."
         );
         return;
+      }
+      if (error instanceof SuggestionApiError) {
+        const fieldMessage = getDraftValidationMessageFromApiError(error);
+        if (fieldMessage) {
+          setDraftValidationError(fieldMessage);
+        }
       }
       const message = getSuggestionErrorMessage(error, "Failed to save draft");
       setActionError(message);
@@ -641,10 +697,17 @@ export function SuggestionDetailPage() {
     if (!selectedDuplicateCandidate) {
       return;
     }
+    if (String(selectedDuplicateCandidate.origin ?? "").toLowerCase().includes("global")) {
+      return;
+    }
 
     const ruleId = encodeURIComponent(selectedDuplicateCandidate.rule_id);
     handleCloseRuleInspector();
-    navigate(`/app/settings/rules?editRuleId=${ruleId}&source=suggestion-compare`);
+    navigate(
+      `/app/settings/rules?editRuleId=${ruleId}&source=suggestion-compare&returnToSuggestionId=${encodeURIComponent(
+        suggestion.id
+      )}&returnStep=generate`
+    );
   };
 
   const handleContinueAnywayFromCompare = () => {
@@ -829,6 +892,7 @@ export function SuggestionDetailPage() {
 
       <SuggestionRuleInspectorDialog
         candidateName={selectedDuplicateCandidate?.name}
+        candidateOrigin={selectedDuplicateCandidate?.origin}
         candidateSimilarity={selectedDuplicateCandidate?.similarity}
         draft={draftState ?? suggestion.draft}
         duplicateDecision={duplicateInsight?.duplicateRisk}
@@ -844,4 +908,21 @@ export function SuggestionDetailPage() {
       />
     </section>
   );
+}
+
+function getDraftValidationMessageFromApiError(error: SuggestionApiError): string | null {
+  const details = Array.isArray(error.details) ? error.details : [];
+  for (const detail of details) {
+    const field = String(detail.field ?? "").trim().toLowerCase();
+    const reason = String(detail.reason ?? "").trim().toLowerCase();
+    if (field === "draft.rule.stable_key" || field === "stable_key") {
+      if (reason === "global_rule_key_reserved") {
+        return "Stable key is reserved by a global rule.";
+      }
+      if (reason === "existing_rule_would_be_overwritten") {
+        return "Stable key already exists in Rules and would overwrite an existing rule.";
+      }
+    }
+  }
+  return null;
 }

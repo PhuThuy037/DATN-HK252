@@ -106,6 +106,14 @@ class MessageOut(BaseModel):
         from_attributes = True
 
 
+class MessageMatchedRuleOut(BaseModel):
+    rule_id: UUID | None = None
+    stable_key: Optional[str] = None
+    name: Optional[str] = None
+    action: Optional[str] = None
+    priority: Optional[int] = None
+
+
 class SendMessageOut(MessageOut):
     assistant_message_id: Optional[UUID] = None
 
@@ -144,6 +152,7 @@ class MessageDetailOut(BaseModel):
     risk_score: Optional[float]
     ambiguous: bool
     matched_rule_ids: Optional[list[str]] = None
+    matched_rules: Optional[list[MessageMatchedRuleOut]] = None
     entities_json: Optional[dict[str, Any]] = None
     rag_evidence_json: Optional[dict[str, Any]] = None
     latency_ms: Optional[int] = None

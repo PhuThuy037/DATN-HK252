@@ -143,7 +143,7 @@ export function SuggestionContextTermsEditor({
                   );
 
                   return (
-                    <div className="rounded-md border p-3" key={`${index}-${term.term}`}>
+                    <div className="rounded-md border p-3" key={index}>
                       <div className="grid gap-3 md:grid-cols-2">
                         <InputField
                           disabled={readOnly}

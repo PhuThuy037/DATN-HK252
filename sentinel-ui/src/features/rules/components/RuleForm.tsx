@@ -249,6 +249,9 @@ function mapFieldReasonToMessage(field: RuleFieldErrorKey, reason: string): stri
     if (normalized.includes("global_rule_key_reserved")) {
       return "Stable key is reserved by a global rule.";
     }
+    if (normalized.includes("conflict")) {
+      return "Stable key already exists.";
+    }
     if (normalized.includes("exists") || normalized.includes("duplicate")) {
       return "Stable key already exists.";
     }

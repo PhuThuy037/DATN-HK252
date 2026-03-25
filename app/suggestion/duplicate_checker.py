@@ -326,13 +326,13 @@ def _is_candidate_intent_compatible(
     draft_rule: RuleSuggestionDraftRule,
     candidate: _Candidate,
 ) -> bool:
-    if str(candidate.scope) != str(draft_rule.scope.value):
-        return False
     if str(candidate.action) != str(draft_rule.action.value):
         return False
 
     draft_entities = _extract_entity_types(draft_rule.conditions)
     cand_entities = _extract_entity_types(candidate.conditions)
+    scope_matches = str(candidate.scope) == str(draft_rule.scope.value)
+
     if draft_entities:
         if not cand_entities:
             return False
@@ -351,6 +351,18 @@ def _is_candidate_intent_compatible(
         if draft_family and cand_family and draft_family != cand_family:
             return False
     elif cand_signals:
+        return False
+
+    if not scope_matches:
+        # Cross-scope rules can still be meaningful duplicate candidates when
+        # they protect the same entity or signal family with the same action.
+        if draft_entities and cand_entities and (draft_entities & cand_entities):
+            return True
+        if draft_signals and cand_signals:
+            draft_family = _top_signal_family(draft_signals)
+            cand_family = _top_signal_family(cand_signals)
+            if draft_family and cand_family and draft_family == cand_family:
+                return True
         return False
 
     return True

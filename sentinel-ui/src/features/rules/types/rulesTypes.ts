@@ -89,7 +89,7 @@ export type RuleDebugMatch = {
   stable_key?: string | null;
   name?: string;
   action?: string;
-  priority?: number;
+  priority?: number | null;
 };
 
 export type DebugEvaluateRequest = {
@@ -100,6 +100,7 @@ export type DebugEvaluateResponse = {
   final_action?: string;
   matched_rules?: RuleDebugMatch[];
   signals?: Record<string, unknown>;
+  [key: string]: unknown;
 };
 
 export type CreateRuleRequest = {

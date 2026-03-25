@@ -81,6 +81,7 @@ type SuggestionRuleInspectorDialogProps = {
   open: boolean;
   mode: RuleInspectorMode;
   candidateName?: string;
+  candidateOrigin?: string | null;
   existingRule: RuleDetail | null;
   draft: SuggestionDraft;
   isLoading: boolean;
@@ -124,6 +125,11 @@ function toMatchPercent(similarity?: number | null) {
     return null;
   }
   return Math.max(0, Math.min(100, Math.round(similarity * 100)));
+}
+
+function isGlobalCandidateOrigin(origin?: string | null) {
+  const value = String(origin ?? "").trim().toLowerCase();
+  return value.includes("global");
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -991,15 +997,70 @@ function RuleSnapshotCard({
 
 function CompareActionFooter({
   duplicateState,
+  candidateOrigin,
   onEditExistingRule,
   onContinueAnyway,
   onClose,
 }: {
   duplicateState: DuplicateUiState;
+  candidateOrigin?: string | null;
   onEditExistingRule?: () => void;
   onContinueAnyway?: () => void;
   onClose: () => void;
 }) {
+  const isGlobalCandidate = isGlobalCandidateOrigin(candidateOrigin);
+
+  if (isGlobalCandidate && duplicateState === "EXACT_DUPLICATE") {
+    return (
+      <Card className="space-y-3 border-amber-300 bg-amber-50 p-3">
+        <p className="text-sm text-amber-900">
+          This existing match is a global rule. Global rules are managed centrally and should not
+          be recreated as a duplicate custom rule.
+        </p>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button onClick={onClose} type="button" variant="outline">
+            Close
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  if (isGlobalCandidate) {
+    return (
+      <Card className="space-y-3 border-amber-300 bg-amber-50 p-3">
+        <p className="text-sm text-amber-900">
+          This candidate is a global rule. You cannot edit it here; use Rules toggle if you only
+          need to enable or disable the global policy.
+        </p>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button onClick={onContinueAnyway ?? onClose} type="button" variant="outline">
+            Continue anyway
+          </Button>
+          <Button onClick={onClose} type="button" variant="ghost">
+            Cancel
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  if (onEditExistingRule) {
+    return (
+      <Card className="flex flex-wrap items-center justify-end gap-2 p-3">
+        <Button onClick={onEditExistingRule} type="button">
+          Edit existing rule
+        </Button>
+        <Button onClick={onContinueAnyway ?? onClose} type="button" variant="outline">
+          Continue anyway
+        </Button>
+        <Button onClick={onClose} type="button" variant="ghost">
+          Cancel
+        </Button>
+      </Card>
+    );
+  }
+
   if (duplicateState === "NO_DUPLICATE") {
     return (
       <Card className="flex flex-wrap items-center justify-end gap-2 p-3">
@@ -1048,6 +1109,7 @@ export function SuggestionRuleInspectorDialog({
   open,
   mode,
   candidateName,
+  candidateOrigin,
   existingRule,
   draft,
   isLoading,
@@ -1176,6 +1238,7 @@ export function SuggestionRuleInspectorDialog({
               </div>
 
               <CompareActionFooter
+                candidateOrigin={candidateOrigin}
                 duplicateState={duplicateState}
                 onClose={onClose}
                 onContinueAnyway={onContinueAnyway}

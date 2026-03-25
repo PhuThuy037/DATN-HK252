@@ -558,6 +558,40 @@ def get_message_for_conversation_or_404(
     return row
 
 
+def _extract_message_matched_rules(message: Message) -> list[dict]:
+    entities_json = message.entities_json if isinstance(message.entities_json, dict) else None
+    raw_rules = entities_json.get("matched_rules") if entities_json else None
+    if not isinstance(raw_rules, list):
+        return []
+
+    out: list[dict] = []
+    for item in raw_rules:
+        if not isinstance(item, dict):
+            continue
+
+        rule_id = item.get("rule_id")
+        priority = item.get("priority")
+
+        parsed_priority: int | None = None
+        if priority is not None:
+            try:
+                parsed_priority = int(priority)
+            except (TypeError, ValueError):
+                parsed_priority = None
+
+        out.append(
+            {
+                "rule_id": rule_id,
+                "stable_key": item.get("stable_key"),
+                "name": item.get("name"),
+                "action": item.get("action"),
+                "priority": parsed_priority,
+            }
+        )
+
+    return out
+
+
 def build_safe_message_detail(*, message: Message) -> dict:
     safe_content, is_blocked = _safe_message_content(message)
     return {
@@ -585,6 +619,7 @@ def build_safe_message_detail(*, message: Message) -> dict:
         "risk_score": message.risk_score,
         "ambiguous": bool(message.ambiguous),
         "matched_rule_ids": message.matched_rule_ids,
+        "matched_rules": _extract_message_matched_rules(message),
         "entities_json": message.entities_json,
         "rag_evidence_json": message.rag_evidence_json,
         "latency_ms": message.latency_ms,
