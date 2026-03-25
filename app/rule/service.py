@@ -19,6 +19,7 @@ from app.rag.models.context_term import ContextTerm
 from app.rule.company_rule_override import CompanyRuleOverride
 from app.rule.engine import RuleEngine
 from app.rule.model import Rule
+from app.rule_embedding.service import upsert_rule_embedding
 from app.rule.schemas import (
     CompanyRuleCreateOut,
     CompanyRuleCreateIn,
@@ -39,6 +40,16 @@ _STABLE_KEY_PATTERN = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
 _MIN_RULE_PRIORITY = -100000
 _MAX_RULE_PRIORITY = 100000
 _DELETED_RULE_PREFIX = "__deleted__."
+_EMBEDDING_RELEVANT_RULE_FIELDS = {
+    "name",
+    "description",
+    "scope",
+    "conditions",
+    "action",
+    "severity",
+    "priority",
+    "rag_mode",
+}
 
 
 def _is_rule_deleted(*, rule: Rule) -> bool:
@@ -965,6 +976,7 @@ def create_company_custom_rule(
     )
     session.add(row)
     session.flush()
+    upsert_rule_embedding(session=session, rule=row)
 
     context_term_ids = _upsert_company_context_terms(
         session=session,
@@ -1097,6 +1109,8 @@ def update_company_rule(
             company_id=company_id,
             context_terms=auto_context_terms,
         )
+    if changed_fields & _EMBEDDING_RELEVANT_RULE_FIELDS:
+        upsert_rule_embedding(session=session, rule=row)
     _append_rule_change_log(
         session=session,
         company_id=company_id,

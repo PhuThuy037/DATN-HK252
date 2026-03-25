@@ -4,6 +4,7 @@ import re
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
+import pytest
 from sqlmodel import select
 
 from app.common.enums import RagMode, RuleAction, RuleScope, RuleSeverity
@@ -17,8 +18,10 @@ import app.prompt_entitity.model as _prompt_entity_model  # noqa: F401
 import app.rule_change_log.model as _rule_change_log_model  # noqa: F401
 from app.rule.model import Rule
 import app.rule_embedding.model as _rule_embedding_model  # noqa: F401
+from app.suggestion import duplicate_checker
 from app.suggestion import service as suggestion_service
 from app.suggestion.schemas import (
+    DuplicateDecision,
     RuleSuggestionDraftContextTerm,
     RuleSuggestionDraftPayload,
     RuleSuggestionDraftRule,
@@ -219,3 +222,102 @@ def test_apply_rule_draft_creates_two_rules_for_two_literal_fingerprint_keys() -
     assert isinstance(row_a.id, UUID)
     assert isinstance(row_b.id, UUID)
     assert row_a.id != row_b.id
+
+
+def test_duplicate_check_marks_exact_same_literal_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _FakeRuleSession()
+    company_id = uuid4()
+    draft = _draft(
+        stable_key="personal.custom.mask.internal_code",
+        term="dt-thuy-1234",
+        entity_type="INTERNAL_CODE",
+    )
+    aligned = suggestion_service._ensure_company_stable_key(
+        prompt="mask ma dt-thuy-1234",
+        draft=draft,
+    )
+    existing = Rule(
+        company_id=company_id,
+        stable_key=aligned.rule.stable_key,
+        name=aligned.rule.name,
+        description=aligned.rule.description,
+        scope=aligned.rule.scope,
+        conditions=aligned.rule.conditions,
+        conditions_version=1,
+        action=aligned.rule.action,
+        severity=aligned.rule.severity,
+        priority=aligned.rule.priority,
+        rag_mode=aligned.rule.rag_mode,
+        enabled=aligned.rule.enabled,
+        created_by=uuid4(),
+    )
+    session.add(existing)
+    monkeypatch.setattr(
+        duplicate_checker,
+        "_should_call_llm_for_duplicate",
+        lambda **_kwargs: False,
+    )
+
+    out = duplicate_checker.build_duplicate_check(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        draft_rule=aligned.rule,
+    )
+
+    assert out.decision == DuplicateDecision.exact_duplicate
+
+
+def test_duplicate_check_downgrades_slight_literal_change_from_exact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _FakeRuleSession()
+    company_id = uuid4()
+    existing_draft = _draft(
+        stable_key="personal.custom.mask.internal_code",
+        term="dt-thuy-1234",
+        entity_type="INTERNAL_CODE",
+    )
+    variant_draft = _draft(
+        stable_key="personal.custom.mask.internal_code",
+        term="dt-thuy-12345",
+        entity_type="INTERNAL_CODE",
+    )
+    existing_aligned = suggestion_service._ensure_company_stable_key(
+        prompt="mask ma dt-thuy-1234",
+        draft=existing_draft,
+    )
+    variant_aligned = suggestion_service._ensure_company_stable_key(
+        prompt="mask ma dt-thuy-12345",
+        draft=variant_draft,
+    )
+    existing = Rule(
+        company_id=company_id,
+        stable_key=existing_aligned.rule.stable_key,
+        name=existing_aligned.rule.name,
+        description=existing_aligned.rule.description,
+        scope=existing_aligned.rule.scope,
+        conditions=existing_aligned.rule.conditions,
+        conditions_version=1,
+        action=existing_aligned.rule.action,
+        severity=existing_aligned.rule.severity,
+        priority=existing_aligned.rule.priority,
+        rag_mode=existing_aligned.rule.rag_mode,
+        enabled=existing_aligned.rule.enabled,
+        created_by=uuid4(),
+    )
+    session.add(existing)
+    monkeypatch.setattr(
+        duplicate_checker,
+        "_should_call_llm_for_duplicate",
+        lambda **_kwargs: False,
+    )
+
+    out = duplicate_checker.build_duplicate_check(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        draft_rule=variant_aligned.rule,
+    )
+
+    assert out.decision != DuplicateDecision.exact_duplicate

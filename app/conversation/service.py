@@ -18,6 +18,7 @@ from app.common.enums import (
     MessageInputType,
     MessageRole,
     RuleAction,
+    RuleScope,
     ScanStatus,
 )
 from app.company.model import Company
@@ -289,6 +290,7 @@ async def append_user_message_async(
         text=content,
         company_id=c.company_id,
         user_id=user_id,
+        scope=RuleScope.chat,
     )
 
     user_final: RuleAction = user_scan["final_action"]
@@ -363,6 +365,7 @@ async def append_user_message_async(
         text=assistant_text,
         company_id=c.company_id,
         user_id=user_id,
+        scope=RuleScope.chat,
     )
 
     # STEP 3: assistant message

@@ -99,7 +99,8 @@ export function SuggestionContextTermsEditor({
         <div>
           <h4 className="text-sm font-semibold">Context terms</h4>
           <p className="text-xs text-muted-foreground">
-            Standard fields only. Advanced parameters are managed automatically.
+            Keep the business-facing fields simple here. Language and scoring parameters live in
+            Advanced settings.
           </p>
         </div>
         <Button
@@ -156,19 +157,21 @@ export function SuggestionContextTermsEditor({
                           onChange={(value) => updateTerm(index, "term", value)}
                           value={term.term}
                         />
-                        <InputField
-                          disabled={readOnly}
-                          label="Language"
-                          onChange={(value) => updateTerm(index, "lang", value)}
-                          value={term.lang}
-                        />
                       </div>
 
                       <details className="mt-3 rounded-md border bg-muted/20 p-2">
                         <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
                           Advanced settings
                         </summary>
-                        <div className="mt-2 grid gap-3 md:grid-cols-3">
+                        <div className="mt-2 grid gap-3 md:grid-cols-2">
+                          <InputField
+                            disabled={readOnly}
+                            label="Language"
+                            onChange={(value) => updateTerm(index, "lang", value)}
+                            value={term.lang}
+                          />
+                        </div>
+                        <div className="mt-3 grid gap-3 md:grid-cols-3">
                           <InputField
                             disabled={readOnly}
                             label="Weight"

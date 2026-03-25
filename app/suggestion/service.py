@@ -35,6 +35,7 @@ from app.permissions.loaders.conversation import load_company_member_active_or_4
 from app.rag.models.context_term import ContextTerm
 from app.rule.engine import RuleEngine, RuleMatch, RuleRuntime
 from app.rule.model import Rule
+from app.rule_embedding.service import upsert_rule_embedding
 from app.suggestion.models.rule_suggestion import RuleSuggestion
 from app.suggestion.models.rule_suggestion_log import RuleSuggestionLog
 from app.suggestion.duplicate_checker import build_duplicate_check
@@ -2541,6 +2542,98 @@ def _literal_terms_fingerprint(draft: RuleSuggestionDraftPayload) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:8]
 
 
+def _literal_condition_terms_from_context(
+    draft: RuleSuggestionDraftPayload,
+) -> list[str]:
+    enabled_terms: list[str] = []
+    fallback_terms: list[str] = []
+    seen_enabled: set[str] = set()
+    seen_fallback: set[str] = set()
+
+    for term in list(draft.context_terms or []):
+        value = _fold_text(str(getattr(term, "term", "") or ""))
+        if not value or not _looks_literal_specific_term(value):
+            continue
+        if bool(getattr(term, "enabled", True)):
+            if value in seen_enabled:
+                continue
+            seen_enabled.add(value)
+            enabled_terms.append(value)
+            continue
+        if value in seen_fallback:
+            continue
+        seen_fallback.add(value)
+        fallback_terms.append(value)
+
+    return enabled_terms or fallback_terms
+
+
+def _replace_context_keyword_literals(
+    node: Any,
+    *,
+    terms: list[str],
+) -> Any:
+    if not terms:
+        return node
+
+    if isinstance(node, dict):
+        out = {k: _replace_context_keyword_literals(v, terms=terms) for k, v in node.items()}
+        signal = out.get("signal")
+        if not isinstance(signal, dict):
+            return out
+
+        field_name = _fold_text(str(signal.get("field") or ""))
+        if field_name != "context_keywords":
+            return out
+
+        signal_out = dict(signal)
+        list_terms = list(terms)
+        scalar_term = list_terms[0]
+        replaced = False
+
+        for op in ("any_of", "in"):
+            if op not in signal_out:
+                continue
+            signal_out[op] = list_terms
+            replaced = True
+
+        for op in ("equals", "contains", "startswith", "regex"):
+            if op not in signal_out:
+                continue
+            signal_out[op] = scalar_term
+            replaced = True
+
+        if replaced:
+            out["signal"] = signal_out
+        return out
+
+    if isinstance(node, list):
+        return [_replace_context_keyword_literals(item, terms=terms) for item in node]
+
+    return node
+
+
+def _realign_literal_specific_draft(
+    *,
+    prompt: str,
+    draft: RuleSuggestionDraftPayload,
+) -> RuleSuggestionDraftPayload:
+    aligned = draft
+    literal_terms = _literal_condition_terms_from_context(aligned)
+    if literal_terms and _has_context_keyword_signal(aligned.rule.conditions):
+        synced_conditions = _replace_context_keyword_literals(
+            aligned.rule.conditions,
+            terms=literal_terms,
+        )
+        aligned = aligned.model_copy(
+            update={
+                "rule": aligned.rule.model_copy(update={"conditions": synced_conditions}),
+            }
+        )
+
+    return _ensure_company_stable_key(prompt=prompt, draft=aligned)
+
+
 def _fingerprint_category_and_entity(draft: RuleSuggestionDraftPayload) -> tuple[str, str]:
     rows = _normalized_context_term_rows(draft)
     entity_type = rows[0][0] if rows else "LITERAL"
@@ -2727,7 +2820,7 @@ def _generate_draft_from_prompt(
             "context_retrieval": context_retrieval_meta,
         }
 
-    draft = _ensure_company_stable_key(prompt=normalized_prompt, draft=draft)
+    draft = _realign_literal_specific_draft(prompt=normalized_prompt, draft=draft)
     draft = _align_draft_with_prompt(normalized_prompt, draft)
     draft = _enforce_prompt_semantic_guard(normalized_prompt, draft)
     draft, intent_guard_meta = _post_generate_intent_guard(
@@ -2738,6 +2831,7 @@ def _generate_draft_from_prompt(
         prompt=normalized_prompt,
         draft=draft,
     )
+    draft = _realign_literal_specific_draft(prompt=normalized_prompt, draft=draft)
     meta["intent_guard"] = intent_guard_meta
     meta["runtime_usability"] = runtime_usability_meta
     try:
@@ -2745,7 +2839,7 @@ def _generate_draft_from_prompt(
     except Exception:
         # Last-resort fallback for malformed LLM draft.
         fb = _fallback_generate(normalized_prompt)
-        fb = _ensure_company_stable_key(prompt=normalized_prompt, draft=fb)
+        fb = _realign_literal_specific_draft(prompt=normalized_prompt, draft=fb)
         fb = _align_draft_with_prompt(normalized_prompt, fb)
         fb = _enforce_prompt_semantic_guard(normalized_prompt, fb)
         fb, fb_intent_guard_meta = _post_generate_intent_guard(
@@ -2756,6 +2850,7 @@ def _generate_draft_from_prompt(
             prompt=normalized_prompt,
             draft=fb,
         )
+        fb = _realign_literal_specific_draft(prompt=normalized_prompt, draft=fb)
         return _normalize_draft(fb), {
             "source": "fallback_generator_after_normalize_error",
             "provider": "none",
@@ -3175,6 +3270,10 @@ def edit_rule_suggestion(
     )
 
     normalized = _normalize_draft(payload.draft)
+    normalized = _realign_literal_specific_draft(
+        prompt=str(row.nl_input or ""),
+        draft=normalized,
+    )
     key = _dedupe_key(company_id=company_id, payload=normalized)
     existed = _find_active_duplicate(
         session=session,
@@ -3234,6 +3333,10 @@ def confirm_rule_suggestion(
     )
 
     draft = _normalize_draft(RuleSuggestionDraftPayload.model_validate(row.draft_json))
+    draft = _realign_literal_specific_draft(
+        prompt=str(row.nl_input or ""),
+        draft=draft,
+    )
     duplicate_check = build_duplicate_check(
         session=session,
         company_id=company_id,
@@ -3264,6 +3367,7 @@ def confirm_rule_suggestion(
         )
 
     before_json = _snapshot_suggestion(row)
+    row.draft_json = _draft_to_json(draft)
     row.status = SuggestionStatus.approved.value
     row.version = int(row.version) + 1
     row.approved_by = actor_user_id
@@ -3376,6 +3480,7 @@ def _apply_rule_draft(
         )
         session.add(row)
         session.flush()
+        upsert_rule_embedding(session=session, rule=row)
         return row
 
     row.name = rule_draft.name
@@ -3390,6 +3495,7 @@ def _apply_rule_draft(
     row.enabled = bool(rule_draft.enabled)
     session.add(row)
     session.flush()
+    upsert_rule_embedding(session=session, rule=row)
     return row
 
 

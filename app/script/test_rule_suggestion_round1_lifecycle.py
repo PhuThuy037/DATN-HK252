@@ -584,6 +584,110 @@ def test_round1_edit_draft_with_version_lock(monkeypatch: pytest.MonkeyPatch) ->
     assert status_err.value.status_code == 422
 
 
+def test_round1_edit_literal_specific_draft_realigns_conditions_and_stable_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _FakeSession()
+    company_id = uuid4()
+    actor_user_id = uuid4()
+    _patch_access(monkeypatch)
+    _wire_generate_from_prompt(
+        monkeypatch,
+        {
+            "literal_prompt": (
+                _draft_internal_code_exact_token("dt-thuy-1234"),
+                _case_meta(has_policy_context=False),
+            )
+        },
+    )
+
+    generated = suggestion_service.generate_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionGenerateIn(prompt="literal_prompt"),
+    )
+
+    draft = generated.draft.model_copy(deep=True)
+    draft.context_terms[0].term = "dt-thuy-12345"
+
+    edited = suggestion_service.edit_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        suggestion_id=generated.id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionEditIn(draft=draft, expected_version=1),
+    )
+
+    condition_terms = suggestion_service._collect_context_keyword_terms(
+        edited.draft.rule.conditions
+    )
+    assert edited.draft.rule.stable_key != generated.draft.rule.stable_key
+    assert "dt-thuy-12345" in condition_terms
+    assert "dt-thuy-1234" not in condition_terms
+    assert (
+        edited.draft.rule.stable_key
+        == suggestion_service._build_literal_specific_stable_key(edited.draft)
+    )
+
+
+def test_round1_confirm_realigns_literal_specific_draft_before_duplicate_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _FakeSession()
+    company_id = uuid4()
+    actor_user_id = uuid4()
+    _patch_access(monkeypatch)
+    _wire_generate_from_prompt(
+        monkeypatch,
+        {
+            "literal_confirm_prompt": (
+                _draft_internal_code_exact_token("dt-thuy-1234"),
+                _case_meta(has_policy_context=False),
+            )
+        },
+    )
+
+    generated = suggestion_service.generate_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionGenerateIn(prompt="literal_confirm_prompt"),
+    )
+
+    row = session.suggestions[str(generated.id)]
+    stale_draft = generated.draft.model_copy(deep=True)
+    stale_draft.context_terms[0].term = "dt-thuy-12345"
+    row.draft_json = stale_draft.model_dump(mode="json")
+
+    captured: dict[str, object] = {}
+
+    def _capture_duplicate_check(**kwargs: object) -> RuleDuplicateCheckOut:
+        draft_rule = kwargs["draft_rule"]
+        captured["stable_key"] = draft_rule.stable_key
+        captured["conditions"] = draft_rule.conditions
+        return _duplicate_check_out()
+
+    monkeypatch.setattr(suggestion_service, "build_duplicate_check", _capture_duplicate_check)
+
+    confirmed = suggestion_service.confirm_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        suggestion_id=generated.id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionConfirmIn(reason="literal edit ok", expected_version=1),
+    )
+
+    condition_terms = suggestion_service._collect_context_keyword_terms(
+        captured["conditions"]
+    )
+    assert confirmed.status == SuggestionStatus.approved
+    assert "dt-thuy-12345" in condition_terms
+    assert "dt-thuy-1234" not in condition_terms
+    assert str(captured["stable_key"]) == str(row.draft_json["rule"]["stable_key"])
+    assert str(captured["stable_key"]) != generated.draft.rule.stable_key
+
+
 def test_round1_confirm_apply_and_apply_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     session = _FakeSession()
     company_id = uuid4()

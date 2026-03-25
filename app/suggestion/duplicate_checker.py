@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 from app.core.config import get_settings
 from app.llm import generate_text_sync
 from app.rule.model import Rule
-from app.rule_embedding.model import RuleEmbedding
+from app.rule_embedding.service import upsert_rule_embedding
 from app.suggestion.schemas import (
     DuplicateDecision,
     RuleDuplicateCandidateOut,
@@ -151,6 +151,78 @@ def draft_rule_to_text(draft: RuleSuggestionDraftRule) -> str:
 def _tokenize(text: str) -> set[str]:
     parts = re.split(r"[^a-zA-Z0-9_]+", (text or "").lower())
     return {p for p in parts if p}
+
+
+def _extract_context_keyword_terms(node: Any) -> set[str]:
+    out: set[str] = set()
+    if isinstance(node, dict):
+        signal = node.get("signal")
+        if isinstance(signal, dict):
+            field = str(signal.get("field") or "").strip().lower()
+            if field == "context_keywords":
+                for op in ("equals", "contains", "startswith", "regex"):
+                    value = str(signal.get(op) or "").strip().lower()
+                    if value:
+                        out.add(value)
+                for op in ("in", "any_of"):
+                    raw = signal.get(op)
+                    if isinstance(raw, list):
+                        for item in raw:
+                            value = str(item or "").strip().lower()
+                            if value:
+                                out.add(value)
+                    elif isinstance(raw, str):
+                        value = raw.strip().lower()
+                        if value:
+                            out.add(value)
+        for value in node.values():
+            out.update(_extract_context_keyword_terms(value))
+        return out
+    if isinstance(node, list):
+        for item in node:
+            out.update(_extract_context_keyword_terms(item))
+    return out
+
+
+def _looks_literal_specific_term(term: str) -> bool:
+    text = str(term or "").strip().lower()
+    if not text:
+        return False
+
+    has_digit = bool(re.search(r"\d", text))
+    has_alpha = bool(re.search(r"[a-z]", text))
+    has_sep = bool(re.search(r"[-_/.:]", text))
+    has_code_shape = bool(re.search(r"[a-z0-9]{2,}(?:[-_][a-z0-9]{1,}){1,}", text))
+
+    if has_code_shape and (has_digit or len(text) >= 10):
+        return True
+    if has_digit and has_alpha:
+        return True
+    if has_digit and has_sep:
+        return True
+    if has_digit and len(text) >= 12:
+        return True
+    return False
+
+
+def _literal_specific_terms_from_conditions(conditions: dict[str, Any]) -> set[str]:
+    return {
+        term
+        for term in _extract_context_keyword_terms(conditions)
+        if _looks_literal_specific_term(term)
+    }
+
+
+def _is_literal_specific_variant(
+    *,
+    draft_rule: RuleSuggestionDraftRule,
+    candidate: _Candidate,
+) -> bool:
+    draft_terms = _literal_specific_terms_from_conditions(draft_rule.conditions)
+    candidate_terms = _literal_specific_terms_from_conditions(candidate.conditions)
+    if not draft_terms or not candidate_terms:
+        return False
+    return draft_terms != candidate_terms
 
 
 def _lexical_score(a: str, b: str) -> float:
@@ -392,50 +464,6 @@ def _candidate_log_row(candidate: _Candidate) -> dict[str, Any]:
     }
 
 
-def _ensure_rule_embedding(
-    *,
-    session: Session,
-    rule: Rule,
-    model_name: str,
-) -> list[float]:
-    text = _rule_to_text(
-        stable_key=rule.stable_key,
-        name=rule.name,
-        description=rule.description,
-        scope=rule.scope.value,
-        action=rule.action.value,
-        severity=rule.severity.value,
-        rag_mode=rule.rag_mode.value,
-        priority=rule.priority,
-        conditions=rule.conditions,
-    )
-    content_hash = hashlib.sha256(f"{rule.id}:{text}".encode("utf-8")).hexdigest()
-    emb = _hash_embedding(text)
-
-    row = session.exec(
-        select(RuleEmbedding)
-        .where(RuleEmbedding.rule_id == rule.id)
-        .where(RuleEmbedding.model_name == model_name)
-    ).first()
-
-    if row is None:
-        row = RuleEmbedding(
-            rule_id=rule.id,
-            content=text,
-            content_hash=content_hash,
-            embedding=emb,
-            model_name=model_name,
-        )
-    else:
-        row.content = text
-        row.content_hash = content_hash
-        row.embedding = emb
-
-    session.add(row)
-    session.flush()
-    return emb
-
-
 def _llm_classify_duplicate(
     *,
     draft_rule: RuleSuggestionDraftRule,
@@ -616,7 +644,7 @@ def build_duplicate_check(
 
     scored: list[_Candidate] = []
     for r in rows:
-        emb = _ensure_rule_embedding(session=session, rule=r, model_name=model_name)
+        emb = upsert_rule_embedding(session=session, rule=r, model_name=model_name)
         text = _rule_to_text(
             stable_key=r.stable_key,
             name=r.name,
@@ -726,27 +754,43 @@ def build_duplicate_check(
     # Hard deterministic checks first, evaluated on full candidate set.
     same_key = [c for c in scored if c.stable_key == draft_rule.stable_key]
     if same_key:
-        c = same_key[0]
-        logger.debug(
-            "duplicate_check_deterministic draft_key=%s reason=stable_key_conflict matched_rule_id=%s",
-            draft_rule.stable_key,
-            str(c.rule_id),
-        )
-        return RuleDuplicateCheckOut(
-            decision=DuplicateDecision.exact_duplicate,
-            confidence=1.0,
-            rationale="stable_key_conflict",
-            matched_rule_ids=[c.rule_id],
-            candidates=[_to_candidate_out(x) for x in similar_candidates],
-            top_k=top_k,
-            exact_threshold=exact_th,
-            near_threshold=near_th,
-            source="hard_deterministic",
-        )
+        non_variant_key = [
+            candidate
+            for candidate in same_key
+            if not _is_literal_specific_variant(draft_rule=draft_rule, candidate=candidate)
+        ]
+        if non_variant_key:
+            c = non_variant_key[0]
+            logger.debug(
+                "duplicate_check_deterministic draft_key=%s reason=stable_key_conflict matched_rule_id=%s",
+                draft_rule.stable_key,
+                str(c.rule_id),
+            )
+            return RuleDuplicateCheckOut(
+                decision=DuplicateDecision.exact_duplicate,
+                confidence=1.0,
+                rationale="stable_key_conflict",
+                matched_rule_ids=[c.rule_id],
+                candidates=[_to_candidate_out(x) for x in similar_candidates],
+                top_k=top_k,
+                exact_threshold=exact_th,
+                near_threshold=near_th,
+                source="hard_deterministic",
+            )
 
     same_sig = [c for c in scored if c.signature_hash == draft_sig]
     if same_sig:
-        c = same_sig[0]
+        c = next(
+            (
+                candidate
+                for candidate in same_sig
+                if not _is_literal_specific_variant(draft_rule=draft_rule, candidate=candidate)
+            ),
+            None,
+        )
+    else:
+        c = None
+    if c is not None:
         logger.debug(
             "duplicate_check_deterministic draft_key=%s reason=normalized_signature_match matched_rule_id=%s",
             draft_rule.stable_key,
@@ -766,7 +810,17 @@ def build_duplicate_check(
 
     same_semantic = [c for c in scored if c.semantic_hash == draft_semantic]
     if same_semantic:
-        c = same_semantic[0]
+        c = next(
+            (
+                candidate
+                for candidate in same_semantic
+                if not _is_literal_specific_variant(draft_rule=draft_rule, candidate=candidate)
+            ),
+            None,
+        )
+    else:
+        c = None
+    if c is not None:
         logger.debug(
             "duplicate_check_deterministic draft_key=%s reason=semantic_signature_match matched_rule_id=%s",
             draft_rule.stable_key,
@@ -820,6 +874,16 @@ def build_duplicate_check(
     matched_ids = [x for x in matched_ids if x in top_ids]
     if decision != DuplicateDecision.different and not matched_ids and top:
         matched_ids = [top[0].rule_id]
+
+    matched_candidate = next((candidate for candidate in top if candidate.rule_id in matched_ids), None)
+    if (
+        decision == DuplicateDecision.exact_duplicate
+        and matched_candidate is not None
+        and _is_literal_specific_variant(draft_rule=draft_rule, candidate=matched_candidate)
+    ):
+        decision = DuplicateDecision.near_duplicate
+        rationale = "literal_specific_variant"
+        conf = min(float(conf), max(matched_candidate.hybrid_score, matched_candidate.similarity))
 
     logger.debug(
         "duplicate_check_final draft_key=%s source=%s decision=%s confidence=%.4f rationale=%s matched_rule_ids=%s similar_rules=%s",

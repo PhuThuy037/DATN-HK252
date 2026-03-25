@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlmodel import Session
 
+from app.common.enums import RuleScope
 from app.decision.context_scorer import ContextScorer
 from app.decision.context_term_runtime import load_context_runtime_overrides
 from app.decision.decision_resolver import DecisionResolver
@@ -242,6 +243,7 @@ class ScanEngineLocal:
         text: str,
         company_id: Optional[UUID],
         user_id: Optional[UUID] = None,
+        scope: RuleScope = RuleScope.prompt,
     ) -> dict[str, Any]:
         t0 = time.perf_counter()
         timing_ms_by_stage: dict[str, int] = {}
@@ -410,7 +412,9 @@ class ScanEngineLocal:
                 session=session,
                 user_text=text,
                 company_id=company_id,
+                user_id=user_id,
                 message_id=None,
+                runtime_scope=scope,
             )
             raw_rag_decision = str(rag_out.decision).upper()
             effective_rag_decision = raw_rag_decision
@@ -421,9 +425,12 @@ class ScanEngineLocal:
             signals["rag"] = {
                 "decision": effective_rag_decision,
                 "decision_raw": raw_rag_decision,
-                "confidence": rag_out.confidence,
-                "rule_keys": rag_out.rule_keys,
-                "rationale": rag_out.rationale,
+                "confidence": float(getattr(rag_out, "confidence", 0.0) or 0.0),
+                "rule_keys": list(getattr(rag_out, "rule_keys", []) or []),
+                "candidate_rule_keys": list(
+                    getattr(rag_out, "candidate_rule_keys", []) or []
+                ),
+                "rationale": str(getattr(rag_out, "rationale", "") or ""),
             }
         else:
             signals.pop("rag", None)

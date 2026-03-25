@@ -975,29 +975,6 @@ export function RuleForm({
         </div>
       )}
       <div className="space-y-1.5">
-        <Label htmlFor="stable_key">
-          Stable key <span className="text-destructive">*</span>
-        </Label>
-        <Input
-          className={cn(form.formState.errors.stable_key && "border-destructive focus-visible:ring-destructive")}
-          disabled={mode === "edit"}
-          id="stable_key"
-          maxLength={200}
-          pattern={mode === "create" ? STABLE_KEY_PATTERN.source : undefined}
-          placeholder="personal.custom.sample.rule"
-          required={mode === "create"}
-          title="Use lowercase letters, numbers, dot, underscore, or dash."
-          {...form.register("stable_key")}
-        />
-        {mode === "edit" && (
-          <p className="text-[11px] text-muted-foreground">Stable key is fixed after creation.</p>
-        )}
-        {form.formState.errors.stable_key && (
-          <p className="text-xs text-destructive">{form.formState.errors.stable_key.message}</p>
-        )}
-      </div>
-
-      <div className="space-y-1.5">
         <Label htmlFor="name">
           Name <span className="text-destructive">*</span>
         </Label>
@@ -1068,7 +1045,7 @@ export function RuleForm({
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="severity">
             Severity <span className="text-destructive">*</span>
@@ -1088,24 +1065,6 @@ export function RuleForm({
           </select>
           {form.formState.errors.severity && (
             <p className="text-xs text-destructive">{form.formState.errors.severity.message}</p>
-          )}
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="priority">
-            Priority <span className="text-destructive">*</span>
-          </Label>
-          <Input
-            className={cn(form.formState.errors.priority && "border-destructive focus-visible:ring-destructive")}
-            id="priority"
-            max={MAX_PRIORITY}
-            min={MIN_PRIORITY}
-            required
-            type="number"
-            {...form.register("priority")}
-          />
-          {form.formState.errors.priority && (
-            <p className="text-xs text-destructive">{form.formState.errors.priority.message}</p>
           )}
         </div>
 
@@ -1134,6 +1093,56 @@ export function RuleForm({
           Enabled
         </Label>
       </div>
+
+      <details className="rounded-md border p-3 text-sm" open={mode === "create"}>
+        <summary className="cursor-pointer font-medium">Advanced rule settings</summary>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Internal identity and tuning fields. Most users only need these for special cases.
+        </p>
+
+        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="stable_key">
+              Stable key <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              className={cn(form.formState.errors.stable_key && "border-destructive focus-visible:ring-destructive")}
+              disabled={mode === "edit"}
+              id="stable_key"
+              maxLength={200}
+              pattern={mode === "create" ? STABLE_KEY_PATTERN.source : undefined}
+              placeholder="personal.custom.sample.rule"
+              required={mode === "create"}
+              title="Use lowercase letters, numbers, dot, underscore, or dash."
+              {...form.register("stable_key")}
+            />
+            {mode === "edit" && (
+              <p className="text-[11px] text-muted-foreground">Stable key is fixed after creation.</p>
+            )}
+            {form.formState.errors.stable_key && (
+              <p className="text-xs text-destructive">{form.formState.errors.stable_key.message}</p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="priority">
+              Priority <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              className={cn(form.formState.errors.priority && "border-destructive focus-visible:ring-destructive")}
+              id="priority"
+              max={MAX_PRIORITY}
+              min={MIN_PRIORITY}
+              required
+              type="number"
+              {...form.register("priority")}
+            />
+            {form.formState.errors.priority && (
+              <p className="text-xs text-destructive">{form.formState.errors.priority.message}</p>
+            )}
+          </div>
+        </div>
+      </details>
 
       <div id="conditions-section">
       <CardSection title="Conditions">
@@ -1187,7 +1196,7 @@ export function RuleForm({
                 </div>
 
                 {condition.type === "entity_match" && (
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-3">
                     <div className="space-y-1.5">
                       <Label>Entity type</Label>
                       <select
@@ -1205,42 +1214,30 @@ export function RuleForm({
                       </select>
                     </div>
 
-                    <div className="space-y-1.5">
-                      <Label>Min score</Label>
-                      <Input
-                        max="1"
-                        min="0"
-                        onChange={(event) =>
-                          updateCondition(condition.id, { minScore: event.target.value })
-                        }
-                        placeholder="0.8"
-                        step="0.01"
-                        type="number"
-                        value={condition.minScore}
-                      />
-                    </div>
+                    <details className="rounded-md border bg-muted/20 p-2">
+                      <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+                        Advanced condition settings
+                      </summary>
+                      <div className="mt-3 space-y-1.5">
+                        <Label>Min score</Label>
+                        <Input
+                          max="1"
+                          min="0"
+                          onChange={(event) =>
+                            updateCondition(condition.id, { minScore: event.target.value })
+                          }
+                          placeholder="0.8"
+                          step="0.01"
+                          type="number"
+                          value={condition.minScore}
+                        />
+                      </div>
+                    </details>
                   </div>
                 )}
 
                 {condition.type === "signal_keyword_match" && (
                   <div className="space-y-3">
-                    <div className="space-y-1.5">
-                      <Label>Signal field</Label>
-                      <select
-                        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                        onChange={(event) =>
-                          updateCondition(condition.id, { signalField: event.target.value })
-                        }
-                        value={condition.signalField}
-                      >
-                        {signalFieldOptions.map((signalField) => (
-                          <option key={signalField} value={signalField}>
-                            {signalField}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
                     <div className="space-y-1.5">
                       <Label>Keywords (one per line)</Label>
                       <Textarea
@@ -1252,6 +1249,28 @@ export function RuleForm({
                         value={condition.keywordsText}
                       />
                     </div>
+
+                    <details className="rounded-md border bg-muted/20 p-2">
+                      <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+                        Advanced condition settings
+                      </summary>
+                      <div className="mt-3 space-y-1.5">
+                        <Label>Signal field</Label>
+                        <select
+                          className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                          onChange={(event) =>
+                            updateCondition(condition.id, { signalField: event.target.value })
+                          }
+                          value={condition.signalField}
+                        >
+                          {signalFieldOptions.map((signalField) => (
+                            <option key={signalField} value={signalField}>
+                              {signalField}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </details>
                   </div>
                 )}
               </div>

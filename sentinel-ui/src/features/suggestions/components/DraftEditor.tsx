@@ -14,6 +14,26 @@ type DraftEditorProps = {
   onDraftChange: (nextDraft: SuggestionDraft) => void;
 };
 
+const scopeOptions = ["prompt", "chat", "file", "api"] as const;
+const actionOptions = ["allow", "mask", "block", "warn"] as const;
+const severityOptions = ["low", "medium", "high"] as const;
+const ragModeOptions = ["off", "explain", "verify"] as const;
+const entityTypeOptions = [
+  "CUSTOM_SECRET",
+  "INTERNAL_CODE",
+  "PROPRIETARY_IDENTIFIER",
+  "API_SECRET",
+  "PHONE",
+  "EMAIL",
+  "CCCD",
+  "PERSON",
+  "ADDRESS",
+  "ORG",
+  "TAX_ID",
+  "CREDIT_CARD",
+  "OTHER",
+] as const;
+
 function toNumber(value: string, fallback = 0) {
   const parsed = Number(value);
   return Number.isNaN(parsed) ? fallback : parsed;
@@ -69,6 +89,14 @@ function summarizeConditions(conditions: Record<string, unknown> | undefined) {
   }
 
   return "Complex conditions format. Check Advanced JSON.";
+}
+
+function renderSelectOptions(options: readonly string[]) {
+  return options.map((option) => (
+    <option key={option} value={option}>
+      {option}
+    </option>
+  ));
 }
 
 export function DraftEditor({
@@ -140,14 +168,6 @@ export function DraftEditor({
       )}
 
       <div className="grid gap-4 rounded-md border p-4 md:grid-cols-2">
-        <Field label="Stable key">
-          <Input
-            disabled={readOnly}
-            onChange={(event) => updateRuleField("stable_key", event.target.value)}
-            value={draft.rule.stable_key ?? ""}
-          />
-        </Field>
-
         <Field label="Name">
           <Input
             disabled={readOnly}
@@ -167,44 +187,47 @@ export function DraftEditor({
         </div>
 
         <Field label="Scope">
-          <Input
+          <select
+            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
             disabled={readOnly}
             onChange={(event) => updateRuleField("scope", event.target.value)}
             value={draft.rule.scope ?? ""}
-          />
+          >
+            {renderSelectOptions(scopeOptions)}
+          </select>
         </Field>
 
         <Field label="Action">
-          <Input
+          <select
+            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
             disabled={readOnly}
             onChange={(event) => updateRuleField("action", event.target.value)}
             value={draft.rule.action ?? ""}
-          />
+          >
+            {renderSelectOptions(actionOptions)}
+          </select>
         </Field>
 
         <Field label="Severity">
-          <Input
+          <select
+            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
             disabled={readOnly}
             onChange={(event) => updateRuleField("severity", event.target.value)}
             value={draft.rule.severity ?? ""}
-          />
-        </Field>
-
-        <Field label="Priority">
-          <Input
-            disabled={readOnly}
-            onChange={(event) => updateRuleField("priority", toNumber(event.target.value, 0))}
-            type="number"
-            value={draft.rule.priority ?? 0}
-          />
+          >
+            {renderSelectOptions(severityOptions)}
+          </select>
         </Field>
 
         <Field label="RAG mode">
-          <Input
+          <select
+            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
             disabled={readOnly}
             onChange={(event) => updateRuleField("rag_mode", event.target.value)}
             value={draft.rule.rag_mode ?? ""}
-          />
+          >
+            {renderSelectOptions(ragModeOptions)}
+          </select>
         </Field>
 
         <Field label="Status">
@@ -227,14 +250,40 @@ export function DraftEditor({
         </Field>
       </div>
 
+      <details className="rounded-md border p-4 text-sm">
+        <summary className="cursor-pointer font-medium">Advanced rule settings</summary>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Internal identity and tuning fields. Most users usually do not need to change these.
+        </p>
+        <div className="mt-3 grid gap-4 md:grid-cols-2">
+          <Field label="Stable key">
+            <Input
+              disabled={readOnly}
+              onChange={(event) => updateRuleField("stable_key", event.target.value)}
+              value={draft.rule.stable_key ?? ""}
+            />
+          </Field>
+
+          <Field label="Priority">
+            <Input
+              disabled={readOnly}
+              onChange={(event) => updateRuleField("priority", toNumber(event.target.value, 0))}
+              type="number"
+              value={draft.rule.priority ?? 0}
+            />
+          </Field>
+        </div>
+      </details>
+
       <div className="space-y-2 rounded-md border p-4">
         <h4 className="text-sm font-semibold">Conditions</h4>
         <p className="text-sm text-muted-foreground">{conditionsSummary}</p>
 
         {simpleCondition && (
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-3">
             <Field label="Entity type">
-              <Input
+              <select
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                 disabled={readOnly}
                 onChange={(event) => {
                   updateRuleField("conditions", {
@@ -247,29 +296,38 @@ export function DraftEditor({
                   });
                 }}
                 value={simpleCondition.entity_type}
-              />
+              >
+                {renderSelectOptions(entityTypeOptions)}
+              </select>
             </Field>
 
-            <Field label="Min score">
-              <Input
-                disabled={readOnly}
-                max={1}
-                min={0}
-                onChange={(event) => {
-                  updateRuleField("conditions", {
-                    any: [
-                      {
-                        entity_type: simpleCondition.entity_type,
-                        min_score: toNumber(event.target.value, simpleCondition.min_score),
-                      },
-                    ],
-                  });
-                }}
-                step="0.01"
-                type="number"
-                value={simpleCondition.min_score}
-              />
-            </Field>
+            <details className="rounded-md border bg-muted/20 p-3">
+              <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+                Advanced condition settings
+              </summary>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <Field label="Min score">
+                  <Input
+                    disabled={readOnly}
+                    max={1}
+                    min={0}
+                    onChange={(event) => {
+                      updateRuleField("conditions", {
+                        any: [
+                          {
+                            entity_type: simpleCondition.entity_type,
+                            min_score: toNumber(event.target.value, simpleCondition.min_score),
+                          },
+                        ],
+                      });
+                    }}
+                    step="0.01"
+                    type="number"
+                    value={simpleCondition.min_score}
+                  />
+                </Field>
+              </div>
+            </details>
           </div>
         )}
       </div>
