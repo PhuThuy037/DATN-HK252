@@ -1,10 +1,15 @@
-﻿import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import type { SuggestionDraft } from "@/features/suggestions/types";
 import { SuggestionContextTermsEditor } from "@/features/suggestions/components/SuggestionContextTermsEditor";
-import { Button } from "@/shared/ui/button";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppButton } from "@/shared/ui/app-button";
+import { FieldHelpText } from "@/shared/ui/field-help-text";
 import { Input } from "@/shared/ui/input";
+import { InlineErrorText } from "@/shared/ui/inline-error-text";
 import { Label } from "@/shared/ui/label";
+import { StatusBadge } from "@/shared/ui/status-badge";
+import { appSelectControlClassName } from "@/shared/ui/design-tokens";
 import { Textarea } from "@/shared/ui/textarea";
 
 type DraftEditorProps = {
@@ -14,6 +19,7 @@ type DraftEditorProps = {
   onDraftChange: (nextDraft: SuggestionDraft) => void;
 };
 
+const sectionCardClassName = "space-y-4 rounded-xl border border-border/80 bg-background p-4 md:p-5";
 const scopeOptions = ["prompt", "chat", "file", "api"] as const;
 const actionOptions = ["allow", "mask", "block", "warn"] as const;
 const severityOptions = ["low", "medium", "high"] as const;
@@ -56,7 +62,10 @@ function getSimpleCondition(conditions: Record<string, unknown> | undefined) {
 
   const item = first as Record<string, unknown>;
   const entityType = String(item.entity_type ?? "").trim();
-  const minScore = typeof item.min_score === "number" ? item.min_score : toNumber(String(item.min_score ?? "0"), 0);
+  const minScore =
+    typeof item.min_score === "number"
+      ? item.min_score
+      : toNumber(String(item.min_score ?? "0"), 0);
 
   if (!entityType) {
     return null;
@@ -70,25 +79,25 @@ function getSimpleCondition(conditions: Record<string, unknown> | undefined) {
 
 function summarizeConditions(conditions: Record<string, unknown> | undefined) {
   if (!conditions || Object.keys(conditions).length === 0) {
-    return "No conditions";
+    return "No conditions configured yet.";
   }
 
   const simple = getSimpleCondition(conditions);
   if (simple) {
-    return `Entity match: ${simple.entity_type} (min_score >= ${simple.min_score})`;
+    return `Entity match: ${simple.entity_type} with a minimum score of ${simple.min_score}.`;
   }
 
   if (Array.isArray(conditions.any)) {
-    return `any: ${conditions.any.length} condition nodes`;
+    return `Matches any of ${conditions.any.length} condition node${conditions.any.length === 1 ? "" : "s"}.`;
   }
   if (Array.isArray(conditions.all)) {
-    return `all: ${conditions.all.length} condition nodes`;
+    return `Matches all of ${conditions.all.length} condition node${conditions.all.length === 1 ? "" : "s"}.`;
   }
   if (conditions.not) {
-    return "not: 1 condition node";
+    return "Uses an inverted condition node.";
   }
 
-  return "Complex conditions format. Check Advanced JSON.";
+  return "Complex condition structure detected. Review it in Advanced settings.";
 }
 
 function renderSelectOptions(options: readonly string[]) {
@@ -154,136 +163,156 @@ export function DraftEditor({
         context_terms: nextTerms,
       });
     } catch {
-      setAdvancedError("Invalid JSON format in Advanced section.");
+      setAdvancedError("Invalid JSON format in Advanced settings.");
     }
   };
 
   return (
     <div className="space-y-4">
-      {validationError && (
-        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-          <AlertTriangle className="mt-0.5 h-4 w-4" />
-          <span>{validationError}</span>
-        </div>
-      )}
+      {validationError ? (
+        <AppAlert
+          description={validationError}
+          icon={<AlertTriangle className="mt-0.5 h-4 w-4 text-danger" />}
+          title="Draft validation issue"
+          variant="error"
+        />
+      ) : null}
 
-      <div className="grid gap-4 rounded-md border p-4 md:grid-cols-2">
-        <Field label="Name">
-          <Input
-            disabled={readOnly}
-            onChange={(event) => updateRuleField("name", event.target.value)}
-            value={draft.rule.name ?? ""}
-          />
-        </Field>
-
-        <div className="space-y-1.5 md:col-span-2">
-          <Label>Description</Label>
-          <Textarea
-            disabled={readOnly}
-            onChange={(event) => updateRuleField("description", event.target.value)}
-            rows={2}
-            value={draft.rule.description ?? ""}
-          />
+      <section className={sectionCardClassName}>
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold text-foreground">Basic info</h3>
+          <p className="text-sm text-muted-foreground">
+            Define the rule identity and business-facing description first.
+          </p>
         </div>
 
-        <Field label="Scope">
-          <select
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-            disabled={readOnly}
-            onChange={(event) => updateRuleField("scope", event.target.value)}
-            value={draft.rule.scope ?? ""}
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field
+            helper="Clear, human-readable title used throughout review and comparison screens."
+            label="Rule name"
           >
-            {renderSelectOptions(scopeOptions)}
-          </select>
-        </Field>
+            <Input
+              disabled={readOnly}
+              onChange={(event) => updateRuleField("name", event.target.value)}
+              value={draft.rule.name ?? ""}
+            />
+          </Field>
 
-        <Field label="Action">
-          <select
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-            disabled={readOnly}
-            onChange={(event) => updateRuleField("action", event.target.value)}
-            value={draft.rule.action ?? ""}
+          <Field
+            className="md:col-span-2"
+            helper="Explain what the rule is intended to protect, detect, or enforce."
+            label="Description"
           >
-            {renderSelectOptions(actionOptions)}
-          </select>
-        </Field>
+            <Textarea
+              disabled={readOnly}
+              onChange={(event) => updateRuleField("description", event.target.value)}
+              rows={3}
+              value={draft.rule.description ?? ""}
+            />
+          </Field>
+        </div>
+      </section>
 
-        <Field label="Severity">
-          <select
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-            disabled={readOnly}
-            onChange={(event) => updateRuleField("severity", event.target.value)}
-            value={draft.rule.severity ?? ""}
-          >
-            {renderSelectOptions(severityOptions)}
-          </select>
-        </Field>
+      <section className={sectionCardClassName}>
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold text-foreground">Behavior</h3>
+          <p className="text-sm text-muted-foreground">
+            Control how the rule behaves once it matches content.
+          </p>
+        </div>
 
-        <Field label="RAG mode">
-          <select
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-            disabled={readOnly}
-            onChange={(event) => updateRuleField("rag_mode", event.target.value)}
-            value={draft.rule.rag_mode ?? ""}
-          >
-            {renderSelectOptions(ragModeOptions)}
-          </select>
-        </Field>
-
-        <Field label="Status">
-          <div>
-            <label
-              className="inline-flex w-fit items-center gap-2 rounded-md border px-3 py-2 text-sm"
-              htmlFor="draft-enabled"
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <Field helper="Primary outcome when the rule matches." label="Action">
+            <select
+              className={appSelectControlClassName}
+              disabled={readOnly}
+              onChange={(event) => updateRuleField("action", event.target.value)}
+              value={draft.rule.action ?? ""}
             >
-              <input
-                className="h-4 w-4 shrink-0 align-middle"
-                checked={draft.rule.enabled}
-                disabled={readOnly}
-                id="draft-enabled"
-                onChange={(event) => updateRuleField("enabled", event.target.checked)}
-                type="checkbox"
-              />
-              <span className="leading-none">Enabled</span>
-            </label>
-          </div>
-        </Field>
-      </div>
-
-      <details className="rounded-md border p-4 text-sm">
-        <summary className="cursor-pointer font-medium">Advanced rule settings</summary>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Internal identity and tuning fields. Most users usually do not need to change these.
-        </p>
-        <div className="mt-3 grid gap-4 md:grid-cols-2">
-          <Field label="Stable key">
-            <Input
-              disabled={readOnly}
-              onChange={(event) => updateRuleField("stable_key", event.target.value)}
-              value={draft.rule.stable_key ?? ""}
-            />
+              {renderSelectOptions(actionOptions)}
+            </select>
           </Field>
 
-          <Field label="Priority">
-            <Input
+          <Field helper="Where the rule should apply." label="Scope">
+            <select
+              className={appSelectControlClassName}
               disabled={readOnly}
-              onChange={(event) => updateRuleField("priority", toNumber(event.target.value, 0))}
-              type="number"
-              value={draft.rule.priority ?? 0}
-            />
+              onChange={(event) => updateRuleField("scope", event.target.value)}
+              value={draft.rule.scope ?? ""}
+            >
+              {renderSelectOptions(scopeOptions)}
+            </select>
+          </Field>
+
+          <Field helper="Impact level used for review and prioritization." label="Severity">
+            <select
+              className={appSelectControlClassName}
+              disabled={readOnly}
+              onChange={(event) => updateRuleField("severity", event.target.value)}
+              value={draft.rule.severity ?? ""}
+            >
+              {renderSelectOptions(severityOptions)}
+            </select>
+          </Field>
+
+          <Field helper="How retrieval or explanation should interact with this rule." label="RAG mode">
+            <select
+              className={appSelectControlClassName}
+              disabled={readOnly}
+              onChange={(event) => updateRuleField("rag_mode", event.target.value)}
+              value={draft.rule.rag_mode ?? ""}
+            >
+              {renderSelectOptions(ragModeOptions)}
+            </select>
+          </Field>
+
+          <Field helper="Disabled rules stay in the draft but do not apply when activated." label="Status">
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border/80 bg-background px-3 py-2">
+              <StatusBadge status={draft.rule.enabled ? "enabled" : "disabled"} />
+              <label
+                className="inline-flex w-fit items-center gap-2 text-sm text-foreground"
+                htmlFor="draft-enabled"
+              >
+                <input
+                  className="h-4 w-4 shrink-0 align-middle"
+                  checked={draft.rule.enabled}
+                  disabled={readOnly}
+                  id="draft-enabled"
+                  onChange={(event) => updateRuleField("enabled", event.target.checked)}
+                  type="checkbox"
+                />
+                <span className="leading-none">
+                  {draft.rule.enabled ? "Enabled" : "Disabled"}
+                </span>
+              </label>
+            </div>
           </Field>
         </div>
-      </details>
+      </section>
 
-      <div className="space-y-2 rounded-md border p-4">
-        <h4 className="text-sm font-semibold">Conditions</h4>
-        <p className="text-sm text-muted-foreground">{conditionsSummary}</p>
+      <section className={sectionCardClassName}>
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold text-foreground">Conditions</h3>
+          <p className="text-sm text-muted-foreground">
+            Define what content should trigger this rule.
+          </p>
+        </div>
 
-        {simpleCondition && (
-          <div className="space-y-3">
-            <Field label="Entity type">
+        <div className="rounded-xl border border-border/80 bg-muted/20 px-4 py-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Current summary
+          </p>
+          <p className="mt-1 text-sm text-foreground">{conditionsSummary}</p>
+        </div>
+
+        {simpleCondition ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field
+              helper="Primary entity family that this simplified condition should match."
+              label="Entity type"
+            >
               <select
-                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                className={appSelectControlClassName}
                 disabled={readOnly}
                 onChange={(event) => {
                   updateRuleField("conditions", {
@@ -301,103 +330,154 @@ export function DraftEditor({
               </select>
             </Field>
 
-            <details className="rounded-md border bg-muted/20 p-3">
-              <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-                Advanced condition settings
-              </summary>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <Field label="Min score">
-                  <Input
-                    disabled={readOnly}
-                    max={1}
-                    min={0}
-                    onChange={(event) => {
-                      updateRuleField("conditions", {
-                        any: [
-                          {
-                            entity_type: simpleCondition.entity_type,
-                            min_score: toNumber(event.target.value, simpleCondition.min_score),
-                          },
-                        ],
-                      });
-                    }}
-                    step="0.01"
-                    type="number"
-                    value={simpleCondition.min_score}
-                  />
-                </Field>
-              </div>
-            </details>
+            <Field
+              helper="Minimum detection score required before this entity match should trigger."
+              label="Minimum score"
+            >
+              <Input
+                disabled={readOnly}
+                max={1}
+                min={0}
+                onChange={(event) => {
+                  updateRuleField("conditions", {
+                    any: [
+                      {
+                        entity_type: simpleCondition.entity_type,
+                        min_score: toNumber(event.target.value, simpleCondition.min_score),
+                      },
+                    ],
+                  });
+                }}
+                step="0.01"
+                type="number"
+                value={simpleCondition.min_score}
+              />
+            </Field>
           </div>
+        ) : (
+          <AppAlert
+            description="This draft uses a more complex condition structure. Keep using the readable summary here, then review or edit the raw JSON under Advanced settings if needed."
+            title="Complex conditions detected"
+            variant="info"
+          />
         )}
-      </div>
+      </section>
 
-      <div className="rounded-md border p-4">
+      <section className={sectionCardClassName}>
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold text-foreground">Context terms</h3>
+          <p className="text-sm text-muted-foreground">
+            Add supporting keywords and entities that help the rule match the right content.
+          </p>
+        </div>
+
         <SuggestionContextTermsEditor
           onChange={(nextTerms) => onDraftChange({ ...draft, context_terms: nextTerms })}
           readOnly={readOnly}
           terms={draft.context_terms}
         />
-      </div>
+      </section>
 
-      <details className="rounded-md border p-3 text-sm">
-        <summary className="cursor-pointer font-medium">Advanced JSON</summary>
+      <details className="rounded-xl border border-border/80 bg-muted/10 p-4 text-sm">
+        <summary className="cursor-pointer font-medium text-foreground">Advanced settings</summary>
         <p className="mt-2 text-xs text-muted-foreground">
-          For developer/debug only. You can edit raw JSON and apply it back to the form.
+          Internal tuning and developer-facing JSON controls. Most reviews do not need these.
         </p>
 
-        <div className="mt-3 space-y-3">
-          <div className="space-y-1.5">
-            <Label>Raw draft.rule JSON</Label>
-            <Textarea
-              className="min-h-[180px] font-mono text-xs"
-              disabled={readOnly}
-              onChange={(event) => setRawRuleJson(event.target.value)}
-              value={rawRuleJson}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Raw context_terms JSON</Label>
-            <Textarea
-              className="min-h-[160px] font-mono text-xs"
-              disabled={readOnly}
-              onChange={(event) => setRawTermsJson(event.target.value)}
-              value={rawTermsJson}
-            />
-          </div>
-
-          {advancedError && <p className="text-xs text-destructive">{advancedError}</p>}
-
-          <div className="flex justify-end">
-            <Button
-              disabled={readOnly}
-              onClick={applyAdvancedJson}
-              size="sm"
-              type="button"
-              variant="outline"
+        <div className="mt-4 space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field
+              helper="Internal identity key. Change carefully if this draft is meant to update an existing rule."
+              label="Stable key"
             >
-              Apply JSON to form
-            </Button>
+              <Input
+                disabled={readOnly}
+                onChange={(event) => updateRuleField("stable_key", event.target.value)}
+                value={draft.rule.stable_key ?? ""}
+              />
+            </Field>
+
+            <Field
+              helper="Higher numbers generally win when multiple rules match."
+              label="Priority"
+            >
+              <Input
+                disabled={readOnly}
+                onChange={(event) => updateRuleField("priority", toNumber(event.target.value, 0))}
+                type="number"
+                value={draft.rule.priority ?? 0}
+              />
+            </Field>
+          </div>
+
+          <div className="space-y-3 rounded-xl border border-border/80 bg-background p-4">
+            <div className="space-y-1">
+              <h4 className="text-sm font-semibold text-foreground">Raw JSON</h4>
+              <p className="text-xs text-muted-foreground">
+                Use only for debugging or complex edits that are not represented by the simplified form.
+              </p>
+            </div>
+
+            <Field label="Raw `draft.rule` JSON">
+              <Textarea
+                className="min-h-[180px] font-mono text-xs"
+                disabled={readOnly}
+                onChange={(event) => setRawRuleJson(event.target.value)}
+                value={rawRuleJson}
+              />
+            </Field>
+
+            <Field label="Raw `context_terms` JSON">
+              <Textarea
+                className="min-h-[160px] font-mono text-xs"
+                disabled={readOnly}
+                onChange={(event) => setRawTermsJson(event.target.value)}
+                value={rawTermsJson}
+              />
+            </Field>
+
+            {advancedError ? <InlineErrorText>{advancedError}</InlineErrorText> : null}
+
+            <div className="flex justify-end">
+              <AppButton
+                disabled={readOnly}
+                onClick={applyAdvancedJson}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                Apply JSON to form
+              </AppButton>
+            </div>
           </div>
         </div>
       </details>
 
-      {readOnly && (
-        <p className="text-xs text-muted-foreground">
-          Draft is read-only because suggestion is no longer in draft status.
-        </p>
-      )}
+      {readOnly ? (
+        <FieldHelpText>
+          Draft is read-only because the suggestion is no longer in draft status.
+        </FieldHelpText>
+      ) : null}
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({
+  label,
+  helper,
+  className,
+  children,
+}: {
+  label: string;
+  helper?: string;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <div className="space-y-1.5">
+    <div className={`space-y-1.5 ${className ?? ""}`}>
       <Label>{label}</Label>
       {children}
+      {helper ? <FieldHelpText>{helper}</FieldHelpText> : null}
     </div>
   );
 }
-

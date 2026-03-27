@@ -1,3 +1,8 @@
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppLoadingState } from "@/shared/ui/app-loading-state";
+import { EmptyState } from "@/shared/ui/empty-state";
+import { StatusBadge } from "@/shared/ui/status-badge";
+import { TechnicalDetailsAccordion } from "@/shared/ui/technical-details-accordion";
 import { Card } from "@/shared/ui/card";
 import { formatDate } from "@/features/suggestions/components/StatusBadge";
 import type { RuleSuggestionLogOut } from "@/features/suggestions/types";
@@ -40,19 +45,31 @@ export function SuggestionLogs({
   errorMessage,
 }: SuggestionLogsProps) {
   if (isLoading) {
-    return <Card className="p-4 text-sm text-muted-foreground">Loading logs...</Card>;
+    return (
+      <AppLoadingState
+        compact
+        description="Loading activity history for this suggestion."
+        title="Loading logs"
+      />
+    );
   }
 
   if (isError) {
-    return <Card className="p-4 text-sm text-destructive">{errorMessage ?? "Failed to load logs."}</Card>;
+    return (
+      <AppAlert
+        description={errorMessage ?? "Failed to load logs."}
+        title="Logs unavailable"
+        variant="error"
+      />
+    );
   }
 
   if (logs.length === 0) {
     return (
-      <Card className="p-4 text-center">
-        <p className="text-sm font-medium">No logs</p>
-        <p className="mt-1 text-xs text-muted-foreground">No audit records available for this suggestion.</p>
-      </Card>
+      <EmptyState
+        description="Activity history will appear here as this suggestion moves through the workflow."
+        title="No logs yet"
+      />
     );
   }
 
@@ -63,8 +80,8 @@ export function SuggestionLogs({
         return (
           <Card className="space-y-3 p-3" key={log.id}>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="space-x-2">
-                <span className="text-sm font-semibold">{log.action}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge label={log.action} />
                 <span className="text-xs text-muted-foreground">{formatDate(log.created_at)}</span>
               </div>
               <span className="text-xs text-muted-foreground">actor: {log.actor_user_id}</span>
@@ -80,19 +97,19 @@ export function SuggestionLogs({
               </div>
             )}
 
-            <details className="rounded-md border p-2 text-xs">
-              <summary className="cursor-pointer font-medium text-muted-foreground">before_json</summary>
-              <pre className="mt-2 overflow-x-auto rounded bg-muted p-2 text-[11px]">
-                {JSON.stringify(log.before_json ?? null, null, 2)}
-              </pre>
-            </details>
-
-            <details className="rounded-md border p-2 text-xs">
-              <summary className="cursor-pointer font-medium text-muted-foreground">after_json</summary>
-              <pre className="mt-2 overflow-x-auto rounded bg-muted p-2 text-[11px]">
-                {JSON.stringify(log.after_json ?? null, null, 2)}
-              </pre>
-            </details>
+            <TechnicalDetailsAccordion
+              sections={[
+                {
+                  title: "Before snapshot",
+                  data: log.before_json ?? null,
+                },
+                {
+                  title: "After snapshot",
+                  data: log.after_json ?? null,
+                },
+              ]}
+              title="Technical details"
+            />
           </Card>
         );
       })}

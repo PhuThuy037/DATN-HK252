@@ -1,23 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Archive, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { Button } from "@/shared/ui/button";
-import { Input } from "@/shared/ui/input";
+import { AppButton } from "@/shared/ui/app-button";
 import type { ConversationListItem as ConversationListItemType } from "@/shared/types";
 
 type ConversationListItemProps = {
   item: ConversationListItemType;
   isActive: boolean;
-  isRenaming: boolean;
-  isRenameSubmitting?: boolean;
-  renameError?: string | null;
-  renameValue: string;
   onOpen: (conversationId: string) => void;
-  onRenameChange: (value: string) => void;
-  onRenameCancel: () => void;
-  onRenameStart: (item: ConversationListItemType) => void;
-  onRenameSubmit: () => void;
-  onArchive: (item: ConversationListItemType) => void;
+  onRename: (item: ConversationListItemType) => void;
   onDelete: (item: ConversationListItemType) => void;
 };
 
@@ -34,19 +25,19 @@ function formatDateTime(value: string) {
   });
 }
 
+function getPreviewText(item: ConversationListItemType) {
+  const preview = item.last_message_preview?.trim();
+  if (preview) {
+    return preview;
+  }
+  return "Open the conversation to continue the thread.";
+}
+
 export function ConversationListItem({
   item,
   isActive,
-  isRenaming,
-  isRenameSubmitting = false,
-  renameError,
-  renameValue,
   onOpen,
-  onRenameChange,
-  onRenameCancel,
-  onRenameStart,
-  onRenameSubmit,
-  onArchive,
+  onRename,
   onDelete,
 }: ConversationListItemProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -66,135 +57,85 @@ export function ConversationListItem({
   return (
     <div
       className={cn(
-        "group rounded-xl border p-2.5 transition-colors",
+        "group relative rounded-2xl border transition-all duration-150",
         isActive
-          ? "border-primary/60 bg-primary/10 shadow-sm"
-          : "border-border/70 bg-background hover:border-border hover:bg-muted/50"
+          ? "border-primary/35 bg-primary/10 shadow-app-sm"
+          : "border-transparent bg-background/70 hover:-translate-y-px hover:border-border/80 hover:bg-background hover:shadow-app-sm"
       )}
     >
-      <div className="flex items-start gap-1">
-        {isRenaming ? (
-          <div className="min-w-0 flex-1 rounded-lg border bg-background px-2 py-2">
-            <Input
-              autoFocus
-              className="h-8 text-sm"
-              maxLength={300}
-              onChange={(event) => onRenameChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  onRenameSubmit();
-                }
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  onRenameCancel();
-                }
-              }}
-              placeholder="Conversation name"
-              value={renameValue}
-            />
-            {renameError && <p className="mt-1 text-xs text-destructive">{renameError}</p>}
-            <div className="mt-2 flex justify-end gap-1">
-              <Button
-                disabled={isRenameSubmitting}
-                onClick={onRenameCancel}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                Cancel
-              </Button>
-              <Button
-                disabled={
-                  isRenameSubmitting ||
-                  !renameValue.trim() ||
-                  renameValue.trim().length > 300
-                }
-                onClick={onRenameSubmit}
-                size="sm"
-                type="button"
-              >
-                {isRenameSubmitting ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <button
-            className="min-w-0 flex-1 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/70"
-            onClick={() => onOpen(item.id)}
-            type="button"
-          >
-            <p className="truncate text-sm font-medium leading-5">
+      <button
+        className="block w-full rounded-2xl px-4 py-3 text-left"
+        onClick={() => onOpen(item.id)}
+        type="button"
+      >
+        <div className="pr-10">
+          <div className="flex items-start justify-between gap-3">
+            <p className="truncate text-sm font-semibold leading-5 text-foreground">
               {item.title?.trim() || "Untitled conversation"}
             </p>
-            <p className="mt-1 text-[11px] text-muted-foreground">
+            <span className="shrink-0 text-[11px] text-muted-foreground">
               {formatDateTime(item.updated_at)}
-            </p>
-          </button>
-        )}
+            </span>
+          </div>
 
-        {!isRenaming && (
-          <div className="relative" ref={menuRef}>
-            <Button
-              aria-expanded={isMenuOpen}
-              aria-haspopup="menu"
-              aria-label="Open conversation actions"
-              className={cn(
-                "h-7 w-7 transition-opacity",
-                "opacity-0 group-hover:opacity-100",
-                (isActive || isMenuOpen) && "opacity-100"
-              )}
+          <p className="mt-1 max-h-10 overflow-hidden text-xs leading-5 text-muted-foreground">
+            {getPreviewText(item)}
+          </p>
+        </div>
+      </button>
+
+      <div className="absolute right-3 top-3" ref={menuRef}>
+        <AppButton
+          aria-expanded={isMenuOpen}
+          aria-haspopup="menu"
+          aria-label="Open conversation actions"
+          className={cn(
+            "h-8 w-8 rounded-full px-0 transition-opacity",
+            "opacity-0 group-hover:opacity-100",
+            (isActive || isMenuOpen) && "opacity-100"
+          )}
+          onClick={(event) => {
+            event.stopPropagation();
+            setIsMenuOpen((prev) => !prev);
+          }}
+          size="icon"
+          type="button"
+          variant="secondary"
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </AppButton>
+
+        {isMenuOpen && (
+          <div
+            className="absolute right-0 top-10 z-20 min-w-[150px] rounded-xl border border-border/80 bg-background p-1.5 shadow-app-md"
+            role="menu"
+          >
+            <button
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-muted"
               onClick={(event) => {
                 event.stopPropagation();
-                setIsMenuOpen((prev) => !prev);
+                setIsMenuOpen(false);
+                onRename(item);
               }}
-              size="icon"
+              role="menuitem"
               type="button"
-              variant="ghost"
             >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-
-            {isMenuOpen && (
-              <div className="absolute right-0 top-8 z-20 min-w-[150px] rounded-md border bg-background p-1 shadow-lg">
-                <button
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-accent"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setIsMenuOpen(false);
-                    onRenameStart(item);
-                  }}
-                  type="button"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  Rename
-                </button>
-                <button
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-accent"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setIsMenuOpen(false);
-                    onArchive(item);
-                  }}
-                  type="button"
-                >
-                  <Archive className="h-3.5 w-3.5" />
-                  Archive
-                </button>
-                <button
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setIsMenuOpen(false);
-                    onDelete(item);
-                  }}
-                  type="button"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete
-                </button>
-              </div>
-            )}
+              <Pencil className="h-3.5 w-3.5" />
+              Rename
+            </button>
+            <button
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-danger transition-colors hover:bg-danger-muted"
+              onClick={(event) => {
+                event.stopPropagation();
+                setIsMenuOpen(false);
+                onDelete(item);
+              }}
+              role="menuitem"
+              type="button"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete
+            </button>
           </div>
         )}
       </div>

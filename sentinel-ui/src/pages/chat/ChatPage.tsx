@@ -8,6 +8,9 @@ import { MessageList } from "@/features/messages/components/MessageList";
 import { useInfiniteMessages } from "@/features/messages/hooks/useInfiniteMessages";
 import { useSendMessage } from "@/features/messages/hooks/useSendMessage";
 import { useChatUiStore } from "@/features/messages/store/chatUiStore";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppLoadingState } from "@/shared/ui/app-loading-state";
+import { AppPageHeader } from "@/shared/ui/app-page-header";
 import { Card } from "@/shared/ui/card";
 import { toast } from "@/shared/ui/use-toast";
 import type { MessageListItem } from "@/shared/types";
@@ -192,11 +195,18 @@ export function ChatPage() {
       <section className="flex h-full items-center justify-center p-6">
         <div className="w-full max-w-xl">
           {conversationsQuery.isLoading && (
-            <p className="text-sm text-muted-foreground">Loading conversations...</p>
+            <AppLoadingState
+              description="Loading recent conversations for this workspace."
+              title="Loading conversations"
+            />
           )}
 
           {conversationsQuery.isError && (
-            <p className="text-sm text-destructive">Failed to load conversations.</p>
+            <AppAlert
+              description="We couldn't load the conversation list. Please try again."
+              title="Conversation list unavailable"
+              variant="error"
+            />
           )}
 
           {!conversationsQuery.isLoading &&
@@ -216,32 +226,32 @@ export function ChatPage() {
     return (
       <section className="flex h-full items-center justify-center p-6">
         <div className="w-full max-w-xl">
-          <Card className="p-6">
-            <h2 className="text-base font-semibold">Conversation not found</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              This conversation does not exist or you do not have access.
-            </p>
-          </Card>
+          <AppAlert
+            description="This conversation does not exist or you do not have access."
+            title="Conversation not found"
+            variant="error"
+          />
         </div>
       </section>
     );
   }
 
   return (
-    <section className="flex h-full min-h-0 flex-col bg-background">
-      <header className="shrink-0 border-b px-6 py-4">
-        <h2 className="text-base font-semibold">
-          {conversationQuery.isLoading
-            ? "Loading conversation..."
-            : conversationQuery.data?.title?.trim() || "Untitled conversation"}
-        </h2>
-        <p className="text-xs text-muted-foreground">
-          Conversation ID: {conversationId}
-        </p>
+    <section className="flex h-full min-h-0 flex-col bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,1))]">
+      <header className="shrink-0 border-b border-border/70 bg-background/80 px-5 py-4 backdrop-blur lg:px-6">
+        <AppPageHeader
+          meta={`Conversation ID: ${conversationId}`}
+          subtitle="Select any message to inspect its compliance summary and matched rules."
+          title={
+            conversationQuery.isLoading
+              ? "Loading conversation"
+              : conversationQuery.data?.title?.trim() || "Untitled conversation"
+          }
+        />
       </header>
 
-      <div className="min-h-0 flex-1 p-4">
-        <Card className="h-full overflow-hidden rounded-2xl">
+      <div className="min-h-0 flex-1 px-3 py-3 lg:px-4 lg:py-4">
+        <Card className="h-full overflow-hidden rounded-[30px] border-border/80 bg-background/88 shadow-app-md">
           <MessageList
             failedMessageIds={failedMessageIds}
             isError={messagesQuery.isError}
@@ -259,7 +269,7 @@ export function ChatPage() {
         </Card>
       </div>
 
-      <footer className="shrink-0 border-t bg-background px-4 py-4">
+      <footer className="shrink-0 border-t border-border/70 bg-background/85 px-3 py-3 backdrop-blur lg:px-4 lg:py-4">
         <MessageComposer
           disabled={!conversationId}
           isSending={sendMessageMutation.isPending}

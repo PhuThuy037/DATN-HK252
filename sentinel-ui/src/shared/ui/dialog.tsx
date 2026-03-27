@@ -10,7 +10,7 @@ export function DialogTrigger(props: React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 export function DialogContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("rounded-lg border bg-background p-4 shadow", className)} {...props} />;
+  return <div className={cn("app-modal-panel p-4", className)} {...props} />;
 }
 
 export function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

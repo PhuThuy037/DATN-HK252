@@ -5,7 +5,6 @@ import {
   Scale,
   MessagesSquare,
   WandSparkles,
-  FileText,
   SlidersHorizontal,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -21,8 +20,16 @@ import { useDeleteConversation } from "@/features/conversations/hooks/useDeleteC
 import { useUpdateConversation } from "@/features/conversations/hooks/useUpdateConversation";
 import { useRuleSetStore } from "@/features/rules/store/ruleSetStore";
 import { cn } from "@/shared/lib/utils";
-import { Button } from "@/shared/ui/button";
-import { Card } from "@/shared/ui/card";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppButton } from "@/shared/ui/app-button";
+import { AppLoadingState } from "@/shared/ui/app-loading-state";
+import { AppModal } from "@/shared/ui/app-modal";
+import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
+import { EmptyState } from "@/shared/ui/empty-state";
+import { FieldHelpText } from "@/shared/ui/field-help-text";
+import { Input } from "@/shared/ui/input";
+import { InlineErrorText } from "@/shared/ui/inline-error-text";
+import { Label } from "@/shared/ui/label";
 import { ScrollArea } from "@/shared/ui/scroll-area";
 import { toast } from "@/shared/ui/use-toast";
 import type { ConversationListItem as ConversationListItemType } from "@/shared/types";
@@ -48,9 +55,8 @@ export function ConversationSidebar({
   const setRuleSetResolved = useRuleSetStore((state) => state.setRuleSetResolved);
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [renamingConversationId, setRenamingConversationId] = useState<string | null>(
-    null
-  );
+  const [renamingConversation, setRenamingConversation] = useState<ConversationListItemType | null>(null);
+  const [conversationPendingDelete, setConversationPendingDelete] = useState<ConversationListItemType | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
 
@@ -68,7 +74,7 @@ export function ConversationSidebar({
     createConversationMutation.isPending ||
     updateConversationMutation.isPending ||
     deleteConversationMutation.isPending;
-  const CONVERSATION_TITLE_MAX_LENGTH = 300;
+  const conversationTitleMaxLength = 300;
 
   const handleOpenConversation = (conversationId: string) => {
     navigate(`/app/chat/${conversationId}`);
@@ -101,17 +107,16 @@ export function ConversationSidebar({
     "/app/settings/system-prompt"
   );
   const isSuggestionsRoute = location.pathname.startsWith("/app/suggestions");
-  const isPoliciesRoute = location.pathname.startsWith("/app/policies");
   const isChatRoute = location.pathname.startsWith("/app/chat");
 
   const startRenameConversation = (item: ConversationListItemType) => {
-    setRenamingConversationId(item.id);
+    setRenamingConversation(item);
     setRenameDraft(item.title?.trim() || "");
     setRenameError(null);
   };
 
   const cancelRenameConversation = () => {
-    setRenamingConversationId(null);
+    setRenamingConversation(null);
     setRenameDraft("");
     setRenameError(null);
   };
@@ -135,7 +140,7 @@ export function ConversationSidebar({
       setRenameError("Conversation name cannot be empty.");
       return;
     }
-    if (trimmed.length > CONVERSATION_TITLE_MAX_LENGTH) {
+    if (trimmed.length > conversationTitleMaxLength) {
       setRenameError("Conversation name is too long.");
       return;
     }
@@ -143,7 +148,7 @@ export function ConversationSidebar({
   };
 
   const submitRenameConversation = async () => {
-    if (!renamingConversationId) {
+    if (!renamingConversation) {
       return;
     }
     const normalized = renameDraft.trim();
@@ -151,14 +156,14 @@ export function ConversationSidebar({
       setRenameError("Conversation name cannot be empty.");
       return;
     }
-    if (normalized.length > CONVERSATION_TITLE_MAX_LENGTH) {
+    if (normalized.length > conversationTitleMaxLength) {
       setRenameError("Conversation name is too long.");
       return;
     }
 
     try {
       await updateConversationMutation.mutateAsync({
-        conversationId: renamingConversationId,
+        conversationId: renamingConversation.id,
         payload: { title: normalized },
       });
       toast({
@@ -178,49 +183,25 @@ export function ConversationSidebar({
     }
   };
 
-  const handleArchiveConversation = async (item: ConversationListItemType) => {
-    try {
-      await updateConversationMutation.mutateAsync({
-        conversationId: item.id,
-        payload: { status: "archived" },
-      });
-      toast({
-        title: "Conversation archived",
-        description: "Conversation moved out of active list.",
-        variant: "success",
-      });
-
-      if (activeConversationId === item.id) {
-        navigate("/app/chat");
-        onConversationSelect?.();
-      }
-    } catch (error) {
-      toast({
-        title: "Archive failed",
-        description: extractAuthErrorMessage(error),
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleDeleteConversation = async (item: ConversationListItemType) => {
-    const confirmed = window.confirm("Delete this conversation?");
-    if (!confirmed) {
+  const handleDeleteConversation = async () => {
+    if (!conversationPendingDelete) {
       return;
     }
 
     try {
-      await deleteConversationMutation.mutateAsync(item.id);
+      await deleteConversationMutation.mutateAsync(conversationPendingDelete.id);
       toast({
         title: "Conversation deleted",
         description: "Conversation removed successfully.",
         variant: "success",
       });
 
-      if (activeConversationId === item.id) {
+      if (activeConversationId === conversationPendingDelete.id) {
         navigate("/app/chat");
         onConversationSelect?.();
       }
+
+      setConversationPendingDelete(null);
     } catch (error) {
       toast({
         title: "Delete failed",
@@ -248,160 +229,220 @@ export function ConversationSidebar({
     }
   };
 
+  const navButtonClassName = "h-10 justify-start rounded-xl text-sm";
+
   return (
-    <aside className={cn("flex h-full flex-col border-r bg-muted/30 p-3", className)}>
-      <div className="mb-3">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <h1 className="text-base font-semibold">Sentinel Workspace</h1>
-            <p className="text-xs text-muted-foreground">{user?.email ?? "User"}</p>
-            {currentRuleSet?.name && (
-              <p className="text-xs text-muted-foreground">
-                Rule set: {currentRuleSet.name}
-              </p>
-            )}
+    <>
+      <aside className={cn("flex h-full flex-col border-r bg-muted/20 p-3", className)}>
+        <div className="mb-4 rounded-2xl border border-border/70 bg-background px-4 py-4 shadow-app-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-base font-semibold">Sentinel Workspace</h1>
+              <p className="truncate text-xs text-muted-foreground">{user?.email ?? "User"}</p>
+              {currentRuleSet?.name && (
+                <p className="truncate text-xs text-muted-foreground">
+                  Rule set: {currentRuleSet.name}
+                </p>
+              )}
+            </div>
+            <AppButton
+              disabled={isLoggingOut}
+              onClick={() => void handleLogout()}
+              size="sm"
+              type="button"
+              variant="secondary"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Logout
+            </AppButton>
           </div>
-          <Button
-            disabled={isLoggingOut}
-            onClick={() => void handleLogout()}
+        </div>
+
+        <AppButton
+          className="mb-3 w-full justify-start rounded-xl"
+          disabled={isMutating}
+          onClick={() => void handleCreateConversation()}
+          type="button"
+        >
+          <MessageSquarePlus className="h-4 w-4" />
+          New conversation
+        </AppButton>
+
+        <div className="mb-3 grid grid-cols-1 gap-2">
+          <AppButton
+            className={navButtonClassName}
+            onClick={() => {
+              navigate("/app/chat");
+              onConversationSelect?.();
+            }}
             size="sm"
             type="button"
-            variant="outline"
+            variant={isChatRoute ? "primary" : "secondary"}
           >
-            <LogOut className="mr-1 h-3.5 w-3.5" />
-            Logout
-          </Button>
+            <MessagesSquare className="h-4 w-4" />
+            Chat
+          </AppButton>
+          <AppButton
+            className={navButtonClassName}
+            onClick={() => {
+              navigate("/app/settings/rules");
+              onConversationSelect?.();
+            }}
+            size="sm"
+            type="button"
+            variant={isRulesRoute ? "primary" : "secondary"}
+          >
+            <Scale className="h-4 w-4" />
+            Rules
+          </AppButton>
+          <AppButton
+            className={navButtonClassName}
+            onClick={() => {
+              navigate("/app/settings/system-prompt");
+              onConversationSelect?.();
+            }}
+            size="sm"
+            type="button"
+            variant={isSystemPromptRoute ? "primary" : "secondary"}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            System Prompt
+          </AppButton>
+          <AppButton
+            className={navButtonClassName}
+            onClick={() => {
+              navigate("/app/suggestions");
+              onConversationSelect?.();
+            }}
+            size="sm"
+            type="button"
+            variant={isSuggestionsRoute ? "primary" : "secondary"}
+          >
+            <WandSparkles className="h-4 w-4" />
+            Suggestions
+          </AppButton>
         </div>
-      </div>
 
-      <Button
-        className="mb-3 w-full justify-start"
-        disabled={isMutating}
-        onClick={() => void handleCreateConversation()}
-        type="button"
-      >
-        <MessageSquarePlus className="mr-2 h-4 w-4" />
-        New conversation
-      </Button>
+        <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border/70 bg-background shadow-app-sm">
+          <div className="border-b border-border/70 px-4 py-3">
+            <p className="text-sm font-semibold">Conversations</p>
+            <p className="text-xs text-muted-foreground">Recent chat threads and workspace history.</p>
+          </div>
 
-      <div className="mb-3 grid grid-cols-1 gap-2">
-        <Button
-          className="justify-start"
-          onClick={() => {
-            navigate("/app/chat");
-            onConversationSelect?.();
-          }}
-          size="sm"
-          type="button"
-          variant={isChatRoute ? "default" : "outline"}
-        >
-          <MessagesSquare className="mr-2 h-4 w-4" />
-          Chat
-        </Button>
-        <Button
-          className="justify-start"
-          onClick={() => {
-            navigate("/app/settings/rules");
-            onConversationSelect?.();
-          }}
-          size="sm"
-          type="button"
-          variant={isRulesRoute ? "default" : "outline"}
-        >
-          <Scale className="mr-2 h-4 w-4" />
-          Rules
-        </Button>
-        <Button
-          className="justify-start"
-          onClick={() => {
-            navigate("/app/settings/system-prompt");
-            onConversationSelect?.();
-          }}
-          size="sm"
-          type="button"
-          variant={isSystemPromptRoute ? "default" : "outline"}
-        >
-          <SlidersHorizontal className="mr-2 h-4 w-4" />
-          System Prompt
-        </Button>
-        <Button
-          className="justify-start"
-          onClick={() => {
-            navigate("/app/suggestions");
-            onConversationSelect?.();
-          }}
-          size="sm"
-          type="button"
-          variant={isSuggestionsRoute ? "default" : "outline"}
-        >
-          <WandSparkles className="mr-2 h-4 w-4" />
-          Suggestions
-        </Button>
-        <Button
-          className="justify-start"
-          onClick={() => {
-            navigate("/app/policies");
-            onConversationSelect?.();
-          }}
-          size="sm"
-          type="button"
-          variant={isPoliciesRoute ? "default" : "outline"}
-        >
-          <FileText className="mr-2 h-4 w-4" />
-          Policies
-        </Button>
-      </div>
-
-      <Card className="min-h-0 flex-1 overflow-hidden p-2">
-        <ScrollArea className="h-full">
-          <div className="space-y-2.5 pb-2">
-            {conversationsQuery.isLoading && (
-              <p className="px-2 py-1 text-xs text-muted-foreground">
-                Loading conversations...
-              </p>
-            )}
-
-            {conversationsQuery.isError && (
-              <p className="px-2 py-1 text-xs text-destructive">
-                Failed to load conversations.
-              </p>
-            )}
-
-            {!conversationsQuery.isLoading &&
-              !conversationsQuery.isError &&
-              conversations.length === 0 && (
-                <div className="rounded-lg border border-dashed px-3 py-4 text-center">
-                  <p className="text-sm font-medium">No conversations</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Create a new conversation to get started.
-                  </p>
-                </div>
+          <ScrollArea className="h-full">
+            <div className="space-y-2 p-3 pb-6">
+              {conversationsQuery.isLoading && (
+                <AppLoadingState
+                  compact
+                  description="Loading recent chat threads."
+                  title="Loading conversations"
+                />
               )}
 
-            {conversations.map((item) => (
-              <ConversationListItem
-                isActive={activeConversationId === item.id}
-                isRenameSubmitting={
-                  updateConversationMutation.isPending &&
-                  renamingConversationId === item.id
-                }
-                isRenaming={renamingConversationId === item.id}
-                item={item}
-                key={item.id}
-                onArchive={(value) => void handleArchiveConversation(value)}
-                onDelete={(value) => void handleDeleteConversation(value)}
-                onOpen={handleOpenConversation}
-                onRenameCancel={cancelRenameConversation}
-                onRenameChange={updateRenameDraft}
-                onRenameStart={startRenameConversation}
-                onRenameSubmit={() => void submitRenameConversation()}
-                renameError={renamingConversationId === item.id ? renameError : null}
-                renameValue={renamingConversationId === item.id ? renameDraft : ""}
-              />
-            ))}
+              {conversationsQuery.isError && (
+                <AppAlert
+                  description="Failed to load conversations."
+                  title="Conversation list unavailable"
+                  variant="error"
+                />
+              )}
+
+              {!conversationsQuery.isLoading &&
+                !conversationsQuery.isError &&
+                conversations.length === 0 && (
+                  <EmptyState
+                    description="Create a new conversation to start chatting."
+                    title="No conversations yet"
+                  />
+                )}
+
+              {conversations.map((item) => (
+                <ConversationListItem
+                  isActive={activeConversationId === item.id}
+                  item={item}
+                  key={item.id}
+                  onDelete={setConversationPendingDelete}
+                  onOpen={handleOpenConversation}
+                  onRename={startRenameConversation}
+                />
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      </aside>
+
+      <AppModal
+        description="Choose a clear title so this thread is easier to find later."
+        footer={
+          <div className="flex justify-end gap-2">
+            <AppButton onClick={cancelRenameConversation} type="button" variant="secondary">
+              Cancel
+            </AppButton>
+            <AppButton
+              disabled={
+                updateConversationMutation.isPending ||
+                !renameDraft.trim() ||
+                renameDraft.trim().length > conversationTitleMaxLength
+              }
+              onClick={() => void submitRenameConversation()}
+              type="button"
+            >
+              {updateConversationMutation.isPending ? "Saving..." : "Save changes"}
+            </AppButton>
           </div>
-        </ScrollArea>
-      </Card>
-    </aside>
+        }
+        onClose={cancelRenameConversation}
+        open={Boolean(renamingConversation)}
+        size="sm"
+        title="Rename conversation"
+      >
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="conversation-rename-input" required>
+              Conversation name
+            </Label>
+          <Input
+            autoFocus
+            id="conversation-rename-input"
+            maxLength={conversationTitleMaxLength}
+            onChange={(event) => updateRenameDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void submitRenameConversation();
+              }
+            }}
+            placeholder="Conversation name"
+            value={renameDraft}
+          />
+            <FieldHelpText>Use a short, recognizable title so the thread is easier to find later.</FieldHelpText>
+          </div>
+          <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+            <span>{renameDraft.trim().length}/{conversationTitleMaxLength}</span>
+            {renamingConversation && (
+              <span className="truncate">Current: {renamingConversation.title?.trim() || "Untitled conversation"}</span>
+            )}
+          </div>
+          {renameError ? <InlineErrorText>{renameError}</InlineErrorText> : null}
+        </div>
+      </AppModal>
+
+      <ConfirmDialog
+        confirmLabel={deleteConversationMutation.isPending ? "Deleting..." : "Delete conversation"}
+        confirmVariant="danger"
+        description={
+          conversationPendingDelete
+            ? `Delete "${conversationPendingDelete.title?.trim() || "Untitled conversation"}"? This cannot be undone.`
+            : undefined
+        }
+        isBusy={deleteConversationMutation.isPending}
+        onClose={() => setConversationPendingDelete(null)}
+        onConfirm={() => {
+          void handleDeleteConversation();
+        }}
+        open={Boolean(conversationPendingDelete)}
+        title="Delete conversation?"
+      />
+    </>
   );
 }

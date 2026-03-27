@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "@/shared/lib/utils";
+import { appControlClassName } from "@/shared/ui/design-tokens";
 
 export const Textarea = React.forwardRef<
   HTMLTextAreaElement,
@@ -8,7 +9,8 @@ export const Textarea = React.forwardRef<
   return (
     <textarea
       className={cn(
-        "min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring",
+        appControlClassName,
+        "min-h-20 h-auto resize-y py-3 leading-6",
         className
       )}
       ref={ref}

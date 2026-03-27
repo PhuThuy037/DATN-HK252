@@ -1,20 +1,25 @@
 import {
   FormEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   useEffect,
-  useId,
   useMemo,
-  useRef,
   useState,
 } from "react";
+import { Eye, Pencil, ShieldCheck, ShieldEllipsis, ShieldX, Trash2 } from "lucide-react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { Badge } from "@/shared/ui/badge";
-import { Button } from "@/shared/ui/button";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppButton } from "@/shared/ui/app-button";
+import { AppLoadingState } from "@/shared/ui/app-loading-state";
+import { AppModal } from "@/shared/ui/app-modal";
+import { AppPageHeader } from "@/shared/ui/app-page-header";
+import { AppSectionCard } from "@/shared/ui/app-section-card";
 import { Card } from "@/shared/ui/card";
+import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
+import { EmptyState } from "@/shared/ui/empty-state";
 import { cn } from "@/shared/lib/utils";
-import { ScrollArea } from "@/shared/ui/scroll-area";
+import { StatusBadge } from "@/shared/ui/status-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/tabs";
+import { TechnicalDetailsAccordion } from "@/shared/ui/technical-details-accordion";
 import { Textarea } from "@/shared/ui/textarea";
 import { toast } from "@/shared/ui/use-toast";
 import { RuleForm } from "@/features/rules/components/RuleForm";
@@ -32,7 +37,9 @@ import { useRuleSetStore } from "@/features/rules/store/ruleSetStore";
 import type {
   CreateRuleRequest,
   DebugEvaluateResponse,
+  EffectiveRule,
   Rule,
+  RuleChangeLog,
   RuleDebugMatch,
   UpdateRuleRequest,
 } from "@/features/rules/types";
@@ -42,6 +49,10 @@ type RulesPageLocationState = {
   openEditForRuleId?: string;
   source?: string;
 };
+
+type RulesTab = "my-rules" | "global-rules" | "effective-rules" | "change-logs" | "debug";
+type StatusTone = "primary" | "success" | "warning" | "danger" | "muted";
+const RULES_PAGE_LIMIT = 20;
 
 function formatDateTime(value?: string) {
   if (!value) {
@@ -57,6 +68,58 @@ function formatDateTime(value?: string) {
 function isGlobalRule(rule: Rule) {
   const origin = (rule.origin ?? "").toLowerCase();
   return origin.includes("global") || origin.includes("override");
+}
+
+function formatRuleTypeLabel(global: boolean) {
+  return global ? "Global" : "Custom";
+}
+
+function formatSeverityLabel(value?: string | null) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return "Unknown";
+  }
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function formatScopeLabel(value?: string | null) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return "Unknown";
+  }
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function getActionTone(action?: string | null): StatusTone {
+  switch (String(action ?? "").trim().toLowerCase()) {
+    case "allow":
+      return "success";
+    case "mask":
+      return "warning";
+    case "block":
+      return "danger";
+    case "warn":
+      return "primary";
+    default:
+      return "muted";
+  }
+}
+
+function getSeverityTone(severity?: string | null): StatusTone {
+  switch (String(severity ?? "").trim().toLowerCase()) {
+    case "high":
+      return "danger";
+    case "medium":
+      return "warning";
+    case "low":
+      return "success";
+    default:
+      return "muted";
+  }
+}
+
+function getRuleTypeTone(global: boolean): StatusTone {
+  return global ? "primary" : "muted";
 }
 
 function hasRuleFormFieldErrorResponse(error: unknown) {
@@ -80,134 +143,133 @@ function RuleModal({
   open,
   onClose,
   children,
+  footer,
+  requireExplicitClose = false,
 }: {
   title: string;
   open: boolean;
   onClose: () => void;
   children: ReactNode;
+  footer?: ReactNode;
+  requireExplicitClose?: boolean;
 }) {
-  if (!open) {
-    return null;
-  }
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto p-5">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">{title}</h3>
-          <Button onClick={onClose} size="sm" type="button" variant="outline">
-            Close
-          </Button>
-        </div>
-        {children}
-      </Card>
+    <AppModal
+      closeOnEscape={!requireExplicitClose}
+      closeOnOverlayClick={!requireExplicitClose}
+      footer={footer}
+      onClose={onClose}
+      open={open}
+      size="xl"
+      title={title}
+    >
+      {children}
+    </AppModal>
+  );
+}
+
+function RuleEnabledControl({
+  enabled,
+  disabled,
+  onToggle,
+}: {
+  enabled: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <StatusBadge status={enabled ? "enabled" : "disabled"} />
+      <AppButton
+        className="h-8 rounded-full px-3 text-xs"
+        disabled={disabled}
+        onClick={onToggle}
+        size="sm"
+        type="button"
+        variant="secondary"
+      >
+        {enabled ? "Disable" : "Enable"}
+      </AppButton>
     </div>
   );
 }
 
-function DeleteRuleDialog({
-  rule,
-  isDeleting,
-  open,
-  onCancel,
-  onConfirm,
-}: {
-  rule: Rule | null;
-  isDeleting: boolean;
-  open: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const titleId = useId();
-  const descriptionId = useId();
-  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCancel();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    cancelButtonRef.current?.focus();
-
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [onCancel, open]);
-
-  if (!open || !rule) {
-    return null;
+function getRuleActionIcon(action?: string | null) {
+  const normalized = String(action ?? "").trim().toLowerCase();
+  if (normalized === "allow") {
+    return <ShieldCheck className="h-4 w-4 text-success" />;
   }
+  if (normalized === "mask") {
+    return <ShieldEllipsis className="h-4 w-4 text-warning" />;
+  }
+  if (normalized === "block") {
+    return <ShieldX className="h-4 w-4 text-danger" />;
+  }
+  return null;
+}
 
-  const handleOverlayKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onCancel();
-    }
-  };
+function RuleDetailsPanel({ rule }: { rule: Rule }) {
+  const global = isGlobalRule(rule);
 
   return (
-    <div
-      aria-describedby={descriptionId}
-      aria-labelledby={titleId}
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onCancel}
-      onKeyDown={handleOverlayKeyDown}
-      role="dialog"
-    >
-      <Card
-        className="w-full max-w-md space-y-4 p-5 shadow-lg"
-        onClick={(event) => event.stopPropagation()}
+    <div className="space-y-4">
+      <AppSectionCard
+        description={rule.description?.trim() || "No description provided for this rule."}
+        title={rule.name}
       >
-        <div className="space-y-2">
-          <h3 className="text-lg font-semibold" id={titleId}>
-            Delete rule?
-          </h3>
-          <div className="space-y-2 text-sm text-muted-foreground" id={descriptionId}>
-            <p>
-              Are you sure you want to delete{" "}
-              <span className="font-semibold text-foreground">"{rule.name}"</span>?
-            </p>
-            <p>This action cannot be undone.</p>
+        <div className="flex flex-wrap gap-2">
+          <StatusBadge label={formatActionLabel(rule.action)} tone={getActionTone(rule.action)} />
+          <StatusBadge label={formatSeverityLabel(rule.severity)} tone={getSeverityTone(rule.severity)} />
+          <StatusBadge status={rule.enabled ? "enabled" : "disabled"} />
+          <StatusBadge label={formatRuleTypeLabel(global)} tone={getRuleTypeTone(global)} />
+          <StatusBadge label={formatScopeLabel(rule.scope)} tone="muted" />
+        </div>
+
+        <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-2">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide">Stable key</p>
+            <p className="mt-1 break-all text-foreground">{rule.stable_key ?? "-"}</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide">Priority</p>
+            <p className="mt-1 text-foreground">{rule.priority ?? "-"}</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide">RAG mode</p>
+            <p className="mt-1 text-foreground">{rule.rag_mode ?? "-"}</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide">Updated</p>
+            <p className="mt-1 text-foreground">{formatDateTime(rule.updated_at)}</p>
           </div>
         </div>
+      </AppSectionCard>
 
-        <div className="rounded-lg border bg-muted/30 p-3">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Rule
-          </p>
-          <p className="mt-1 text-sm font-semibold">{rule.name}</p>
-          <p className="mt-1 break-all text-xs text-muted-foreground">{rule.stable_key ?? "-"}</p>
-        </div>
-
-        <div className="flex justify-end gap-2">
-          <Button
-            disabled={isDeleting}
-            onClick={onCancel}
-            ref={cancelButtonRef}
-            type="button"
-            variant="outline"
-          >
-            Cancel
-          </Button>
-          <Button
-            className="bg-rose-600 text-white hover:bg-rose-700"
-            disabled={isDeleting}
-            onClick={onConfirm}
-            type="button"
-          >
-            {isDeleting ? "Deleting..." : "Delete"}
-          </Button>
-        </div>
-      </Card>
+      <TechnicalDetailsAccordion
+        sections={[
+          {
+            title: "Conditions JSON",
+            data: rule.conditions ?? null,
+          },
+          {
+            title: "Rule metadata",
+            data: {
+              id: rule.id,
+              stable_key: rule.stable_key,
+              scope: rule.scope,
+              action: rule.action,
+              severity: rule.severity,
+              priority: rule.priority,
+              rag_mode: rule.rag_mode,
+              enabled: rule.enabled,
+              origin: rule.origin,
+              created_at: rule.created_at,
+              updated_at: rule.updated_at,
+            },
+          },
+        ]}
+        title="Technical details"
+      />
     </div>
   );
 }
@@ -225,19 +287,6 @@ function formatActionLabel(value?: string | null) {
     return "Unknown";
   }
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
-}
-
-function getActionBadgeClass(action?: string | null) {
-  switch (String(action ?? "").trim().toLowerCase()) {
-    case "block":
-      return "border-rose-300 bg-rose-50 text-rose-700";
-    case "mask":
-      return "border-amber-300 bg-amber-50 text-amber-700";
-    case "allow":
-      return "border-emerald-300 bg-emerald-50 text-emerald-700";
-    default:
-      return "border-slate-300 bg-slate-100 text-slate-700";
-  }
 }
 
 function formatDebugNumber(value: unknown) {
@@ -270,6 +319,172 @@ function formatSummaryValue(value: unknown, emptyLabel = "none") {
 
   const text = String(value).trim();
   return text ? text : emptyLabel;
+}
+
+const RULE_CHANGE_FIELD_LABELS: Record<string, string> = {
+  action: "Action",
+  conditions: "Conditions",
+  conditions_version: "Conditions version",
+  description: "Description",
+  enabled: "Enabled",
+  is_deleted: "Deleted",
+  name: "Name",
+  priority: "Priority",
+  rag_mode: "RAG mode",
+  scope: "Scope",
+  severity: "Severity",
+  stable_key: "Stable key",
+};
+
+const RULE_CHANGE_HIGHLIGHT_FIELDS = [
+  "name",
+  "stable_key",
+  "action",
+  "scope",
+  "severity",
+  "priority",
+  "rag_mode",
+  "enabled",
+  "is_deleted",
+  "description",
+];
+
+function formatRuleChangeActionLabel(action?: string | null) {
+  switch (String(action ?? "").trim().toLowerCase()) {
+    case "rule.create_custom":
+      return "Created custom rule";
+    case "rule.update":
+      return "Updated rule";
+    case "rule.delete":
+      return "Deleted rule";
+    case "rule.toggle_global_enabled":
+      return "Toggled global rule";
+    default:
+      return formatActionLabel(action);
+  }
+}
+
+function getRuleChangeActionTone(action?: string | null): StatusTone {
+  switch (String(action ?? "").trim().toLowerCase()) {
+    case "rule.create_custom":
+      return "success";
+    case "rule.update":
+      return "primary";
+    case "rule.delete":
+      return "danger";
+    case "rule.toggle_global_enabled":
+      return "warning";
+    default:
+      return "muted";
+  }
+}
+
+function getRuleChangeFieldTone(field?: string | null): StatusTone {
+  switch (String(field ?? "").trim().toLowerCase()) {
+    case "action":
+      return "primary";
+    case "severity":
+    case "enabled":
+      return "warning";
+    case "is_deleted":
+      return "danger";
+    case "scope":
+    case "priority":
+    case "rag_mode":
+      return "primary";
+    default:
+      return "muted";
+  }
+}
+
+function getRuleChangeSnapshot(log: RuleChangeLog) {
+  return asRecord(log.after_json) ?? asRecord(log.before_json);
+}
+
+function formatRuleChangeFieldLabel(field?: string | null) {
+  const normalized = String(field ?? "").trim();
+  if (!normalized) {
+    return "Unknown field";
+  }
+  return RULE_CHANGE_FIELD_LABELS[normalized] ?? normalized.split("_").join(" ");
+}
+
+function formatRuleChangeValue(field: string, value: unknown) {
+  if (field === "conditions") {
+    return value ? "updated" : "none";
+  }
+
+  if (field === "action") {
+    return formatActionLabel(value as string | null);
+  }
+
+  if (field === "enabled" || field === "is_deleted") {
+    return formatSummaryValue(value, "no");
+  }
+
+  return formatSummaryValue(value);
+}
+
+function getRuleChangeHighlights(log: RuleChangeLog) {
+  const before = asRecord(log.before_json);
+  const after = asRecord(log.after_json);
+  const changedFields = Array.from(new Set(log.changed_fields ?? []));
+  const highlights: Array<{ field: string; before: string; after: string }> = [];
+
+  for (const field of RULE_CHANGE_HIGHLIGHT_FIELDS) {
+    if (!changedFields.includes(field)) {
+      continue;
+    }
+
+    const beforeValue = formatRuleChangeValue(field, before?.[field]);
+    const afterValue = formatRuleChangeValue(field, after?.[field]);
+
+    if (beforeValue === afterValue) {
+      continue;
+    }
+
+    highlights.push({
+      field,
+      before: beforeValue,
+      after: afterValue,
+    });
+  }
+
+  if (changedFields.includes("conditions")) {
+    highlights.push({
+      field: "conditions",
+      before: before ? "previous logic" : "none",
+      after: after ? "updated logic" : "removed",
+    });
+  }
+
+  return highlights.slice(0, 6);
+}
+
+function getRuleChangeSummary(log: RuleChangeLog) {
+  const snapshot = getRuleChangeSnapshot(log);
+  const action = String(log.action ?? "").trim().toLowerCase();
+  const enabledLabel = snapshot?.enabled === false ? "disabled" : "enabled";
+  const actionLabel = formatActionLabel(snapshot?.action as string | null).toLowerCase();
+  const scopeLabel = formatSummaryValue(snapshot?.scope, "current scope").toLowerCase();
+  const changedCount = log.changed_fields?.length ?? 0;
+
+  switch (action) {
+    case "rule.create_custom":
+      return `Created a ${enabledLabel} ${actionLabel} rule for ${scopeLabel}.`;
+    case "rule.delete":
+      return "Removed this custom rule from runtime and marked it as deleted.";
+    case "rule.toggle_global_enabled":
+      return snapshot?.enabled === false
+        ? "Disabled this global rule for the current workspace."
+        : "Enabled this global rule for the current workspace.";
+    case "rule.update":
+      return changedCount > 0
+        ? `Updated ${changedCount} field${changedCount === 1 ? "" : "s"} on this rule.`
+        : "Updated this rule.";
+    default:
+      return "Rule change recorded.";
+  }
 }
 
 function sortDebugMatches(matches: RuleDebugMatch[]) {
@@ -385,152 +600,113 @@ function DebugEvaluateResult({ result }: { result: DebugEvaluateResponse }) {
 
   return (
     <div className="space-y-4">
-      <Card className="space-y-5 p-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="space-y-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Summary
-            </p>
-            <h3 className="text-base font-semibold">Evaluation result</h3>
-            <p className="max-w-3xl text-sm text-muted-foreground">
-              {getDebugSummaryExplanation(result, primaryMatch)}
-            </p>
+      <AppSectionCard
+        actions={
+          <div className="flex items-center gap-2">
+            {getRuleActionIcon(result.final_action)}
+            <StatusBadge
+              label={formatActionLabel(result.final_action)}
+              tone={getActionTone(result.final_action)}
+            />
           </div>
-
-          <div className="rounded-lg border bg-muted/40 px-3 py-2">
-            <p className="text-xs text-muted-foreground">Final action</p>
-            <div className="mt-2">
-              <Badge className={cn("capitalize", getActionBadgeClass(result.final_action))}>
-                {formatActionLabel(result.final_action)}
-              </Badge>
-            </div>
-          </div>
+        }
+        description={getDebugSummaryExplanation(result, primaryMatch)}
+        title="Summary"
+      >
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          <DebugSummaryField
+            label="Context keywords"
+            value={formatSummaryValue(signals.context_keywords)}
+          />
+          <DebugSummaryField label="Persona" value={formatSummaryValue(signals.persona)} />
+          <DebugSummaryField
+            helper={securityReason || undefined}
+            label="Security decision"
+            value={securityDecision}
+          />
+          <DebugSummaryField
+            label="Risk boost"
+            value={formatSummaryValue(signals.risk_boost, "0")}
+          />
         </div>
+      </AppSectionCard>
 
-        <div className="grid gap-4 xl:grid-cols-[1.3fr_0.9fr]">
-          <section className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h4 className="text-sm font-semibold">Matched rules</h4>
-              <Badge className="bg-muted text-muted-foreground">
-                {matchedRules.length} {matchedRules.length === 1 ? "rule" : "rules"}
-              </Badge>
-            </div>
-
-            {matchedRules.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-4">
-                <p className="text-sm font-medium">No matching rule found</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  This input followed the default decision path for the current rule set.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {matchedRules.map((rule, index) => {
-                  const isPrimary = isSameDebugMatch(rule, primaryMatch) || (!primaryMatch && index === 0);
-                  return (
-                    <div
-                      className={cn(
-                        "rounded-lg border p-3",
-                        isPrimary && "border-primary/40 bg-primary/5"
-                      )}
-                      key={rule.rule_id ?? rule.stable_key ?? `${rule.name ?? "rule"}-${index}`}
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-semibold">{rule.name?.trim() || "Unnamed rule"}</p>
-                          <p className="mt-1 break-all text-xs text-muted-foreground">
-                            {rule.stable_key?.trim() || "No stable key"}
-                          </p>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                          {isPrimary && (
-                            <Badge className="border-primary/40 bg-primary/10 text-primary">
-                              Main match
-                            </Badge>
-                          )}
-                          <Badge className={cn("capitalize", getActionBadgeClass(rule.action))}>
-                            {formatActionLabel(rule.action)}
-                          </Badge>
-                        </div>
+      <AppSectionCard
+        actions={
+          <StatusBadge
+            label={`${matchedRules.length} ${matchedRules.length === 1 ? "rule" : "rules"}`}
+            tone="muted"
+          />
+        }
+        description="Rules are sorted by priority, with the most relevant match highlighted first."
+        title="Matched Rules"
+      >
+        {matchedRules.length === 0 ? (
+          <EmptyState
+            description="This input followed the default decision path for the current rule set."
+            title="No matched rules"
+          />
+        ) : (
+          <div className="space-y-3">
+            {matchedRules.map((rule, index) => {
+              const isPrimary = isSameDebugMatch(rule, primaryMatch) || (!primaryMatch && index === 0);
+              return (
+                <div
+                  className={cn(
+                    "rounded-2xl border border-border/80 bg-background p-4",
+                    isPrimary && "ring-2 ring-primary/25 ring-offset-2"
+                  )}
+                  key={rule.rule_id ?? rule.stable_key ?? `${rule.name ?? "rule"}-${index}`}
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="text-sm font-semibold text-foreground">
+                          {rule.name?.trim() || "Unnamed rule"}
+                        </h4>
+                        {isPrimary ? <StatusBadge label="Main match" tone="primary" /> : null}
+                        <StatusBadge
+                          label={formatActionLabel(rule.action)}
+                          tone={getActionTone(rule.action)}
+                        />
                       </div>
-
-                      <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                        <span>Priority: {rule.priority ?? "-"}</span>
-                        <span>Rule ID: {rule.rule_id ?? "-"}</span>
-                      </div>
+                      <p className="break-all text-xs text-muted-foreground">
+                        {rule.stable_key?.trim() || "No stable key"}
+                      </p>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
 
-          <section className="space-y-3">
-            <h4 className="text-sm font-semibold">Key signals</h4>
-            <div className="grid gap-2">
-              <DebugSummaryField
-                label="Context keywords"
-                value={formatSummaryValue(signals.context_keywords)}
-              />
-              <DebugSummaryField label="Persona" value={formatSummaryValue(signals.persona)} />
-              <DebugSummaryField
-                helper={securityReason || undefined}
-                label="Security decision"
-                value={securityDecision}
-              />
-              <DebugSummaryField
-                label="Risk boost"
-                value={formatSummaryValue(signals.risk_boost, "0")}
-              />
-            </div>
-          </section>
-        </div>
-      </Card>
-
-      <Card className="p-4">
-        <details>
-          <summary className="cursor-pointer text-sm font-semibold">Technical details</summary>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Raw debug payload is preserved here for deeper inspection.
-          </p>
-
-          <div className="mt-3 space-y-3">
-            <details className="rounded-md border p-3 text-xs">
-              <summary className="cursor-pointer font-medium text-muted-foreground">
-                Raw matched rules JSON
-              </summary>
-              <pre className="mt-2 overflow-auto rounded-md bg-muted p-2 text-[11px]">
-                {JSON.stringify(result.matched_rules ?? [], null, 2)}
-              </pre>
-            </details>
-
-            <details className="rounded-md border p-3 text-xs">
-              <summary className="cursor-pointer font-medium text-muted-foreground">
-                Raw signals JSON
-              </summary>
-              <pre className="mt-2 overflow-auto rounded-md bg-muted p-2 text-[11px]">
-                {JSON.stringify(result.signals ?? {}, null, 2)}
-              </pre>
-            </details>
-
-            <details className="rounded-md border p-3 text-xs">
-              <summary className="cursor-pointer font-medium text-muted-foreground">
-                Extra engine/debug output
-              </summary>
-              {hasExtraDebugOutput ? (
-                <pre className="mt-2 overflow-auto rounded-md bg-muted p-2 text-[11px]">
-                  {JSON.stringify(extraDebugOutput, null, 2)}
-                </pre>
-              ) : (
-                <p className="mt-2 text-muted-foreground">
-                  No additional engine debug fields were returned for this run.
-                </p>
-              )}
-            </details>
+                    <div className="grid gap-1 text-xs text-muted-foreground md:text-right">
+                      <span>Priority: {rule.priority ?? "-"}</span>
+                      <span>Rule ID: {rule.rule_id ?? "-"}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </details>
-      </Card>
+        )}
+      </AppSectionCard>
+
+      <TechnicalDetailsAccordion
+        description="Raw debug payload is preserved here for deeper inspection."
+        sections={[
+          {
+            title: "Raw matched rules JSON",
+            data: result.matched_rules ?? [],
+          },
+          {
+            title: "Raw signals JSON",
+            data: result.signals ?? {},
+          },
+          {
+            title: "Extra engine/debug output",
+            data: hasExtraDebugOutput
+              ? extraDebugOutput
+              : "No additional engine debug fields were returned for this run.",
+          },
+        ]}
+        title="Technical details"
+      />
     </div>
   );
 }
@@ -544,37 +720,89 @@ export function RulesPage() {
   const sourceFromQuery = searchParams.get("source")?.trim() ?? "";
   const returnToSuggestionId = searchParams.get("returnToSuggestionId")?.trim() ?? "";
   const returnStep = searchParams.get("returnStep")?.trim() ?? "";
+  const highlightedRuleId = locationState?.highlightRuleId?.trim() ?? "";
   const [createOpen, setCreateOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
+  const [viewingRule, setViewingRule] = useState<Rule | null>(null);
   const [rulePendingDelete, setRulePendingDelete] = useState<Rule | null>(null);
+  const createRuleFormId = "create-rule-form";
+  const editRuleFormId = editingRule ? `edit-rule-form-${editingRule.id}` : "edit-rule-form";
   const [debugContent, setDebugContent] = useState("");
-  const [activeTab, setActiveTab] = useState("my-rules");
+  const [activeTab, setActiveTab] = useState<RulesTab>("my-rules");
+  const [deletedRules, setDeletedRules] = useState<Array<{ id: string; stableKey?: string | null }>>([]);
 
   const currentRuleSetId = useRuleSetStore((state) => state.currentRuleSetId);
   const currentRuleSet = useRuleSetStore((state) => state.currentRuleSet);
   const isRuleSetResolved = useRuleSetStore((state) => state.isRuleSetResolved);
 
-  const rulesQuery = useRules(currentRuleSetId ?? undefined);
-  const effectiveRulesQuery = useEffectiveRules();
-  const changeLogsQuery = useRuleChangeLogs(currentRuleSetId ?? undefined, { limit: 50 });
+  const myRulesQuery = useRules(currentRuleSetId ?? undefined, {
+    tab: "my",
+    limit: RULES_PAGE_LIMIT,
+  });
+  const globalRulesQuery = useRules(currentRuleSetId ?? undefined, {
+    tab: "global",
+    limit: RULES_PAGE_LIMIT,
+  });
+  const effectiveRulesQuery = useEffectiveRules({ limit: RULES_PAGE_LIMIT });
+  const changeLogsQuery = useRuleChangeLogs(currentRuleSetId ?? undefined, {
+    limit: RULES_PAGE_LIMIT,
+  });
   const createRuleMutation = useCreateRule(currentRuleSetId ?? undefined);
   const updateRuleMutation = useUpdateRule(currentRuleSetId ?? undefined);
   const deleteRuleMutation = useDeleteRule(currentRuleSetId ?? undefined);
   const toggleGlobalRuleMutation = useToggleGlobalRule(currentRuleSetId ?? undefined);
   const debugEvaluateMutation = useDebugEvaluate();
 
-  const rules = useMemo(() => rulesQuery.data ?? [], [rulesQuery.data]);
-  const myRules = useMemo(() => rules.filter((rule) => !isGlobalRule(rule)), [rules]);
-  const globalRules = useMemo(() => rules.filter((rule) => isGlobalRule(rule)), [rules]);
-  const changeLogs = useMemo(() => changeLogsQuery.data ?? [], [changeLogsQuery.data]);
-  const effectiveRules = useMemo(
-    () => effectiveRulesQuery.data ?? [],
-    [effectiveRulesQuery.data]
+  useEffect(() => {
+    setDeletedRules([]);
+  }, [currentRuleSetId]);
+
+  const deletedRuleIds = useMemo(() => new Set(deletedRules.map((rule) => rule.id)), [deletedRules]);
+  const deletedStableKeys = useMemo(
+    () => new Set(deletedRules.map((rule) => rule.stableKey).filter(Boolean)),
+    [deletedRules]
   );
+
+  const myRulesRaw = useMemo(
+    () => (myRulesQuery.data?.pages ?? []).flatMap((page) => page.items ?? []),
+    [myRulesQuery.data]
+  );
+  const globalRules = useMemo(
+    () => (globalRulesQuery.data?.pages ?? []).flatMap((page) => page.items ?? []),
+    [globalRulesQuery.data]
+  );
+  const myRules = useMemo(
+    () => myRulesRaw.filter((rule) => !deletedRuleIds.has(rule.id)),
+    [deletedRuleIds, myRulesRaw]
+  );
+  const rules = useMemo(() => [...myRules, ...globalRules], [globalRules, myRules]);
+  const changeLogs = useMemo(
+    () => (changeLogsQuery.data?.pages ?? []).flatMap((page) => page.items ?? []),
+    [changeLogsQuery.data]
+  );
+  const effectiveRules = useMemo(
+    () =>
+      ((effectiveRulesQuery.data?.pages ?? []).flatMap((page) => page.items ?? [])).filter((rule) => {
+        const candidateId = rule.rule_id ?? rule.id ?? "";
+        if (candidateId && deletedRuleIds.has(candidateId)) {
+          return false;
+        }
+        if (rule.stable_key && deletedStableKeys.has(rule.stable_key)) {
+          return false;
+        }
+        return true;
+      }),
+    [deletedRuleIds, deletedStableKeys, effectiveRulesQuery.data]
+  );
+
+  const myRulesTotal = myRulesQuery.data?.pages[0]?.total ?? myRules.length;
+  const globalRulesTotal = globalRulesQuery.data?.pages[0]?.total ?? globalRules.length;
+  const effectiveRulesTotal = effectiveRulesQuery.data?.pages[0]?.total ?? effectiveRules.length;
+  const changeLogsTotal = changeLogsQuery.data?.pages[0]?.total ?? changeLogs.length;
 
   useEffect(() => {
     const targetRuleId = editRuleIdFromQuery || locationState?.openEditForRuleId?.trim() || "";
-    if (!targetRuleId || rules.length === 0) {
+    if (!targetRuleId) {
       return;
     }
 
@@ -582,16 +810,44 @@ export function RulesPage() {
     if (targetRule) {
       setActiveTab(isGlobalRule(targetRule) ? "global-rules" : "my-rules");
       setEditingRule(targetRule);
-    } else {
+      navigate(location.pathname, { replace: true });
+      return;
+    }
+
+    if (
+      myRulesQuery.isLoading ||
+      globalRulesQuery.isLoading ||
+      myRulesQuery.isFetchingNextPage ||
+      globalRulesQuery.isFetchingNextPage ||
+      myRulesQuery.hasNextPage ||
+      globalRulesQuery.hasNextPage
+    ) {
+      return;
+    }
+
+    if (rules.length > 0) {
       toast({
         title: "Rule not found",
         description: "Unable to open the requested rule for editing.",
         variant: "destructive",
       });
+      navigate(location.pathname, { replace: true });
+    } else {
+      return;
     }
-
-    navigate(location.pathname, { replace: true });
-  }, [editRuleIdFromQuery, location.pathname, locationState?.openEditForRuleId, navigate, rules]);
+  }, [
+    editRuleIdFromQuery,
+    globalRulesQuery.hasNextPage,
+    globalRulesQuery.isFetchingNextPage,
+    globalRulesQuery.isLoading,
+    location.pathname,
+    locationState?.openEditForRuleId,
+    myRulesQuery.hasNextPage,
+    myRulesQuery.isFetchingNextPage,
+    myRulesQuery.isLoading,
+    navigate,
+    rules,
+  ]);
 
   const handleCreateRule = async (payload: CreateRuleRequest | UpdateRuleRequest) => {
     try {
@@ -667,6 +923,16 @@ export function RulesPage() {
 
     try {
       await deleteRuleMutation.mutateAsync(rulePendingDelete.id);
+      setDeletedRules((prev) => [
+        ...prev.filter((item) => item.id !== rulePendingDelete.id),
+        { id: rulePendingDelete.id, stableKey: rulePendingDelete.stable_key },
+      ]);
+      if (editingRule?.id === rulePendingDelete.id) {
+        setEditingRule(null);
+      }
+      if (viewingRule?.id === rulePendingDelete.id) {
+        setViewingRule(null);
+      }
       toast({
         title: "Rule deleted",
         description: "Rule deleted successfully.",
@@ -747,26 +1013,21 @@ export function RulesPage() {
 
   return (
     <section className="h-full overflow-auto p-6">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
-        <header className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold">Rules Management</h1>
-            <p className="text-sm text-muted-foreground">
-              Rules below belong to your current workspace rule set.
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Workspace: {currentRuleSet?.name ?? "Current rule set"}
-            </p>
-          </div>
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
+        <AppPageHeader
+          actions={
+            activeTab === "my-rules" ? (
+              <AppButton onClick={() => setCreateOpen(true)} type="button">
+                New Rule
+              </AppButton>
+            ) : undefined
+          }
+          meta={`Workspace: ${currentRuleSet?.name ?? "Current rule set"}`}
+          subtitle="Manage custom rules, global overrides, runtime-effective rules, change history, and debug evaluation from one consistent admin surface."
+          title="Rules Management"
+        />
 
-          {activeTab === "my-rules" && (
-            <Button onClick={() => setCreateOpen(true)} type="button">
-              New Rule
-            </Button>
-          )}
-        </header>
-
-        <Tabs onValueChange={setActiveTab} value={activeTab}>
+        <Tabs onValueChange={(value) => setActiveTab(value as RulesTab)} value={activeTab}>
           <TabsList className="flex flex-wrap">
             <TabsTrigger value="my-rules">My Rules</TabsTrigger>
             <TabsTrigger value="global-rules">Global Rules</TabsTrigger>
@@ -776,142 +1037,183 @@ export function RulesPage() {
           </TabsList>
 
           <TabsContent value="my-rules">
-            <Card className="p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-base font-semibold">Custom rules in this rule set</h2>
-                <Badge>{myRules.length} rules</Badge>
-              </div>
+            <AppSectionCard
+              actions={
+                <StatusBadge
+                  label={`${myRulesTotal} ${myRulesTotal === 1 ? "rule" : "rules"}`}
+                  tone="muted"
+                />
+              }
+              description="Custom rules owned by the current workspace. Use the badges to scan action, severity, status, and rule type quickly."
+              title="My Rules"
+            >
               <RuleTable
-                allowEdit
                 allowDelete
+                allowEdit
                 allowToggle
-                emptyText="No custom rules yet. Create your first rule."
-                isError={rulesQuery.isError}
-                isLoading={rulesQuery.isLoading}
+                emptyDescription="Create your first custom rule to start tailoring the workspace policy."
+                emptyTitle="No custom rules yet"
+                highlightRuleId={highlightedRuleId}
+                isBusy={
+                  updateRuleMutation.isPending ||
+                  toggleGlobalRuleMutation.isPending ||
+                  deleteRuleMutation.isPending
+                }
+                isError={myRulesQuery.isError}
+                isLoading={myRulesQuery.isLoading}
+                isLoadingMore={myRulesQuery.isFetchingNextPage}
+                canLoadMore={Boolean(myRulesQuery.hasNextPage)}
+                onLoadMore={() => void myRulesQuery.fetchNextPage()}
                 onDeleteRule={handleRequestDeleteRule}
                 onEditRule={setEditingRule}
                 onToggleEnabled={handleToggleEnabled}
+                onViewRule={setViewingRule}
                 rules={myRules}
-                showOrigin
               />
-            </Card>
+            </AppSectionCard>
           </TabsContent>
 
           <TabsContent value="global-rules">
-            <Card className="p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-base font-semibold">Global rules (read-only)</h2>
-                <Badge className="bg-muted text-muted-foreground">
-                  {globalRules.length} rules
-                </Badge>
-              </div>
+            <AppSectionCard
+              actions={
+                <StatusBadge
+                  label={`${globalRulesTotal} ${globalRulesTotal === 1 ? "rule" : "rules"}`}
+                  tone="muted"
+                />
+              }
+              description="Global rules are visible here with per-workspace enable and disable control where supported."
+              title="Global Rules"
+            >
               <RuleTable
                 allowDelete={false}
                 allowEdit={false}
                 allowToggle
-                emptyText="No global rules available."
-                isError={rulesQuery.isError}
-                isLoading={rulesQuery.isLoading}
+                emptyDescription="Global baseline rules will appear here when available to the workspace."
+                emptyTitle="No global rules available"
+                highlightRuleId={highlightedRuleId}
+                isBusy={updateRuleMutation.isPending || toggleGlobalRuleMutation.isPending}
+                isError={globalRulesQuery.isError}
+                isLoading={globalRulesQuery.isLoading}
+                isLoadingMore={globalRulesQuery.isFetchingNextPage}
+                canLoadMore={Boolean(globalRulesQuery.hasNextPage)}
+                onLoadMore={() => void globalRulesQuery.fetchNextPage()}
                 onDeleteRule={handleRequestDeleteRule}
                 onEditRule={setEditingRule}
                 onToggleEnabled={handleToggleEnabled}
+                onViewRule={setViewingRule}
                 rules={globalRules}
-                showOrigin
               />
-            </Card>
+            </AppSectionCard>
           </TabsContent>
 
           <TabsContent value="effective-rules">
-            <Card className="space-y-3 p-4">
-              <h2 className="text-base font-semibold">Effective rules</h2>
-
-              {effectiveRulesQuery.isLoading && (
-                <p className="text-sm text-muted-foreground">Loading effective rules...</p>
-              )}
-
-              {effectiveRulesQuery.isError && (
-                <p className="text-sm text-destructive">Failed to load effective rules.</p>
-              )}
-
-              {!effectiveRulesQuery.isLoading &&
-                !effectiveRulesQuery.isError &&
-                effectiveRules.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No effective rules found.</p>
-                )}
-
-              {effectiveRules.map((rule) => (
-                <div className="rounded-md border p-3 text-sm" key={rule.id ?? rule.stable_key}>
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-medium">{rule.name}</p>
-                    <Badge>{rule.action}</Badge>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                    <span>Priority: {rule.priority ?? "-"}</span>
-                    <span>Enabled: {rule.enabled ? "yes" : "no"}</span>
-                    <span>Origin: {rule.origin ?? "-"}</span>
-                  </div>
+            <AppSectionCard
+              actions={
+                <StatusBadge
+                  label={`${effectiveRulesTotal} ${effectiveRulesTotal === 1 ? "rule" : "rules"}`}
+                  tone="muted"
+                />
+              }
+              description="These are the runtime-effective rules after custom rules and global overrides are combined."
+              title="Effective Rules"
+            >
+              {effectiveRulesQuery.isLoading ? (
+                <AppLoadingState
+                  compact
+                  description="Loading the runtime rule set used for evaluation."
+                  title="Loading effective rules"
+                />
+              ) : effectiveRulesQuery.isError ? (
+                <AppAlert
+                  description="Failed to load effective rules."
+                  title="Effective rules unavailable"
+                  variant="error"
+                />
+              ) : effectiveRules.length === 0 ? (
+                <EmptyState
+                  description="No effective rules were returned for the current workspace."
+                  title="No effective rules found"
+                />
+              ) : (
+                <div className="space-y-3">
+                  {effectiveRules.map((rule) => (
+                    <EffectiveRuleCard
+                      key={rule.id ?? rule.rule_id ?? rule.stable_key ?? rule.name}
+                      rule={rule}
+                    />
+                  ))}
+                  {effectiveRulesQuery.hasNextPage ? (
+                    <div className="flex justify-center pt-1">
+                      <AppButton
+                        disabled={effectiveRulesQuery.isFetchingNextPage}
+                        onClick={() => void effectiveRulesQuery.fetchNextPage()}
+                        type="button"
+                        variant="secondary"
+                      >
+                        {effectiveRulesQuery.isFetchingNextPage ? "Loading..." : "Load more"}
+                      </AppButton>
+                    </div>
+                  ) : null}
                 </div>
-              ))}
-            </Card>
+              )}
+            </AppSectionCard>
           </TabsContent>
 
           <TabsContent value="change-logs">
-            <Card className="space-y-3 p-4">
-              <h2 className="text-base font-semibold">Rule change logs</h2>
-
-              {changeLogsQuery.isLoading && (
-                <p className="text-sm text-muted-foreground">Loading change logs...</p>
-              )}
-              {changeLogsQuery.isError && (
-                <p className="text-sm text-destructive">Failed to load change logs.</p>
-              )}
-              {!changeLogsQuery.isLoading &&
-                !changeLogsQuery.isError &&
-                changeLogs.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No change logs yet.</p>
-                )}
-
-              {changeLogs.map((log, index) => (
-                <div className="rounded-lg border p-3 text-sm" key={log.id ?? `${index}-${log.created_at}`}>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-medium">{log.action ?? "unknown_action"}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDateTime(log.created_at)}
-                    </p>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Reason: {log.reason ?? "-"}
-                  </p>
-                  <details className="mt-2 text-xs">
-                    <summary className="cursor-pointer text-muted-foreground">
-                      Raw JSON
-                    </summary>
-                    <pre className="mt-2 overflow-auto rounded bg-muted p-2">
-                      {JSON.stringify(
-                        {
-                          changed_fields: log.changed_fields,
-                          before_json: log.before_json,
-                          after_json: log.after_json,
-                        },
-                        null,
-                        2
-                      )}
-                    </pre>
-                  </details>
+            <AppSectionCard
+              actions={
+                <StatusBadge
+                  label={`${changeLogsTotal} log${changeLogsTotal === 1 ? "" : "s"}`}
+                  tone="muted"
+                />
+              }
+              description="Recent rule changes across the current workspace, with changed fields and key deltas highlighted first."
+              title="Change Logs"
+            >
+              {changeLogsQuery.isLoading ? (
+                <AppLoadingState
+                  compact
+                  description="Loading recent rule activity for this workspace."
+                  title="Loading change logs"
+                />
+              ) : changeLogsQuery.isError ? (
+                <AppAlert
+                  description="Failed to load change logs."
+                  title="Change logs unavailable"
+                  variant="error"
+                />
+              ) : changeLogs.length === 0 ? (
+                <EmptyState
+                  description="Rule updates, deletes, and global toggles will appear here."
+                  title="No change logs yet"
+                />
+              ) : (
+                <div className="space-y-3">
+                  {changeLogs.map((log, index) => (
+                    <RuleChangeLogCard key={log.id ?? `${index}-${log.created_at}`} index={index} log={log} />
+                  ))}
+                  {changeLogsQuery.hasNextPage ? (
+                    <div className="flex justify-center pt-1">
+                      <AppButton
+                        disabled={changeLogsQuery.isFetchingNextPage}
+                        onClick={() => void changeLogsQuery.fetchNextPage()}
+                        type="button"
+                        variant="secondary"
+                      >
+                        {changeLogsQuery.isFetchingNextPage ? "Loading..." : "Load more"}
+                      </AppButton>
+                    </div>
+                  ) : null}
                 </div>
-              ))}
-            </Card>
+              )}
+            </AppSectionCard>
           </TabsContent>
 
           <TabsContent value="debug">
-            <Card className="space-y-5 p-4">
-              <div>
-                <h2 className="text-base font-semibold">Debug evaluate</h2>
-                <p className="text-sm text-muted-foreground">
-                  Quick test text against current rules.
-                </p>
-              </div>
-
+            <AppSectionCard
+              description="Quickly test text against the current rule set and inspect the resulting action and matched rules."
+              title="Debug Evaluate"
+            >
               <form className="space-y-3" onSubmit={handleEvaluate}>
                 <Textarea
                   className="min-h-[140px]"
@@ -920,27 +1222,48 @@ export function RulesPage() {
                   value={debugContent}
                 />
                 <div className="flex justify-end">
-                  <Button
+                  <AppButton
                     disabled={debugEvaluateMutation.isPending || !debugContent.trim()}
                     type="submit"
                   >
                     {debugEvaluateMutation.isPending ? "Evaluating..." : "Evaluate"}
-                  </Button>
+                  </AppButton>
                 </div>
               </form>
 
-              {debugEvaluateMutation.isError && (
-                <p className="text-sm text-destructive">Failed to evaluate text.</p>
-              )}
+              {debugEvaluateMutation.isError ? (
+                <AppAlert
+                  description="Failed to evaluate text."
+                  title="Debug evaluate failed"
+                  variant="error"
+                />
+              ) : null}
 
               {debugEvaluateMutation.data && <DebugEvaluateResult result={debugEvaluateMutation.data} />}
-            </Card>
+            </AppSectionCard>
           </TabsContent>
         </Tabs>
       </div>
 
-      <RuleModal onClose={() => setCreateOpen(false)} open={createOpen} title="Create new rule">
+      <RuleModal
+        footer={
+          <div className="flex justify-end gap-2">
+            <AppButton onClick={() => setCreateOpen(false)} type="button" variant="secondary">
+              Cancel
+            </AppButton>
+            <AppButton disabled={createRuleMutation.isPending} form={createRuleFormId} type="submit">
+              {createRuleMutation.isPending ? "Saving..." : "Create Rule"}
+            </AppButton>
+          </div>
+        }
+        onClose={() => setCreateOpen(false)}
+        open={createOpen}
+        requireExplicitClose
+        title="Create new rule"
+      >
         <RuleForm
+          formId={createRuleFormId}
+          hideActions
           isSubmitting={createRuleMutation.isPending}
           mode="create"
           onCancel={() => setCreateOpen(false)}
@@ -949,11 +1272,24 @@ export function RulesPage() {
       </RuleModal>
 
       <RuleModal
+        footer={
+          <div className="flex justify-end gap-2">
+            <AppButton onClick={() => setEditingRule(null)} type="button" variant="secondary">
+              Cancel
+            </AppButton>
+            <AppButton disabled={updateRuleMutation.isPending} form={editRuleFormId} type="submit">
+              {updateRuleMutation.isPending ? "Saving..." : "Save Changes"}
+            </AppButton>
+          </div>
+        }
         onClose={() => setEditingRule(null)}
         open={Boolean(editingRule)}
+        requireExplicitClose
         title="Edit rule"
       >
         <RuleForm
+          formId={editRuleFormId}
+          hideActions
           initialRule={editingRule}
           isSubmitting={updateRuleMutation.isPending}
           mode="edit"
@@ -962,12 +1298,23 @@ export function RulesPage() {
         />
       </RuleModal>
 
-      <DeleteRuleDialog
-        isDeleting={deleteRuleMutation.isPending}
-        onCancel={handleCancelDeleteRule}
+      <RuleModal onClose={() => setViewingRule(null)} open={Boolean(viewingRule)} title="Rule details">
+        {viewingRule ? <RuleDetailsPanel rule={viewingRule} /> : null}
+      </RuleModal>
+
+      <ConfirmDialog
+        confirmLabel={deleteRuleMutation.isPending ? "Deleting..." : "Delete rule"}
+        confirmVariant="danger"
+        description={
+          rulePendingDelete
+            ? `Delete "${rulePendingDelete.name}"? This action cannot be undone.`
+            : undefined
+        }
+        isBusy={deleteRuleMutation.isPending}
+        onClose={handleCancelDeleteRule}
         onConfirm={() => void handleConfirmDeleteRule()}
         open={Boolean(rulePendingDelete)}
-        rule={rulePendingDelete}
+        title="Delete rule?"
       />
     </section>
   );
@@ -977,163 +1324,325 @@ function RuleTable({
   rules,
   isLoading,
   isError,
-  emptyText,
+  canLoadMore,
+  isLoadingMore,
+  emptyTitle,
+  emptyDescription,
   allowEdit,
   allowDelete,
   allowToggle,
-  showOrigin,
+  highlightRuleId,
+  isBusy,
+  onViewRule,
   onEditRule,
   onDeleteRule,
   onToggleEnabled,
+  onLoadMore,
 }: {
   rules: Rule[];
   isLoading: boolean;
   isError: boolean;
-  emptyText: string;
+  canLoadMore?: boolean;
+  isLoadingMore?: boolean;
+  emptyTitle: string;
+  emptyDescription: string;
   allowEdit: boolean;
   allowDelete: boolean;
   allowToggle: boolean;
-  showOrigin?: boolean;
+  highlightRuleId?: string;
+  isBusy?: boolean;
+  onViewRule: (rule: Rule) => void;
   onEditRule: (rule: Rule) => void;
   onDeleteRule: (rule: Rule) => void;
   onToggleEnabled: (rule: Rule, enabled: boolean) => void;
+  onLoadMore?: () => void;
 }) {
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading rules...</p>;
+    return (
+      <AppLoadingState
+        compact
+        description="Loading rules for the current workspace."
+        title="Loading rules"
+      />
+    );
   }
 
   if (isError) {
-    return <p className="text-sm text-destructive">Failed to load rules.</p>;
+    return (
+      <AppAlert
+        description="We couldn't load rules for the current workspace."
+        title="Rules unavailable"
+        variant="error"
+      />
+    );
   }
 
   if (rules.length === 0) {
-    return <p className="text-sm text-muted-foreground">{emptyText}</p>;
+    return <EmptyState description={emptyDescription} title={emptyTitle} />;
   }
 
   return (
-    <ScrollArea className="max-h-[520px]">
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b text-left text-xs uppercase text-muted-foreground">
-            <th className="px-2 py-2">Name</th>
-            <th className="px-2 py-2">Action</th>
-            <th className="px-2 py-2">Severity</th>
-            <th className="px-2 py-2">Priority</th>
-            <th className="px-2 py-2">Enabled</th>
-            {showOrigin && <th className="px-2 py-2">Type</th>}
-            <th className="px-2 py-2">Updated</th>
-            <th className="px-2 py-2">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rules.map((rule) => {
-            const global = isGlobalRule(rule);
-            const canToggleGlobal = global && Boolean(rule.stable_key);
-            return (
-              <tr
-                className={cn(
-                  "border-b align-top",
-                  !rule.enabled && "bg-muted/20"
-                )}
-                key={rule.id}
-              >
-                <td className="px-2 py-2">
-                  <p className="font-medium">{rule.name}</p>
-                  <p className="text-xs text-muted-foreground">{rule.stable_key ?? "-"}</p>
-                </td>
-                <td className="px-2 py-2">
-                  <Badge>{rule.action}</Badge>
-                </td>
-                <td className="px-2 py-2">{rule.severity ?? "-"}</td>
-                <td className="px-2 py-2">{rule.priority ?? "-"}</td>
-                <td className="px-2 py-2">
-                  <label className="inline-flex items-center gap-2">
-                    <input
-                      checked={rule.enabled}
-                      disabled={!allowToggle || (global && !canToggleGlobal)}
-                      onChange={(event) => onToggleEnabled(rule, event.target.checked)}
-                      type="checkbox"
-                    />
-                    <Badge
-                      className={
-                        rule.enabled
-                          ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                          : "border-slate-300 bg-slate-100 text-slate-700"
-                      }
-                    >
-                      {rule.enabled ? "Enabled" : "Disabled"}
-                    </Badge>
-                  </label>
-                </td>
-                {showOrigin && (
-                  <td className="px-2 py-2">
-                    <Badge
-                      className={
-                        global
-                          ? "bg-muted text-muted-foreground"
-                          : "border-dashed text-muted-foreground"
-                      }
-                    >
-                      {global ? "Global" : "Custom"}
-                    </Badge>
-                  </td>
-                )}
-                <td className="px-2 py-2 text-xs text-muted-foreground">
-                  {formatDateTime(rule.updated_at)}
-                </td>
-                <td className="px-2 py-2">
-                  <div className="flex min-w-[96px] flex-col gap-2">
-                    {allowEdit ? (
-                      <Button
-                        className="h-8 justify-center whitespace-nowrap"
-                        disabled={global}
-                        onClick={() => onEditRule(rule)}
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        Edit
-                      </Button>
-                    ) : (
-                      <Button
-                        className="h-8 justify-center whitespace-nowrap"
-                        disabled
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        View
-                      </Button>
-                    )}
-                    {allowDelete ? (
-                      <Button
-                        className="h-8 justify-center whitespace-nowrap"
-                        disabled={global || rule.can_soft_delete === false}
-                        onClick={() => onDeleteRule(rule)}
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        Delete
-                      </Button>
-                    ) : (
-                      <Button
-                        className="h-8 justify-center whitespace-nowrap"
-                        disabled
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        Read only
-                      </Button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </ScrollArea>
+    <div className="grid gap-3">
+      {rules.map((rule) => {
+        const global = isGlobalRule(rule);
+        const canToggle = allowToggle && (!global || Boolean(rule.stable_key));
+        const canEdit = allowEdit && !global;
+        const canDelete = allowDelete && !global && rule.can_soft_delete !== false;
+        const isHighlighted = Boolean(highlightRuleId) && rule.id === highlightRuleId;
+
+        return (
+          <Card
+            className={cn(
+              "space-y-4 p-4 md:p-5",
+              !rule.enabled && "bg-muted/35",
+              isHighlighted && "ring-2 ring-primary/25 ring-offset-2"
+            )}
+            key={rule.id}
+          >
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-base font-semibold text-foreground">{rule.name}</h3>
+                  {getRuleActionIcon(rule.action)}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <StatusBadge label={formatActionLabel(rule.action)} tone={getActionTone(rule.action)} />
+                  <StatusBadge label={formatSeverityLabel(rule.severity)} tone={getSeverityTone(rule.severity)} />
+                  <StatusBadge status={rule.enabled ? "enabled" : "disabled"} />
+                  <StatusBadge label={formatRuleTypeLabel(global)} tone={getRuleTypeTone(global)} />
+                  <StatusBadge label={formatScopeLabel(rule.scope)} tone="muted" />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {rule.description?.trim() || "No description provided for this rule."}
+                </p>
+                <p className="break-all text-xs text-muted-foreground">
+                  Stable key: {rule.stable_key?.trim() || "Not provided"}
+                </p>
+              </div>
+
+              <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-3 lg:min-w-[320px]">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide">Priority</p>
+                  <p className="mt-1 text-foreground">{rule.priority ?? "-"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide">Updated</p>
+                  <p className="mt-1 text-foreground">{formatDateTime(rule.updated_at)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide">RAG mode</p>
+                  <p className="mt-1 text-foreground">{formatSummaryValue(rule.rag_mode, "-")}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-border/70 pt-4 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-2">
+                <RuleEnabledControl
+                  disabled={isBusy || !canToggle}
+                  enabled={Boolean(rule.enabled)}
+                  onToggle={() => onToggleEnabled(rule, !rule.enabled)}
+                />
+                {!canToggle && global && !rule.stable_key ? (
+                  <p className="text-xs text-muted-foreground">
+                    Toggle is unavailable because this global rule is missing a stable key.
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                <AppButton
+                  className="min-w-[88px] justify-center"
+                  leadingIcon={<Eye className="h-4 w-4" />}
+                  onClick={() => onViewRule(rule)}
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                >
+                  View
+                </AppButton>
+                <AppButton
+                  className="min-w-[88px] justify-center"
+                  disabled={!canEdit || isBusy}
+                  leadingIcon={<Pencil className="h-4 w-4" />}
+                  onClick={() => onEditRule(rule)}
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                >
+                  Edit
+                </AppButton>
+                <AppButton
+                  className="min-w-[88px] justify-center"
+                  disabled={!canDelete || isBusy}
+                  leadingIcon={<Trash2 className="h-4 w-4" />}
+                  onClick={() => onDeleteRule(rule)}
+                  size="sm"
+                  type="button"
+                  variant="danger"
+                >
+                  Delete
+                </AppButton>
+              </div>
+            </div>
+          </Card>
+        );
+      })}
+      {canLoadMore ? (
+        <div className="flex justify-center pt-1">
+          <AppButton
+            disabled={isLoadingMore}
+            onClick={() => onLoadMore?.()}
+            type="button"
+            variant="secondary"
+          >
+            {isLoadingMore ? "Loading..." : "Load more"}
+          </AppButton>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function EffectiveRuleCard({ rule }: { rule: EffectiveRule }) {
+  const global = String(rule.origin ?? "")
+    .trim()
+    .toLowerCase()
+    .match(/global|override/) != null;
+
+  return (
+    <Card className="space-y-4 p-4 md:p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-base font-semibold text-foreground">{rule.name}</h3>
+            {getRuleActionIcon(rule.action)}
+            <StatusBadge label={formatActionLabel(rule.action)} tone={getActionTone(rule.action)} />
+            <StatusBadge status={rule.enabled === false ? "disabled" : "enabled"} />
+          </div>
+          <p className="break-all text-xs text-muted-foreground">
+            Stable key: {rule.stable_key?.trim() || "Not provided"}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <StatusBadge label={formatRuleTypeLabel(global)} tone={getRuleTypeTone(global)} />
+          <StatusBadge label={formatSummaryValue(rule.origin, "Runtime")} tone="muted" />
+        </div>
+      </div>
+
+      <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide">Priority</p>
+          <p className="mt-1 text-foreground">{rule.priority ?? "-"}</p>
+        </div>
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide">Rule ID</p>
+          <p className="mt-1 break-all text-foreground">{rule.rule_id ?? rule.id ?? "-"}</p>
+        </div>
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide">Source</p>
+          <p className="mt-1 text-foreground">{formatSummaryValue(rule.origin, "Runtime")}</p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function RuleChangeLogCard({ log, index }: { log: RuleChangeLog; index: number }) {
+  const snapshot = getRuleChangeSnapshot(log);
+  const highlights = getRuleChangeHighlights(log);
+  const changedFields = Array.from(new Set(log.changed_fields ?? []));
+  const ruleName = String(snapshot?.name ?? "").trim() || `Rule change ${index + 1}`;
+  const stableKey = String(snapshot?.stable_key ?? "").trim();
+
+  return (
+    <Card className="space-y-4 p-4 md:p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-base font-semibold text-foreground">{ruleName}</h3>
+            <StatusBadge
+              label={formatRuleChangeActionLabel(log.action)}
+              tone={getRuleChangeActionTone(log.action)}
+            />
+          </div>
+          <p className="text-sm text-muted-foreground">{getRuleChangeSummary(log)}</p>
+          <p className="break-all text-xs text-muted-foreground">
+            {stableKey ? `Stable key: ${stableKey}` : "Stable key unavailable"}
+          </p>
+        </div>
+
+        <div className="grid gap-1 text-xs text-muted-foreground lg:text-right">
+          <span>{formatDateTime(log.created_at)}</span>
+          <span>Rule ID: {log.rule_id ?? "-"}</span>
+          <span>Actor: {log.actor_user_id ?? "system"}</span>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Changed fields
+        </p>
+        {changedFields.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No changed fields were recorded.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {changedFields.map((field) => (
+              <StatusBadge
+                key={field}
+                label={formatRuleChangeFieldLabel(field)}
+                tone={getRuleChangeFieldTone(field)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {highlights.length > 0 ? (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {highlights.map((highlight) => (
+            <div className="rounded-xl border border-border/70 bg-background p-3" key={highlight.field}>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {formatRuleChangeFieldLabel(highlight.field)}
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">Before</p>
+              <p className="text-sm font-medium text-foreground">{highlight.before}</p>
+              <p className="mt-2 text-xs text-muted-foreground">After</p>
+              <p className="text-sm font-medium text-foreground">{highlight.after}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {log.reason ? (
+        <AppAlert description={log.reason} title="Reason" variant="info" />
+      ) : null}
+
+      <TechnicalDetailsAccordion
+        sections={[
+          {
+            title: "Before snapshot",
+            data: log.before_json ?? "No previous snapshot was recorded.",
+          },
+          {
+            title: "After snapshot",
+            data: log.after_json ?? "No updated snapshot was recorded.",
+          },
+          {
+            title: "Change log metadata",
+            data: {
+              id: log.id,
+              rule_id: log.rule_id,
+              actor_user_id: log.actor_user_id,
+              action: log.action,
+              changed_fields: log.changed_fields,
+              created_at: log.created_at,
+            },
+          },
+        ]}
+        title="Technical details"
+      />
+    </Card>
   );
 }

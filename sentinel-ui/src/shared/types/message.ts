@@ -7,6 +7,10 @@ export type MessageListItem = {
   role: MessageRole;
   content?: string | null;
   content_masked?: string | null;
+  final_action?: string | null;
+  risk_score?: number | null;
+  blocked?: boolean;
+  blocked_reason?: string | null;
   created_at: string;
   state?: string | null;
 };

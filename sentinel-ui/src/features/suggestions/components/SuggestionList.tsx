@@ -1,6 +1,9 @@
 import { AlertTriangle } from "lucide-react";
 import { SuggestionItem } from "@/features/suggestions/components/SuggestionItem";
-import { Card } from "@/shared/ui/card";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppLoadingState } from "@/shared/ui/app-loading-state";
+import { AppSectionCard } from "@/shared/ui/app-section-card";
+import { EmptyState } from "@/shared/ui/empty-state";
 import type { RuleSuggestionOut } from "@/features/suggestions/types";
 
 type SuggestionListProps = {
@@ -20,32 +23,36 @@ export function SuggestionList({
 }: SuggestionListProps) {
   if (isLoading) {
     return (
-      <Card className="p-4 text-sm text-muted-foreground">Loading suggestions...</Card>
+      <AppLoadingState
+        compact
+        description="Loading the latest suggestions for this workspace."
+        title="Loading suggestions"
+      />
     );
   }
 
   if (isError) {
     return (
-      <Card className="flex items-start gap-2 border-destructive/30 p-4 text-sm text-destructive">
-        <AlertTriangle className="mt-0.5 h-4 w-4" />
-        <span>{errorMessage ?? "Failed to load suggestions."}</span>
-      </Card>
+      <AppAlert
+        description={errorMessage ?? "Failed to load suggestions."}
+        icon={<AlertTriangle className="mt-0.5 h-4 w-4 text-danger" />}
+        title="Unable to load suggestions"
+        variant="error"
+      />
     );
   }
 
   if (items.length === 0) {
     return (
-      <Card className="p-6 text-center">
-        <p className="text-sm font-medium">No suggestions yet</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Generate a suggestion to start review workflow.
-        </p>
-      </Card>
+      <EmptyState
+        description="Generate a suggestion to start the review workflow."
+        title="No suggestions yet"
+      />
     );
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {items.map((item) => (
         <SuggestionItem item={item} key={item.id} onOpen={onOpen} />
       ))}

@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { PolicyDocumentsTab, PolicyJobsTab } from "@/features/policies/components";
 import { useMyRuleSets } from "@/features/rules/hooks";
-import { Card } from "@/shared/ui/card";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppLoadingState } from "@/shared/ui/app-loading-state";
+import { AppPageHeader } from "@/shared/ui/app-page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/tabs";
 
 type PoliciesTab = "documents" | "jobs";
@@ -29,13 +31,21 @@ export function PoliciesPage() {
   }, [location.pathname]);
 
   if (myRuleSetsQuery.isLoading) {
-    return <section className="p-6 text-sm text-muted-foreground">Loading rule set...</section>;
+    return (
+      <section className="p-6">
+        <AppLoadingState
+          className="mx-auto max-w-3xl"
+          description="Loading the current rule set before showing policy documents and ingest jobs."
+          title="Loading policies"
+        />
+      </section>
+    );
   }
 
   if (myRuleSetsQuery.isError || !ruleSetId) {
     return (
       <section className="p-6">
-        <Card className="p-4 text-sm text-destructive">Unable to resolve current rule set.</Card>
+        <AppAlert title="Unable to resolve current rule set." variant="error" />
       </section>
     );
   }
@@ -43,13 +53,11 @@ export function PoliciesPage() {
   return (
     <section className="h-full overflow-auto p-6">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
-        <header>
-          <h1 className="text-xl font-semibold">Policy Documents & Ingest</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage policy documents and ingest jobs for current rule set.
-          </p>
-          <p className="text-xs text-muted-foreground">Rule set ID: {ruleSetId}</p>
-        </header>
+        <AppPageHeader
+          meta={`Rule set ID: ${ruleSetId}`}
+          subtitle="Manage policy documents and ingest jobs for the current rule set."
+          title="Policy Documents & Ingest"
+        />
 
         <Tabs
           onValueChange={(value) => {

@@ -6,7 +6,10 @@ import type {
   DebugEvaluateRequest,
   DebugEvaluateResponse,
   EffectiveRule,
+  PaginatedResult,
+  PaginationMeta,
   RuleDetail,
+  RuleListTab,
   Rule,
   RuleChangeLog,
   RuleSetSummary,
@@ -14,8 +17,13 @@ import type {
   UpdateRuleRequest,
 } from "@/features/rules/types";
 
-type RuleChangeLogsParams = {
+type PaginationParams = {
   limit?: number;
+  cursor?: string;
+};
+
+type RuleSetRulesParams = PaginationParams & {
+  tab?: RuleListTab;
 };
 
 function unwrapEnvelope<T>(envelope: ApiEnvelope<T>, fallbackMessage: string) {
@@ -27,6 +35,33 @@ function unwrapEnvelope<T>(envelope: ApiEnvelope<T>, fallbackMessage: string) {
     throw error;
   }
   return envelope.data;
+}
+
+function unwrapEnvelopeWithMeta<T>(envelope: ApiEnvelope<T>, fallbackMessage: string) {
+  const data = unwrapEnvelope(envelope, fallbackMessage);
+  const meta = (envelope.meta ?? {}) as PaginationMeta;
+  return { data, meta };
+}
+
+function toNullableNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toPaginatedResult<T>(items: T[], rawMeta?: PaginationMeta): PaginatedResult<T> {
+  const nextCursorRaw =
+    typeof rawMeta?.next_cursor === "string" ? rawMeta.next_cursor.trim() : "";
+  const hasMore = Boolean(rawMeta?.has_more);
+  return {
+    items,
+    nextCursor: nextCursorRaw ? nextCursorRaw : null,
+    hasMore,
+    total: toNullableNumber(rawMeta?.total),
+    limit: toNullableNumber(rawMeta?.limit),
+  };
 }
 
 export async function getMyRuleSets() {
@@ -44,11 +79,16 @@ export async function createRuleSet(payload: CreateRuleSetRequest) {
   return unwrapEnvelope(response.data, "Failed to create rule set");
 }
 
-export async function getEffectiveRules() {
+export async function getEffectiveRules(params?: PaginationParams) {
   const response = await httpClient.get<ApiEnvelope<EffectiveRule[]>>(
-    "/v1/rules/me/effective"
+    "/v1/rules/me/effective",
+    { params }
   );
-  return unwrapEnvelope(response.data, "Failed to load effective rules");
+  const { data, meta } = unwrapEnvelopeWithMeta(
+    response.data,
+    "Failed to load effective rules"
+  );
+  return toPaginatedResult(data, meta);
 }
 
 export async function debugEvaluateText(payload: DebugEvaluateRequest) {
@@ -59,11 +99,16 @@ export async function debugEvaluateText(payload: DebugEvaluateRequest) {
   return unwrapEnvelope(response.data, "Failed to evaluate text");
 }
 
-export async function getRuleSetRules(ruleSetId: string) {
+export async function getRuleSetRules(ruleSetId: string, params?: RuleSetRulesParams) {
   const response = await httpClient.get<ApiEnvelope<Rule[]>>(
-    `/v1/rule-sets/${ruleSetId}/rules`
+    `/v1/rule-sets/${ruleSetId}/rules`,
+    { params }
   );
-  return unwrapEnvelope(response.data, "Failed to load rules");
+  const { data, meta } = unwrapEnvelopeWithMeta(
+    response.data,
+    "Failed to load rules"
+  );
+  return toPaginatedResult(data, meta);
 }
 
 export async function getRuleDetail(ruleId: string) {
@@ -75,13 +120,17 @@ export async function getRuleDetail(ruleId: string) {
 
 export async function getRuleChangeLogs(
   ruleSetId: string,
-  params?: RuleChangeLogsParams
+  params?: PaginationParams
 ) {
   const response = await httpClient.get<ApiEnvelope<RuleChangeLog[]>>(
     `/v1/rule-sets/${ruleSetId}/rules/change-logs`,
     { params }
   );
-  return unwrapEnvelope(response.data, "Failed to load rule change logs");
+  const { data, meta } = unwrapEnvelopeWithMeta(
+    response.data,
+    "Failed to load rule change logs"
+  );
+  return toPaginatedResult(data, meta);
 }
 
 export async function createRule(ruleSetId: string, payload: CreateRuleRequest) {

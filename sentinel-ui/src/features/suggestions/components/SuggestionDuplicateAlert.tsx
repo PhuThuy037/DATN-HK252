@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import type { SuggestionDuplicateCandidate } from "@/features/suggestions/types";
-import { Button } from "@/shared/ui/button";
-import { DuplicateList } from "@/features/suggestions/components/DuplicateList";
+import { AppButton } from "@/shared/ui/app-button";
 import { Card } from "@/shared/ui/card";
+import { DuplicateList } from "@/features/suggestions/components/DuplicateList";
 import { resolveDuplicateUiState } from "@/features/suggestions/components/duplicateUiState";
+import { StatusBadge } from "@/shared/ui/status-badge";
 
 type DuplicateInsight = {
   level?: "none" | "weak" | "strong";
@@ -19,10 +20,19 @@ type DuplicateInsight = {
 
 type SuggestionDuplicateAlertProps = {
   insight?: DuplicateInsight | null;
+  highlightTerms?: string[];
   onViewRule?: (candidate: SuggestionDuplicateCandidate) => void;
   onCompareRule?: (candidate: SuggestionDuplicateCandidate) => void;
   onContinueToDraft: () => void;
   forceExpand?: boolean;
+};
+
+type DuplicatePresentation = {
+  title: string;
+  summary: string;
+  tone: "danger" | "warning";
+  cardClassName: string;
+  iconClassName: string;
 };
 
 function formatDuplicateReason(reason?: string | null) {
@@ -33,10 +43,9 @@ function formatDuplicateReason(reason?: string | null) {
 
   const normalized = text.toLowerCase();
   if (normalized.includes("semantic_signature_match")) {
-    return "Detected via semantic matching";
+    return "Detected through semantic matching against an existing rule.";
   }
 
-  // Hide raw internal reason codes (snake_case / code-like tokens).
   if (/^[a-z0-9_]+$/.test(normalized) || normalized.includes("_")) {
     return null;
   }
@@ -44,106 +53,135 @@ function formatDuplicateReason(reason?: string | null) {
   return text;
 }
 
+function getTopSimilarity(candidates: SuggestionDuplicateCandidate[]) {
+  const value = candidates[0]?.similarity;
+  return typeof value === "number" && !Number.isNaN(value) ? value : null;
+}
+
+function getDuplicatePresentation(
+  duplicateState: ReturnType<typeof resolveDuplicateUiState>,
+  candidates: SuggestionDuplicateCandidate[]
+): DuplicatePresentation {
+  const topSimilarity = getTopSimilarity(candidates);
+  const topPercent =
+    typeof topSimilarity === "number" ? `${Math.round(topSimilarity * 100)}%` : "high";
+
+  if (duplicateState === "EXACT_DUPLICATE") {
+    return {
+      title: "Exact duplicate detected",
+      summary: "This suggestion appears to match an existing rule and is likely redundant.",
+      tone: "danger",
+      cardClassName: "border-danger-border bg-danger-muted",
+      iconClassName: "text-danger",
+    };
+  }
+
+  if (typeof topSimilarity === "number" && topSimilarity > 0.9) {
+    return {
+      title: "Very similar rule detected",
+      summary: `A highly overlapping rule already exists (${topPercent} similarity). Review differences carefully before continuing.`,
+      tone: "danger",
+      cardClassName: "border-danger-border bg-danger-muted/70",
+      iconClassName: "text-danger",
+    };
+  }
+
+  return {
+    title: "Similar rule detected",
+    summary: `A related rule already exists (${topPercent} similarity). Review it before continuing to draft.`,
+    tone: "warning",
+    cardClassName: "border-warning-border bg-warning-muted",
+    iconClassName: "text-warning",
+  };
+}
+
 export function SuggestionDuplicateAlert({
   insight,
+  highlightTerms = [],
   onViewRule,
   onCompareRule,
   onContinueToDraft,
   forceExpand = false,
 }: SuggestionDuplicateAlertProps) {
-  if (!insight) {
-    return null;
-  }
-
-  const candidates = insight.similarRules ?? insight.candidates ?? [];
+  const candidates = insight?.similarRules ?? insight?.candidates ?? [];
   const duplicateState = resolveDuplicateUiState({
-    decision: insight.duplicateRisk,
-    level: insight.level,
+    decision: insight?.duplicateRisk,
+    level: insight?.level,
     candidatesCount: candidates.length,
     topSimilarity: candidates[0]?.similarity,
   });
 
-  if (duplicateState === "NO_DUPLICATE") {
-    return null;
-  }
-  const isStrongDuplicateSignal =
-    candidates.length > 0 &&
-    ((insight.level ?? "none") === "strong" || duplicateState !== "NO_DUPLICATE");
-  const [expanded, setExpanded] = useState(false);
+  const hasCandidates = candidates.length > 0;
+  const [expanded, setExpanded] = useState(forceExpand || duplicateState === "EXACT_DUPLICATE");
 
   useEffect(() => {
-    if (forceExpand && isStrongDuplicateSignal) {
+    if (forceExpand && hasCandidates) {
       setExpanded(true);
     }
-  }, [forceExpand, isStrongDuplicateSignal]);
+  }, [forceExpand, hasCandidates]);
 
-  const summaryText = useMemo(() => {
-    if (isStrongDuplicateSignal) {
-      return `${candidates.length} similar rule${candidates.length > 1 ? "s" : ""} found`;
-    }
-    if (duplicateState === "EXACT_DUPLICATE") {
-      return "Exact duplicate detected. This can create unnecessary redundancy.";
-    }
-    return "Similar rule detected. Review differences before continuing.";
-  }, [candidates.length, duplicateState, isStrongDuplicateSignal]);
+  const reasonText = formatDuplicateReason(insight?.reason ?? insight?.rationale);
+  const presentation = useMemo(
+    () => getDuplicatePresentation(duplicateState, candidates),
+    [candidates, duplicateState]
+  );
 
-  const titleText = duplicateState === "EXACT_DUPLICATE" ? "Exact duplicate detected" : "Similar rule detected";
-  const reasonText = formatDuplicateReason(insight.reason ?? insight.rationale);
-  const cardClass =
-    duplicateState === "EXACT_DUPLICATE"
-      ? "border-red-300 bg-red-50 p-3"
-      : isStrongDuplicateSignal
-        ? "border-amber-300 bg-amber-50 p-3"
-        : "border-amber-200 bg-amber-50/60 p-3";
-  const titleClass = duplicateState === "EXACT_DUPLICATE" ? "text-red-800" : "text-amber-800";
-  const summaryClass = duplicateState === "EXACT_DUPLICATE" ? "text-red-700" : "text-amber-700";
+  if (!insight || duplicateState === "NO_DUPLICATE") {
+    return null;
+  }
 
   return (
-    <Card className={cardClass}>
-      <div className="flex items-start gap-2">
-        <AlertTriangle
-          className={duplicateState === "EXACT_DUPLICATE" ? "mt-0.5 h-4 w-4 text-red-700" : "mt-0.5 h-4 w-4 text-amber-700"}
-        />
-        <div className="space-y-1">
-          <p className={`text-sm font-semibold ${titleClass}`}>{titleText}</p>
-          <p className={`text-xs ${summaryClass}`}>{summaryText}</p>
-          {reasonText && <p className={`text-xs ${summaryClass}`}>{reasonText}</p>}
+    <Card className={`space-y-4 p-4 ${presentation.cardClassName}`}>
+      <div className="flex items-start gap-3">
+        <AlertTriangle className={`mt-0.5 h-5 w-5 shrink-0 ${presentation.iconClassName}`} />
+        <div className="min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-foreground">{presentation.title}</p>
+            <StatusBadge
+              label={
+                duplicateState === "EXACT_DUPLICATE"
+                  ? "Exact duplicate"
+                  : presentation.tone === "danger"
+                    ? "Very similar"
+                    : "Similar"
+              }
+              tone={presentation.tone}
+            />
+          </div>
+          <p className="text-sm text-muted-foreground">{presentation.summary}</p>
+          {duplicateState === "EXACT_DUPLICATE" ? (
+            <p className="text-xs font-medium text-danger">
+              Confirmation is blocked until this duplicate is reviewed and the draft is changed.
+            </p>
+          ) : null}
+          {reasonText ? <p className="text-xs text-muted-foreground">{reasonText}</p> : null}
         </div>
       </div>
 
-      {isStrongDuplicateSignal && candidates.length > 0 && (
-        <div className="mt-3 space-y-3">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={() => setExpanded((current) => !current)}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {expanded ? "Hide similar rules" : "View similar rules"}
-            </Button>
-            <Button onClick={onContinueToDraft} size="sm" type="button">
-              Continue to Draft
-            </Button>
-          </div>
+      <div className="flex flex-wrap gap-2">
+        {hasCandidates ? (
+          <AppButton
+            onClick={() => setExpanded((current) => !current)}
+            size="sm"
+            type="button"
+            variant="secondary"
+          >
+            {expanded ? "Hide similar rules" : `Show similar rules (${candidates.length})`}
+          </AppButton>
+        ) : null}
+        <AppButton onClick={onContinueToDraft} size="sm" type="button">
+          Continue to Draft
+        </AppButton>
+      </div>
 
-          {expanded && (
-            <DuplicateList
-              candidates={candidates}
-              onCompareRule={onCompareRule}
-              onViewRule={onViewRule}
-            />
-          )}
-        </div>
-      )}
-
-      {!isStrongDuplicateSignal && (
-        <div className="mt-3">
-          <Button onClick={onContinueToDraft} size="sm" type="button">
-            Continue to Draft
-          </Button>
-        </div>
-      )}
+      {expanded && hasCandidates ? (
+        <DuplicateList
+          candidates={candidates}
+          highlightTerms={highlightTerms}
+          onCompareRule={onCompareRule}
+          onViewRule={onViewRule}
+        />
+      ) : null}
     </Card>
   );
 }

@@ -9,12 +9,38 @@ import {
 } from "@/features/suggestions";
 import { SuggestionList } from "@/features/suggestions/components/SuggestionList";
 import type { SuggestionStatus, SuggestionStatusFilter } from "@/features/suggestions/types";
-import { Button } from "@/shared/ui/button";
-import { Card } from "@/shared/ui/card";
+import { cn } from "@/shared/lib/utils";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppButton } from "@/shared/ui/app-button";
+import { AppLoadingState } from "@/shared/ui/app-loading-state";
+import { AppPageHeader } from "@/shared/ui/app-page-header";
+import { AppSectionCard } from "@/shared/ui/app-section-card";
+import { appActionRowClassName, appSelectControlClassName } from "@/shared/ui/design-tokens";
+import { FieldHelpText } from "@/shared/ui/field-help-text";
+import { InlineErrorText } from "@/shared/ui/inline-error-text";
+import { Label } from "@/shared/ui/label";
 import { Textarea } from "@/shared/ui/textarea";
 import { toast } from "@/shared/ui/use-toast";
 
 const promptSchema = z.string().trim().min(1).max(8000);
+const promptTemplates = [
+  {
+    label: "Mask internal code",
+    value:
+      "Mask internal source code, repository paths, stack traces, and implementation details before the response is shown to end users.",
+  },
+  {
+    label: "Block API key",
+    value:
+      "Block messages that contain API keys, access tokens, or other live credentials, especially if they look like production secrets.",
+  },
+  {
+    label: "Mask email",
+    value:
+      "Mask email addresses when the conversation contains personal contact details that should not be exposed in plain text.",
+  },
+] as const;
+
 const statusOptions: Array<{ label: string; value: SuggestionStatusFilter }> = [
   { label: "All", value: "all" },
   { label: "Draft", value: "draft" },
@@ -89,13 +115,21 @@ export function SuggestionsPage() {
   };
 
   if (myRuleSetsQuery.isLoading) {
-    return <section className="p-6 text-sm text-muted-foreground">Loading rule set...</section>;
+    return (
+      <section className="p-6">
+        <AppLoadingState
+          className="mx-auto max-w-3xl"
+          description="Loading the current rule set before showing suggestions."
+          title="Loading suggestions"
+        />
+      </section>
+    );
   }
 
   if (myRuleSetsQuery.isError || !ruleSetId) {
     return (
       <section className="p-6">
-        <Card className="p-4 text-sm text-destructive">Unable to resolve current rule set.</Card>
+        <AppAlert title="Unable to resolve current rule set." variant="error" />
       </section>
     );
   }
@@ -103,35 +137,68 @@ export function SuggestionsPage() {
   return (
     <section className="h-full overflow-auto p-6">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
-        <header>
-          <h1 className="text-xl font-semibold">Rule Suggestions</h1>
-          <p className="text-sm text-muted-foreground">
-            Generate and manage suggestion lifecycle for current rule set.
-          </p>
-        </header>
+        <AppPageHeader
+          meta={`Rule set ID: ${ruleSetId}`}
+          subtitle="Generate and manage the suggestion lifecycle for the current rule set."
+          title="Rule Suggestions"
+        />
 
-        <Card className="space-y-3 p-4">
-          <p className="text-sm font-semibold">Generate suggestion</p>
+        <AppSectionCard
+          description="Describe the policy intent and create a new suggestion draft."
+          title="Generate suggestion"
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="suggestion-prompt" required>
+              Suggestion prompt
+            </Label>
           <Textarea
+            id="suggestion-prompt"
             className="min-h-[120px]"
             onChange={(event) => setPrompt(event.target.value)}
-            placeholder="Describe policy intent to generate draft suggestion"
+            placeholder="Example: Block messages that contain live API keys, bearer tokens, or production secrets copied from internal tools."
             value={prompt}
           />
-          {validationError && <p className="text-xs text-destructive">{validationError}</p>}
-          <div className="flex justify-end">
-            <Button disabled={generateMutation.isPending} onClick={() => void handleGenerate()} type="button">
-              {generateMutation.isPending ? "Generating..." : "Generate"}
-            </Button>
+            <FieldHelpText>Explain the user-facing policy goal first. Keep technical details secondary.</FieldHelpText>
           </div>
-        </Card>
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              Quick templates
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {promptTemplates.map((template) => (
+                <AppButton
+                  key={template.label}
+                  onClick={() => {
+                    setPrompt(template.value);
+                    setValidationError(null);
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                >
+                  {template.label}
+                </AppButton>
+              ))}
+            </div>
+          </div>
+          {validationError ? <InlineErrorText>{validationError}</InlineErrorText> : null}
+          <div className={appActionRowClassName}>
+            <AppButton disabled={generateMutation.isPending} onClick={() => void handleGenerate()} type="button">
+              {generateMutation.isPending ? "Generating..." : "Generate"}
+            </AppButton>
+          </div>
+        </AppSectionCard>
 
-        <Card className="space-y-3 p-4">
+        <AppSectionCard
+          description="Browse recent suggestions with consistent filters for status and result count."
+          title="Suggestion queue"
+        >
           <div className="flex flex-wrap items-end gap-3">
-            <label className="space-y-1 text-xs text-muted-foreground">
-              <span className="block">Status</span>
+            <div className="space-y-1">
+              <Label htmlFor="suggestion-status-filter">Status</Label>
               <select
-                className="h-9 rounded-md border bg-background px-3 text-sm"
+                className={cn(appSelectControlClassName, "h-9 min-w-[120px] w-auto py-0")}
+                id="suggestion-status-filter"
                 onChange={(event) => setStatusFilter(event.target.value as SuggestionStatusFilter)}
                 value={statusFilter}
               >
@@ -141,12 +208,13 @@ export function SuggestionsPage() {
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
 
-            <label className="space-y-1 text-xs text-muted-foreground">
-              <span className="block">Limit</span>
+            <div className="space-y-1">
+              <Label htmlFor="suggestion-limit-filter">Limit</Label>
               <select
-                className="h-9 rounded-md border bg-background px-3 text-sm"
+                className={cn(appSelectControlClassName, "h-9 min-w-[96px] w-auto py-0")}
+                id="suggestion-limit-filter"
                 onChange={(event) => setLimit(Number(event.target.value))}
                 value={String(limit)}
               >
@@ -156,7 +224,7 @@ export function SuggestionsPage() {
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
           </div>
 
           <SuggestionList
@@ -166,7 +234,7 @@ export function SuggestionsPage() {
             items={sortedItems}
             onOpen={(id) => navigate(`/app/suggestions/${id}`)}
           />
-        </Card>
+        </AppSectionCard>
       </div>
     </section>
   );

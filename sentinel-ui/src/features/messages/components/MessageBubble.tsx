@@ -1,16 +1,16 @@
 import { memo, useEffect, useState } from "react";
-import { AlertCircle, Check, Copy, Loader2, RotateCcw } from "lucide-react";
+import { Check, Copy, Loader2, RotateCcw, ShieldAlert, ShieldCheck, ShieldEllipsis } from "lucide-react";
 import { MarkdownRenderer } from "@/features/messages/components/MarkdownRenderer";
 import { cn } from "@/shared/lib/utils";
-import { Badge } from "@/shared/ui/badge";
-import { Button } from "@/shared/ui/button";
+import { AppButton } from "@/shared/ui/app-button";
 import { Card } from "@/shared/ui/card";
+import { StatusBadge } from "@/shared/ui/status-badge";
 import { toast } from "@/shared/ui/use-toast";
 import type { MessageListItem } from "@/shared/types";
 
 type GroupPosition = "single" | "first" | "middle" | "last";
 
-const BLOCKED_PLACEHOLDER = "Nội dung đã bị chặn bởi compliance policy.";
+const BLOCKED_PLACEHOLDER = "Content was blocked by the active compliance policy.";
 
 type MessageBubbleProps = {
   message: MessageListItem;
@@ -30,6 +30,47 @@ function formatTime(value: string) {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function getActionState(message: MessageListItem) {
+  const finalAction = String(message.final_action ?? "").trim().toLowerCase();
+  if (message.blocked || message.state === "blocked" || finalAction === "block") {
+    return "block";
+  }
+  if (message.state === "masked" || finalAction === "mask") {
+    return "mask";
+  }
+  if (finalAction === "allow") {
+    return "allow";
+  }
+  return null;
+}
+
+function getActionIcon(action: "allow" | "mask" | "block" | null, isUser: boolean) {
+  const className = cn("h-3.5 w-3.5", isUser ? "text-zinc-200" : "text-current");
+  if (action === "allow") {
+    return <ShieldCheck className={className} />;
+  }
+  if (action === "mask") {
+    return <ShieldEllipsis className={className} />;
+  }
+  if (action === "block") {
+    return <ShieldAlert className={className} />;
+  }
+  return null;
+}
+
+function getBubbleRadiusClass(isUser: boolean, groupPosition: GroupPosition) {
+  if (groupPosition === "middle") {
+    return isUser ? "rounded-[24px] rounded-r-lg" : "rounded-[24px] rounded-l-lg";
+  }
+  if (groupPosition === "first") {
+    return isUser ? "rounded-[24px] rounded-br-lg" : "rounded-[24px] rounded-bl-lg";
+  }
+  if (groupPosition === "last") {
+    return isUser ? "rounded-[24px] rounded-tr-lg" : "rounded-[24px] rounded-tl-lg";
+  }
+  return isUser ? "rounded-[24px] rounded-br-lg" : "rounded-[24px] rounded-bl-lg";
+}
+
 function MessageBubbleComponent({
   message,
   isSelected = false,
@@ -39,10 +80,11 @@ function MessageBubbleComponent({
   onRetry,
   groupPosition = "single",
 }: MessageBubbleProps) {
-  const finalAction = (message as { final_action?: string | null }).final_action;
-  const isBlocked = message.state === "blocked" || finalAction === "block";
-  const isMasked = message.state === "masked" || finalAction === "mask";
-  const isUser = message.role === "user" || isBlocked;
+  const actionState = getActionState(message);
+  const isBlocked = actionState === "block";
+  const isMasked = actionState === "mask";
+  const isUser = message.role === "user";
+  const [copied, setCopied] = useState(false);
 
   let content = "[No content]";
   if (isBlocked) {
@@ -52,7 +94,6 @@ function MessageBubbleComponent({
   } else {
     content = message.content ?? message.content_masked ?? "[No content]";
   }
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!copied) {
@@ -80,102 +121,148 @@ function MessageBubbleComponent({
 
   return (
     <div className={cn("group flex w-full", isUser ? "justify-end" : "justify-start")}>
-      <Card
+      <div
         className={cn(
-          "max-w-[70%] cursor-pointer px-4 py-3 shadow-sm transition-colors",
-          isUser
-            ? "border-transparent bg-zinc-900 text-zinc-50"
-            : "bg-zinc-100 text-zinc-900",
-          groupPosition === "single" &&
-            (isUser ? "rounded-2xl rounded-br-md" : "rounded-2xl rounded-bl-md"),
-          groupPosition === "first" &&
-            (isUser ? "rounded-2xl rounded-br-md" : "rounded-2xl rounded-bl-md"),
-          groupPosition === "middle" &&
-            (isUser ? "rounded-2xl rounded-r-md" : "rounded-2xl rounded-l-md"),
-          groupPosition === "last" &&
-            (isUser ? "rounded-2xl rounded-tr-md" : "rounded-2xl rounded-tl-md"),
-          isSelected && "ring-2 ring-primary/40"
+          "flex w-full flex-col",
+          isUser ? "max-w-[84%] items-end md:max-w-[38rem]" : "max-w-[92%] items-start md:max-w-[46rem]"
         )}
-        onClick={() => onSelect?.(message.id)}
       >
-        <div className="mb-2 flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <Button
-            aria-label="Copy message"
-            className={cn(
-              "h-7 w-7",
-              isUser ? "text-zinc-100 hover:bg-zinc-800" : "hover:bg-zinc-200"
-            )}
-            onClick={(event) => {
-              event.stopPropagation();
-              void handleCopy();
-            }}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-          </Button>
-        </div>
-
-        {isUser ? (
-          <p className="whitespace-pre-wrap break-words text-sm leading-6">{content}</p>
-        ) : (
-          <MarkdownRenderer content={content} />
-        )}
-
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <p
-            className={cn(
-              "text-[11px]",
-              isUser ? "text-zinc-300" : "text-muted-foreground"
-            )}
-          >
-            {formatTime(message.created_at)}
-          </p>
-
-          <div className="flex items-center gap-2">
-            {isBlocked && (
-              <Badge className="border-red-300/70 bg-red-50 px-2 py-0 text-[10px] text-red-700">
-                Blocked
-              </Badge>
-            )}
-
-            {isSending && (
+        <Card
+          className={cn(
+            "w-full cursor-pointer border shadow-app-sm transition-all",
+            isUser
+              ? "border-slate-900/85 bg-slate-900 text-slate-50"
+              : "border-border/80 bg-white/95 text-slate-900",
+            getBubbleRadiusClass(isUser, groupPosition),
+            isSelected && "ring-2 ring-primary/35 ring-offset-2",
+            isUser ? "px-4 py-3.5 md:px-4" : "px-4 py-4 md:px-5"
+          )}
+          onClick={() => onSelect?.(message.id)}
+        >
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2.5">
               <span
                 className={cn(
-                  "inline-flex items-center gap-1 text-[11px]",
+                  "text-[11px] font-semibold uppercase tracking-[0.14em]",
                   isUser ? "text-zinc-300" : "text-muted-foreground"
                 )}
               >
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Sending...
+                  {isUser ? "You" : "Assistant"}
               </span>
-            )}
 
-            {isFailed && (
-              <>
-                <Badge className="border-destructive/30 bg-destructive/10 px-2 py-0 text-[10px] text-destructive">
-                  <AlertCircle className="mr-1 h-3 w-3" />
-                  Failed
-                </Badge>
-                <Button
-                  className="h-7 px-2 text-xs"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onRetry?.();
-                  }}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  <RotateCcw className="mr-1 h-3 w-3" />
-                  Retry
-                </Button>
-              </>
-            )}
+              {actionState ? (
+                <span className="inline-flex items-center gap-1.5">
+                  {getActionIcon(actionState, isUser)}
+                  <StatusBadge
+                    className={cn(
+                      "px-2.5 py-1 text-[10px]",
+                      isUser && actionState === "allow" && "border-white/20 bg-white/10 text-white",
+                      isUser && actionState === "mask" && "border-amber-300/25 bg-amber-300/12 text-amber-100",
+                      isUser && actionState === "block" && "border-rose-300/25 bg-rose-300/12 text-rose-100"
+                    )}
+                    status={actionState}
+                  />
+                </span>
+              ) : null}
+            </div>
+
+            <div className="min-w-0">
+              {isUser ? (
+                <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-50/95">
+                  {content}
+                </p>
+              ) : (
+                <div className="text-sm leading-7 text-slate-900">
+                  <MarkdownRenderer content={content} />
+                </div>
+              )}
+            </div>
+
+            {(message.blocked_reason && isBlocked) || isFailed || isSending ? (
+              <div className={cn("space-y-2 border-t pt-3", isUser ? "border-white/10" : "border-border/70")}>
+                {message.blocked_reason && isBlocked ? (
+                  <p className={cn("text-xs", isUser ? "text-rose-100/80" : "text-muted-foreground")}>
+                    Reason: {message.blocked_reason}
+                  </p>
+                ) : null}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {isSending && (
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1.5 text-[11px]",
+                        isUser ? "text-zinc-300" : "text-muted-foreground"
+                      )}
+                    >
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Sending...
+                    </span>
+                  )}
+
+                  {isFailed && (
+                    <>
+                      <StatusBadge
+                        className="gap-1 border-danger-border bg-danger-muted px-2.5 py-1 text-[10px] text-danger"
+                        label="Failed"
+                        tone="danger"
+                      />
+                      <AppButton
+                        className="h-8 rounded-full px-3 text-xs"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onRetry?.();
+                        }}
+                        size="sm"
+                        type="button"
+                        variant="secondary"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        Retry
+                      </AppButton>
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            <div
+              className={cn(
+                "flex items-center justify-between gap-3 border-t pt-2.5",
+                isUser ? "border-white/10" : "border-border/70"
+              )}
+            >
+              <span
+                className={cn(
+                  "text-[11px]",
+                  isUser ? "text-slate-300/80" : "text-muted-foreground"
+                )}
+              >
+                {formatTime(message.created_at)}
+              </span>
+
+              <AppButton
+                aria-label="Copy message"
+                className={cn(
+                  "h-8 w-8 shrink-0 rounded-full px-0 opacity-0 transition-opacity group-hover:opacity-100",
+                  isUser
+                    ? "border-white/10 bg-white/5 text-zinc-100 hover:bg-white/10"
+                    : "border-border/70 bg-background text-muted-foreground hover:text-foreground",
+                  copied && "opacity-100"
+                )}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleCopy();
+                }}
+                size="icon"
+                type="button"
+                variant="secondary"
+              >
+                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              </AppButton>
+            </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -187,6 +274,10 @@ function areEqual(prev: MessageBubbleProps, next: MessageBubbleProps) {
     prev.message.content_masked === next.message.content_masked &&
     prev.message.state === next.message.state &&
     prev.message.role === next.message.role &&
+    prev.message.final_action === next.message.final_action &&
+    prev.message.risk_score === next.message.risk_score &&
+    prev.message.blocked === next.message.blocked &&
+    prev.message.blocked_reason === next.message.blocked_reason &&
     prev.message.created_at === next.message.created_at &&
     prev.isSelected === next.isSelected &&
     prev.isFailed === next.isFailed &&

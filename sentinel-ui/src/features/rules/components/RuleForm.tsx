@@ -2,11 +2,21 @@ import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "re
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/shared/ui/button";
-import { Input } from "@/shared/ui/input";
-import { Label } from "@/shared/ui/label";
-import { Textarea } from "@/shared/ui/textarea";
 import { cn } from "@/shared/lib/utils";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppButton } from "@/shared/ui/app-button";
+import { AppSectionCard } from "@/shared/ui/app-section-card";
+import {
+  appActionRowClassName,
+  appAdvancedSectionClassName,
+  appSelectControlClassName,
+} from "@/shared/ui/design-tokens";
+import { FieldHelpText } from "@/shared/ui/field-help-text";
+import { Input } from "@/shared/ui/input";
+import { InlineErrorText } from "@/shared/ui/inline-error-text";
+import { Label } from "@/shared/ui/label";
+import { TechnicalDetailsAccordion } from "@/shared/ui/technical-details-accordion";
+import { Textarea } from "@/shared/ui/textarea";
 import type { CreateRuleRequest, Rule, UpdateRuleRequest } from "@/features/rules/types";
 
 function validateConditionsNode(node: unknown): { ok: boolean; message?: string } {
@@ -130,8 +140,8 @@ const ruleFormSchema = z.object({
     .max(200, "Stable key must be <= 200 chars"),
   name: z.string().trim().min(1, "Name is required").max(300, "Name must be <= 300 chars"),
   description: z.string().max(2000, "Description must be <= 2000 chars").optional(),
-  scope: z.enum(["prompt", "chat", "file", "api"]),
-  action: z.enum(["allow", "mask", "block", "warn"]),
+  scope: z.enum(["chat"]),
+  action: z.enum(["allow", "mask", "block"]),
   severity: z.enum(["low", "medium", "high"]),
   priority: z.coerce
     .number()
@@ -146,8 +156,8 @@ const ruleFormSchema = z.object({
 
 type RuleFormValues = z.infer<typeof ruleFormSchema>;
 
-const scopeOptions = ["prompt", "chat", "file", "api"] as const;
-const actionOptions = ["allow", "mask", "block", "warn"] as const;
+const scopeOptions = ["chat"] as const;
+const actionOptions = ["allow", "mask", "block"] as const;
 const severityOptions = ["low", "medium", "high"] as const;
 const ragModeOptions = ["off", "explain", "verify"] as const;
 const entityTypeOptions = [
@@ -182,6 +192,8 @@ type RuleFormProps = {
   mode: "create" | "edit";
   initialRule?: Rule | null;
   isSubmitting?: boolean;
+  formId?: string;
+  hideActions?: boolean;
   onCancel: () => void;
   onSubmit: (payload: CreateRuleRequest | UpdateRuleRequest) => Promise<void> | void;
 };
@@ -250,10 +262,10 @@ function mapFieldReasonToMessage(field: RuleFieldErrorKey, reason: string): stri
       return "Stable key is reserved by a global rule.";
     }
     if (normalized.includes("conflict")) {
-      return "Stable key already exists.";
+      return "Stable key already exists in this rule set.";
     }
     if (normalized.includes("exists") || normalized.includes("duplicate")) {
-      return "Stable key already exists.";
+      return "Stable key already exists in this rule set.";
     }
     if (normalized.includes("empty")) {
       return "Stable key is required";
@@ -366,10 +378,13 @@ function extractRuleSubmitError(error: unknown): {
     }
   }
 
-  const serverMessage =
+  let serverMessage =
     typeof envelopeError?.message === "string" && envelopeError.message.trim().length > 0
       ? envelopeError.message
       : fallbackMessage;
+  if (serverMessage.toLowerCase().includes("stable_key already exists in this company")) {
+    serverMessage = "Stable key already exists in this rule set.";
+  }
 
   return {
     fieldErrors,
@@ -625,6 +640,8 @@ export function RuleForm({
   mode,
   initialRule,
   isSubmitting = false,
+  formId,
+  hideActions = false,
   onCancel,
   onSubmit,
 }: RuleFormProps) {
@@ -633,7 +650,7 @@ export function RuleForm({
       stable_key: initialRule?.stable_key ?? "",
       name: initialRule?.name ?? "",
       description: initialRule?.description ?? "",
-      scope: getEnumValue(scopeOptions, initialRule?.scope, "prompt"),
+      scope: getEnumValue(scopeOptions, initialRule?.scope, "chat"),
       action: getEnumValue(actionOptions, initialRule?.action, "mask"),
       severity: getEnumValue(severityOptions, initialRule?.severity, "medium"),
       priority: initialRule?.priority ?? 0,
@@ -970,16 +987,17 @@ export function RuleForm({
   const showErrorSummary = hasSubmitted && (hasFieldErrors || Boolean(submitError));
 
   return (
-    <form className="space-y-4" onSubmit={handleSubmit}>
+    <form className="space-y-4" id={formId} onSubmit={handleSubmit}>
       {showErrorSummary && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <p className="font-medium">Please review the form errors.</p>
-          {submitError && <p className="mt-1 text-xs">{submitError}</p>}
-        </div>
+        <AppAlert
+          description={submitError || "Please review the highlighted fields before saving."}
+          title="Please review the form errors."
+          variant="error"
+        />
       )}
       <div className="space-y-1.5">
-        <Label htmlFor="name">
-          Name <span className="text-destructive">*</span>
+        <Label htmlFor="name" required>
+          Name
         </Label>
         <Input
           className={cn(form.formState.errors.name && "border-destructive focus-visible:ring-destructive")}
@@ -989,47 +1007,43 @@ export function RuleForm({
           required
           {...form.register("name")}
         />
-        {form.formState.errors.name && (
-          <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
-        )}
+        <FieldHelpText>Keep it short and descriptive so rule intent is obvious at a glance.</FieldHelpText>
+        {form.formState.errors.name ? <InlineErrorText>{form.formState.errors.name.message}</InlineErrorText> : null}
       </div>
 
       <div className="space-y-1.5">
         <Label htmlFor="description">Description</Label>
         <Textarea id="description" maxLength={2000} rows={2} {...form.register("description")} />
+        <FieldHelpText>Explain what should happen and why this rule exists.</FieldHelpText>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor="scope">
-            Scope <span className="text-destructive">*</span>
+          <Label htmlFor="scope" required>
+            Scope
           </Label>
           <select
             className={cn(
-              "h-10 w-full rounded-md border bg-background px-3 text-sm",
+              appSelectControlClassName,
               form.formState.errors.scope && "border-destructive"
             )}
             id="scope"
             required
             {...form.register("scope")}
           >
-            <option value="prompt">prompt</option>
             <option value="chat">chat</option>
-            <option value="file">file</option>
-            <option value="api">api</option>
           </select>
-          {form.formState.errors.scope && (
-            <p className="text-xs text-destructive">{form.formState.errors.scope.message}</p>
-          )}
+          <FieldHelpText>Choose where this rule is evaluated in the product flow.</FieldHelpText>
+          {form.formState.errors.scope ? <InlineErrorText>{form.formState.errors.scope.message}</InlineErrorText> : null}
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="action">
-            Action <span className="text-destructive">*</span>
+          <Label htmlFor="action" required>
+            Action
           </Label>
           <select
             className={cn(
-              "h-10 w-full rounded-md border bg-background px-3 text-sm",
+              appSelectControlClassName,
               form.formState.errors.action && "border-destructive"
             )}
             disabled={!canEditAction && mode === "edit"}
@@ -1040,22 +1054,24 @@ export function RuleForm({
             <option value="allow">allow</option>
             <option value="mask">mask</option>
             <option value="block">block</option>
-            <option value="warn">warn</option>
           </select>
-          {form.formState.errors.action && (
-            <p className="text-xs text-destructive">{form.formState.errors.action.message}</p>
+          {!canEditAction && mode === "edit" ? (
+            <FieldHelpText>Action is locked for this rule after creation.</FieldHelpText>
+          ) : (
+            <FieldHelpText>Choose whether the system should allow, mask, or block.</FieldHelpText>
           )}
+          {form.formState.errors.action ? <InlineErrorText>{form.formState.errors.action.message}</InlineErrorText> : null}
         </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor="severity">
-            Severity <span className="text-destructive">*</span>
+          <Label htmlFor="severity" required>
+            Severity
           </Label>
           <select
             className={cn(
-              "h-10 w-full rounded-md border bg-background px-3 text-sm",
+              appSelectControlClassName,
               form.formState.errors.severity && "border-destructive"
             )}
             id="severity"
@@ -1066,15 +1082,14 @@ export function RuleForm({
             <option value="medium">medium</option>
             <option value="high">high</option>
           </select>
-          {form.formState.errors.severity && (
-            <p className="text-xs text-destructive">{form.formState.errors.severity.message}</p>
-          )}
+          <FieldHelpText>Severity helps communicate impact when this rule is matched.</FieldHelpText>
+          {form.formState.errors.severity ? <InlineErrorText>{form.formState.errors.severity.message}</InlineErrorText> : null}
         </div>
 
         <div className="space-y-1.5">
           <Label htmlFor="rag_mode">RAG mode</Label>
           <select
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+            className={appSelectControlClassName}
             id="rag_mode"
             {...form.register("rag_mode")}
           >
@@ -1082,10 +1097,12 @@ export function RuleForm({
             <option value="explain">explain</option>
             <option value="verify">verify</option>
           </select>
+          <FieldHelpText>Use this only when the rule depends on retrieval-backed reasoning.</FieldHelpText>
         </div>
       </div>
 
-      <div className="inline-flex items-center gap-2 rounded-md border px-3 py-2">
+      <div className="space-y-2">
+        <div className="inline-flex items-center gap-2 rounded-xl border border-border/80 bg-background px-3 py-2 shadow-app-sm">
         <input
           className="h-4 w-4 shrink-0 align-middle"
           id="enabled"
@@ -1095,18 +1112,20 @@ export function RuleForm({
         <Label className="cursor-pointer leading-none" htmlFor="enabled">
           Enabled
         </Label>
+        </div>
+        <FieldHelpText>Disabled rules stay editable but do not affect runtime evaluation.</FieldHelpText>
       </div>
 
-      <details className="rounded-md border p-3 text-sm" open={mode === "create"}>
+      <details className={cn(appAdvancedSectionClassName, "text-sm")} open={mode === "create"}>
         <summary className="cursor-pointer font-medium">Advanced rule settings</summary>
-        <p className="mt-2 text-xs text-muted-foreground">
+        <FieldHelpText className="mt-2">
           Internal identity and tuning fields. Most users only need these for special cases.
-        </p>
+        </FieldHelpText>
 
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="stable_key">
-              Stable key <span className="text-destructive">*</span>
+            <Label htmlFor="stable_key" required>
+              Stable key
             </Label>
             <Input
               className={cn(form.formState.errors.stable_key && "border-destructive focus-visible:ring-destructive")}
@@ -1120,16 +1139,17 @@ export function RuleForm({
               {...form.register("stable_key")}
             />
             {mode === "edit" && (
-              <p className="text-[11px] text-muted-foreground">Stable key is fixed after creation.</p>
+              <FieldHelpText>Stable key is fixed after creation.</FieldHelpText>
             )}
-            {form.formState.errors.stable_key && (
-              <p className="text-xs text-destructive">{form.formState.errors.stable_key.message}</p>
-            )}
+            {!form.formState.errors.stable_key && mode === "create" ? (
+              <FieldHelpText>Use lowercase letters, numbers, dots, underscores, or dashes.</FieldHelpText>
+            ) : null}
+            {form.formState.errors.stable_key ? <InlineErrorText>{form.formState.errors.stable_key.message}</InlineErrorText> : null}
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="priority">
-              Priority <span className="text-destructive">*</span>
+            <Label htmlFor="priority" required>
+              Priority
             </Label>
             <Input
               className={cn(form.formState.errors.priority && "border-destructive focus-visible:ring-destructive")}
@@ -1140,24 +1160,21 @@ export function RuleForm({
               type="number"
               {...form.register("priority")}
             />
-            {form.formState.errors.priority && (
-              <p className="text-xs text-destructive">{form.formState.errors.priority.message}</p>
-            )}
+            <FieldHelpText>Higher values win when multiple rules match the same input.</FieldHelpText>
+            {form.formState.errors.priority ? <InlineErrorText>{form.formState.errors.priority.message}</InlineErrorText> : null}
           </div>
         </div>
       </details>
 
       <div id="conditions-section">
       <CardSection title="Conditions">
-        <p className="text-xs text-muted-foreground">
-          Required <span className="text-destructive">*</span>
-        </p>
+        <FieldHelpText>Required. Start with readable builder conditions and only drop to JSON for advanced cases.</FieldHelpText>
         {isBuilderAvailable ? (
           <>
             <div className="space-y-1.5">
               <Label htmlFor="conditions_logic">Logic</Label>
               <select
-                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                className={appSelectControlClassName}
                 id="conditions_logic"
                 onChange={(event) => setBuilderLogic(event.target.value as BuilderLogic)}
                 value={builderLogic}
@@ -1171,21 +1188,21 @@ export function RuleForm({
               <div className="space-y-3 rounded-md border p-3" key={condition.id}>
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium">Condition #{index + 1}</p>
-                  <Button
+                  <AppButton
                     disabled={builderConditions.length <= 1}
                     onClick={() => removeCondition(condition.id)}
                     size="sm"
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                   >
                     Remove
-                  </Button>
+                  </AppButton>
                 </div>
 
                 <div className="space-y-1.5">
                   <Label>Type</Label>
                   <select
-                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                    className={appSelectControlClassName}
                     onChange={(event) =>
                       updateCondition(condition.id, {
                         type: event.target.value as BuilderConditionType,
@@ -1203,7 +1220,7 @@ export function RuleForm({
                     <div className="space-y-1.5">
                       <Label>Entity type</Label>
                       <select
-                        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        className={appSelectControlClassName}
                         onChange={(event) =>
                           updateCondition(condition.id, { entityType: event.target.value })
                         }
@@ -1217,7 +1234,7 @@ export function RuleForm({
                       </select>
                     </div>
 
-                    <details className="rounded-md border bg-muted/20 p-2">
+                    <details className={cn(appAdvancedSectionClassName, "p-3")}>
                       <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
                         Advanced condition settings
                       </summary>
@@ -1253,14 +1270,14 @@ export function RuleForm({
                       />
                     </div>
 
-                    <details className="rounded-md border bg-muted/20 p-2">
+                    <details className={cn(appAdvancedSectionClassName, "p-3")}>
                       <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
                         Advanced condition settings
                       </summary>
                       <div className="mt-3 space-y-1.5">
                         <Label>Signal field</Label>
                         <select
-                          className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                          className={appSelectControlClassName}
                           onChange={(event) =>
                             updateCondition(condition.id, { signalField: event.target.value })
                           }
@@ -1280,16 +1297,16 @@ export function RuleForm({
             ))}
 
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => addCondition("entity_match")} type="button" variant="outline">
+              <AppButton onClick={() => addCondition("entity_match")} type="button" variant="secondary">
                 + Add entity condition
-              </Button>
-              <Button
+              </AppButton>
+              <AppButton
                 onClick={() => addCondition("signal_keyword_match")}
                 type="button"
-                variant="outline"
+                variant="secondary"
               >
                 + Add signal condition
-              </Button>
+              </AppButton>
             </div>
 
             <div className="rounded-md border bg-muted/30 p-3">
@@ -1302,24 +1319,23 @@ export function RuleForm({
             </div>
           </>
         ) : (
-          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            Builder cannot represent current JSON safely. Use Advanced JSON, then click{" "}
-            <span className="font-medium">Sync JSON to builder</span> after simplifying structure.
-          </div>
+          <AppAlert
+            description="Use Advanced JSON, then sync back to the builder after simplifying the structure."
+            title="Builder cannot safely represent the current JSON."
+            variant="warning"
+          />
         )}
 
         {advancedModeWarning && (
-          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            {advancedModeWarning}
-          </div>
+          <AppAlert description={advancedModeWarning} title="Advanced JSON is active" variant="warning" />
         )}
 
-        <div className="space-y-2 rounded-md border border-dashed p-3">
+        <div className="space-y-2 rounded-xl border border-dashed border-border/80 p-3">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground">Advanced mode for raw JSON editing.</p>
-            <Button onClick={toggleAdvancedJson} size="sm" type="button" variant="outline">
+            <FieldHelpText>Advanced mode for raw JSON editing.</FieldHelpText>
+            <AppButton onClick={toggleAdvancedJson} size="sm" type="button" variant="secondary">
               {showAdvancedJson ? "Hide advanced JSON" : "Show advanced JSON"}
-            </Button>
+            </AppButton>
           </div>
 
           {showAdvancedJson && (
@@ -1333,9 +1349,9 @@ export function RuleForm({
                 }}
                 value={advancedJsonText}
               />
-              {advancedJsonError && <p className="text-xs text-destructive">{advancedJsonError}</p>}
+              {advancedJsonError ? <InlineErrorText>{advancedJsonError}</InlineErrorText> : null}
               <div className="flex flex-wrap gap-2">
-                <Button
+                <AppButton
                   onClick={() => {
                     setAdvancedJsonText(generatedConditionsJsonString);
                     setSaveFromAdvancedJson(false);
@@ -1344,39 +1360,45 @@ export function RuleForm({
                   }}
                   size="sm"
                   type="button"
-                  variant="outline"
+                  variant="secondary"
                 >
                   Reset JSON from builder
-                </Button>
-                <Button onClick={syncJsonToBuilder} size="sm" type="button" variant="outline">
+                </AppButton>
+                <AppButton onClick={syncJsonToBuilder} size="sm" type="button" variant="secondary">
                   Sync JSON to builder
-                </Button>
+                </AppButton>
               </div>
             </div>
           )}
         </div>
 
-        <details className="rounded-md border p-2">
-          <summary className="cursor-pointer text-xs text-muted-foreground">
-            Preview generated JSON
-          </summary>
-          <pre className="mt-2 overflow-auto rounded bg-muted p-2 text-xs">
-            {generatedConditionsJsonString}
-          </pre>
-        </details>
-        {conditionsError && <p className="text-xs text-destructive">{conditionsError}</p>}
+        <TechnicalDetailsAccordion
+          sections={[
+            {
+              title: "Generated conditions JSON",
+              data: generatedConditionsJsonString,
+            },
+          ]}
+          title="Technical details"
+        />
+        {conditionsError ? <InlineErrorText>{conditionsError}</InlineErrorText> : null}
       </CardSection>
       </div>
-
-      <div className="flex justify-end gap-2">
-        <Button onClick={onCancel} type="button" variant="outline">
-          Cancel
-        </Button>
-        <Button disabled={isSubmitting} type="submit">
-          {isSubmitting ? "Saving..." : mode === "create" ? "Create Rule" : "Save Changes"}
-        </Button>
-      </div>
-      {submitError && !showErrorSummary && <p className="text-xs text-destructive">{submitError}</p>}
+      {!hideActions ? (
+        <div className="mt-4 border-t border-border/70 bg-background pt-4">
+          <div className={appActionRowClassName}>
+            <AppButton onClick={onCancel} type="button" variant="secondary">
+              Cancel
+            </AppButton>
+            <AppButton disabled={isSubmitting} type="submit">
+              {isSubmitting ? "Saving..." : mode === "create" ? "Create Rule" : "Save Changes"}
+            </AppButton>
+          </div>
+          {submitError && !showErrorSummary ? <InlineErrorText>{submitError}</InlineErrorText> : null}
+        </div>
+      ) : submitError && !showErrorSummary ? (
+        <InlineErrorText>{submitError}</InlineErrorText>
+      ) : null}
     </form>
   );
 }
@@ -1389,9 +1411,8 @@ function CardSection({
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-3 rounded-md border p-3">
-      <h4 className="text-sm font-medium">{title}</h4>
+    <AppSectionCard className="p-4 md:p-4" contentClassName="space-y-3" title={title}>
       {children}
-    </div>
+    </AppSectionCard>
   );
 }

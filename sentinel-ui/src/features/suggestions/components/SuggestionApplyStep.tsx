@@ -1,8 +1,12 @@
-﻿import type { RuleSuggestionGetOut } from "@/features/suggestions/types";
+import { useNavigate } from "react-router-dom";
+import type { RuleSuggestionGetOut } from "@/features/suggestions/types";
 import { canApply } from "@/features/suggestions/components/StatusBadge";
 import { SuggestionApplyResultCard } from "@/features/suggestions/components/SuggestionApplyResultCard";
-import { Button } from "@/shared/ui/button";
-import { Card } from "@/shared/ui/card";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppButton } from "@/shared/ui/app-button";
+import { EmptyState } from "@/shared/ui/empty-state";
+import { AppSectionCard } from "@/shared/ui/app-section-card";
+import { StatusBadge } from "@/shared/ui/status-badge";
 
 type SuggestionApplyStepProps = {
   suggestion: RuleSuggestionGetOut;
@@ -10,36 +14,76 @@ type SuggestionApplyStepProps = {
   onOpenApply: () => void;
 };
 
-export function SuggestionApplyStep({ suggestion, isApplying, onOpenApply }: SuggestionApplyStepProps) {
+export function SuggestionApplyStep({
+  suggestion,
+  isApplying,
+  onOpenApply,
+}: SuggestionApplyStepProps) {
+  const navigate = useNavigate();
+  const appliedRuleId =
+    typeof suggestion.applied_result_json?.rule_id === "string"
+      ? suggestion.applied_result_json.rule_id
+      : "";
+
   return (
-    <Card className="space-y-3 p-4">
-      <h2 className="text-base font-semibold">Apply</h2>
+    <AppSectionCard
+      actions={
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge label="Step 6 of 6" tone="muted" />
+          {suggestion.status === "applied" ? <StatusBadge label="Done" tone="success" /> : null}
+        </div>
+      }
+      description="Apply this approved suggestion to create or update runtime rule data."
+      title="Apply"
+    >
 
       {suggestion.status === "applied" ? (
         <>
-          <p className="text-sm text-muted-foreground">Suggestion has been applied successfully.</p>
+          <AppAlert
+            description="The suggestion has been applied successfully and is ready for follow-up validation."
+            title="Rule applied successfully"
+            variant="success"
+          />
+
           {suggestion.applied_result_json ? (
             <SuggestionApplyResultCard appliedResultJson={suggestion.applied_result_json} />
           ) : (
-            <p className="text-sm text-muted-foreground">No apply result payload found.</p>
+            <EmptyState
+              description="The rule was applied, but no additional result payload was returned."
+              title="No apply result details"
+            />
           )}
+
+          <div className="flex flex-wrap gap-2">
+            <AppButton
+              onClick={() =>
+                navigate("/app/settings/rules", {
+                  state: appliedRuleId ? { highlightRuleId: appliedRuleId } : undefined,
+                })
+              }
+              type="button"
+              variant="secondary"
+            >
+              Go to rules
+            </AppButton>
+            <AppButton onClick={() => navigate("/app/chat")} type="button">
+              Test in chat
+            </AppButton>
+          </div>
         </>
       ) : (
         <>
-          <p className="text-sm text-muted-foreground">
-            Apply this approved suggestion to create/update runtime rule data.
-          </p>
           <div>
-            <Button
+            <AppButton
               disabled={!canApply(suggestion.status) || isApplying}
               onClick={onOpenApply}
               type="button"
             >
               {isApplying ? "Applying..." : "Apply suggestion"}
-            </Button>
+            </AppButton>
           </div>
         </>
       )}
-    </Card>
+    </AppSectionCard>
   );
 }

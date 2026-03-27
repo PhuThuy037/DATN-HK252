@@ -1,3 +1,6 @@
+import { MessageSquareText } from "lucide-react";
+import { EmptyState } from "@/shared/ui/empty-state";
+
 type EmptyChatStateProps = {
   title?: string;
   description?: string;
@@ -8,9 +11,10 @@ export function EmptyChatState({
   description = "Send a message to start this conversation.",
 }: EmptyChatStateProps) {
   return (
-    <div className="rounded-md border border-dashed p-6 text-center">
-      <p className="text-sm font-medium">{title}</p>
-      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-    </div>
+    <EmptyState
+      description={description}
+      icon={<MessageSquareText className="h-5 w-5" />}
+      title={title}
+    />
   );
 }

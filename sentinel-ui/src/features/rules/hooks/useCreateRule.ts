@@ -13,11 +13,11 @@ export function useCreateRule(ruleSetId?: string) {
       if (!ruleSetId) {
         return;
       }
-      queryClient.invalidateQueries({ queryKey: ruleQueryKeys.rules(ruleSetId) });
+      queryClient.invalidateQueries({ queryKey: ruleQueryKeys.rulesRoot(ruleSetId) });
       queryClient.invalidateQueries({
-        queryKey: ruleQueryKeys.ruleChangeLogs(ruleSetId),
+        queryKey: ruleQueryKeys.ruleChangeLogsRoot(ruleSetId),
       });
-      queryClient.invalidateQueries({ queryKey: ruleQueryKeys.effectiveRules });
+      queryClient.invalidateQueries({ queryKey: ruleQueryKeys.effectiveRulesRoot });
     },
   });
 }

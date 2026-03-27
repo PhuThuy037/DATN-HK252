@@ -19,6 +19,23 @@ export type Rule = {
   updated_at?: string;
 };
 
+export type RuleListTab = "my" | "global" | "all";
+
+export type PaginationMeta = {
+  next_cursor?: string | null;
+  has_more?: boolean | null;
+  total?: number | null;
+  limit?: number | null;
+};
+
+export type PaginatedResult<T> = {
+  items: T[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  total: number | null;
+  limit: number | null;
+};
+
 export type RuleContextTerm = {
   id: string;
   entity_type: string;

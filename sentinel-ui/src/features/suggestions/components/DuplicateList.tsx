@@ -3,12 +3,14 @@ import { DuplicateRuleCard } from "@/features/suggestions/components/DuplicateRu
 
 type DuplicateListProps = {
   candidates: SuggestionDuplicateCandidate[];
+  highlightTerms?: string[];
   onViewRule?: (candidate: SuggestionDuplicateCandidate) => void;
   onCompareRule?: (candidate: SuggestionDuplicateCandidate) => void;
 };
 
 export function DuplicateList({
   candidates,
+  highlightTerms = [],
   onViewRule,
   onCompareRule,
 }: DuplicateListProps) {
@@ -18,13 +20,14 @@ export function DuplicateList({
 
   return (
     <div className="space-y-3" id="suggestion-duplicate-list">
-      <p className="text-sm font-medium">
-        {candidates.length} similar rule{candidates.length > 1 ? "s" : ""} found
+      <p className="text-sm font-medium text-foreground">
+        {candidates.length} similar rule{candidates.length > 1 ? "s" : ""} to review
       </p>
-      <div className="space-y-2">
+      <div className="grid gap-3">
         {candidates.map((candidate) => (
           <DuplicateRuleCard
             candidate={candidate}
+            highlightTerms={highlightTerms}
             key={candidate.rule_id}
             onCompareRule={onCompareRule}
             onViewRule={onViewRule}

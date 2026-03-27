@@ -23,8 +23,11 @@ import {
   deleteConversation,
   updateConversation,
 } from "@/shared/api/conversationsApi";
+import { AppLoadingState } from "@/shared/ui/app-loading-state";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
+import { EmptyState } from "@/shared/ui/empty-state";
 import { Input } from "@/shared/ui/input";
 import { ScrollArea } from "@/shared/ui/scroll-area";
 import { toast } from "@/shared/ui/use-toast";
@@ -184,6 +187,9 @@ export function Sidebar({ className, onConversationSelect }: SidebarProps) {
   );
   const [draftTitle, setDraftTitle] = useState("");
   const [openMenuConversationId, setOpenMenuConversationId] = useState<string | null>(
+    null
+  );
+  const [pendingDeleteConversationId, setPendingDeleteConversationId] = useState<string | null>(
     null
   );
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -357,14 +363,9 @@ export function Sidebar({ className, onConversationSelect }: SidebarProps) {
 
   const removeConversation = async (targetConversationId: string) => {
     setOpenMenuConversationId(null);
-    const shouldDelete = window.confirm(
-      "Delete this conversation? This action cannot be undone."
-    );
-    if (!shouldDelete) {
-      return;
-    }
     try {
       await deleteConversationMutation.mutateAsync(targetConversationId);
+      setPendingDeleteConversationId(null);
     } catch {
       // Handled by mutation callbacks.
     }
@@ -475,9 +476,11 @@ export function Sidebar({ className, onConversationSelect }: SidebarProps) {
         <ScrollArea className="h-full px-1" ref={containerRef}>
           <div className="space-y-2 py-1">
             {isLoading && (
-              <p className="p-2 text-xs text-muted-foreground">
-                Loading conversations...
-              </p>
+              <AppLoadingState
+                compact
+                description="Loading recent conversations."
+                title="Loading conversations"
+              />
             )}
             {isError && (
               <p className="p-2 text-xs text-destructive">
@@ -485,9 +488,10 @@ export function Sidebar({ className, onConversationSelect }: SidebarProps) {
               </p>
             )}
             {!isLoading && !isError && !hasConversations && (
-              <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                No conversations yet. Create your first chat to begin scanning.
-              </div>
+              <EmptyState
+                description="Create your first chat to begin scanning."
+                title="No conversations yet"
+              />
             )}
             {sortedConversations.map((conversation) => (
               <ConversationItem
@@ -503,7 +507,7 @@ export function Sidebar({ className, onConversationSelect }: SidebarProps) {
                 menuOpen={openMenuConversationId === conversation.id}
                 onArchive={() => void archiveConversation(conversation.id)}
                 onClick={handleConversationClick}
-                onDelete={() => void removeConversation(conversation.id)}
+                onDelete={() => setPendingDeleteConversationId(conversation.id)}
                 onDraftTitleChange={setDraftTitle}
                 onMenuToggle={() =>
                   setOpenMenuConversationId((current) =>
@@ -521,6 +525,21 @@ export function Sidebar({ className, onConversationSelect }: SidebarProps) {
           </div>
         </ScrollArea>
       </Card>
+
+      <ConfirmDialog
+        confirmLabel={deleteConversationMutation.isPending ? "Deleting..." : "Delete conversation"}
+        confirmVariant="danger"
+        description="Delete this conversation? This action cannot be undone."
+        isBusy={deleteConversationMutation.isPending}
+        onClose={() => setPendingDeleteConversationId(null)}
+        onConfirm={() => {
+          if (pendingDeleteConversationId) {
+            void removeConversation(pendingDeleteConversationId);
+          }
+        }}
+        open={Boolean(pendingDeleteConversationId)}
+        title="Delete conversation?"
+      />
     </aside>
   );
 }

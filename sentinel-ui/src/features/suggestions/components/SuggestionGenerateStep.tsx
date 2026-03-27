@@ -1,5 +1,7 @@
+import { useMemo } from "react";
 import type { SuggestionDuplicateCandidate } from "@/features/suggestions/types";
-import { Button } from "@/shared/ui/button";
+import { AppButton } from "@/shared/ui/app-button";
+import { AppSectionCard } from "@/shared/ui/app-section-card";
 import { Card } from "@/shared/ui/card";
 import { SuggestionDuplicateAlert } from "@/features/suggestions/components/SuggestionDuplicateAlert";
 import { resolveDuplicateUiState } from "@/features/suggestions/components/duplicateUiState";
@@ -21,6 +23,36 @@ type SuggestionGenerateStepProps = {
   onCompareDuplicateRule?: (candidate: SuggestionDuplicateCandidate) => void;
 };
 
+const promptStopWords = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "that",
+  "this",
+  "from",
+  "your",
+  "into",
+  "when",
+  "then",
+  "rule",
+  "mask",
+  "block",
+  "allow",
+]);
+
+function extractPromptKeywords(prompt: string) {
+  return Array.from(
+    new Set(
+      prompt
+        .split(/[^a-zA-Z0-9_@.-]+/)
+        .map((part) => part.trim())
+        .filter((part) => part.length >= 3)
+        .filter((part) => !promptStopWords.has(part.toLowerCase()))
+    )
+  ).slice(0, 8);
+}
+
 export function SuggestionGenerateStep({
   prompt,
   duplicateInsight,
@@ -36,33 +68,38 @@ export function SuggestionGenerateStep({
     topSimilarity: similarRules[0]?.similarity,
   });
   const shouldShowDuplicateBox = duplicateState !== "NO_DUPLICATE";
+  const highlightTerms = useMemo(() => extractPromptKeywords(prompt), [prompt]);
 
   return (
-    <Card className="space-y-4 p-4">
-      <h2 className="text-base font-semibold">Generate</h2>
-      <p className="text-sm text-muted-foreground">Review duplicate signal before continuing.</p>
-
-      <div className="rounded-md border bg-muted/30 p-3">
-        <p className="text-xs font-medium text-muted-foreground">Original prompt</p>
-        <p className="mt-1 text-sm">{prompt}</p>
-      </div>
-
-      {!shouldShowDuplicateBox && (
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={onContinueToDraft} type="button">
-            Continue to Draft
-          </Button>
+    <AppSectionCard
+      description="Review the original request and check for overlapping rules before editing the draft."
+      title="Step 1: Generate"
+    >
+      <Card className="space-y-3 p-4">
+        <div className="space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Original prompt
+          </p>
+          <p className="text-sm leading-6 text-foreground">{prompt}</p>
         </div>
-      )}
+      </Card>
 
-      {shouldShowDuplicateBox && (
+      {!shouldShowDuplicateBox ? (
+        <div className="flex flex-wrap gap-2">
+          <AppButton onClick={onContinueToDraft} type="button">
+            Continue to Draft
+          </AppButton>
+        </div>
+      ) : (
         <SuggestionDuplicateAlert
+          forceExpand={duplicateState === "EXACT_DUPLICATE"}
+          highlightTerms={highlightTerms}
           insight={duplicateInsight}
           onCompareRule={onCompareDuplicateRule}
           onContinueToDraft={onContinueToDraft}
           onViewRule={onViewDuplicateRule}
         />
       )}
-    </Card>
+    </AppSectionCard>
   );
 }

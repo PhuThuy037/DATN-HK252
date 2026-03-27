@@ -5,7 +5,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useNavigate } from "react-router-dom";
 import { extractAuthErrorMessage } from "@/features/auth/api/authApi";
 import { useLogin } from "@/features/auth/hooks/useLogin";
-import { Button } from "@/shared/ui/button";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppButton } from "@/shared/ui/app-button";
 import {
   Card,
   CardContent,
@@ -13,7 +14,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/shared/ui/card";
+import { FieldHelpText } from "@/shared/ui/field-help-text";
 import { Input } from "@/shared/ui/input";
+import { InlineErrorText } from "@/shared/ui/inline-error-text";
 import { Label } from "@/shared/ui/label";
 import { toast } from "@/shared/ui/use-toast";
 
@@ -47,10 +50,7 @@ export function LoginPage() {
     setServerError("");
 
     try {
-      const response = await loginMutation.mutateAsync(values);
-      // Temporary success handling for this step.
-      // eslint-disable-next-line no-console
-      console.log("Login success:", response);
+      await loginMutation.mutateAsync(values);
 
       toast({
         title: "Login successful",
@@ -71,56 +71,55 @@ export function LoginPage() {
   });
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-6 py-12">
-      <Card className="w-full max-w-md shadow-sm">
+    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,rgba(37,99,235,0.12),transparent_32%),linear-gradient(180deg,rgba(248,250,252,1),rgba(255,255,255,1))] px-6 py-12">
+      <Card className="w-full max-w-md rounded-[28px] border-border/80 bg-background/96 shadow-app-lg">
         <CardHeader>
-          <CardTitle>Login</CardTitle>
-          <CardDescription>Sign in to continue to your chat workspace.</CardDescription>
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Sentinel UI</p>
+            <CardTitle className="text-title">Login</CardTitle>
+            <CardDescription>Sign in to continue to your chat workspace.</CardDescription>
+          </div>
         </CardHeader>
 
         <CardContent>
           <form className="space-y-4" onSubmit={onSubmit}>
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email" required>Email</Label>
               <Input
                 autoComplete="email"
+                className={form.formState.errors.email ? "border-destructive focus-visible:ring-destructive" : undefined}
                 id="email"
                 placeholder="you@example.com"
                 type="email"
                 {...form.register("email")}
               />
-              {form.formState.errors.email && (
-                <p className="text-xs text-destructive">
-                  {form.formState.errors.email.message}
-                </p>
-              )}
+              <FieldHelpText>Use the email tied to your Sentinel workspace.</FieldHelpText>
+              {form.formState.errors.email ? <InlineErrorText>{form.formState.errors.email.message}</InlineErrorText> : null}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password" required>Password</Label>
               <Input
                 autoComplete="current-password"
+                className={form.formState.errors.password ? "border-destructive focus-visible:ring-destructive" : undefined}
                 id="password"
                 placeholder="Enter your password"
                 type="password"
                 {...form.register("password")}
               />
-              {form.formState.errors.password && (
-                <p className="text-xs text-destructive">
-                  {form.formState.errors.password.message}
-                </p>
-              )}
+              <FieldHelpText>Passwords must be at least 6 characters.</FieldHelpText>
+              {form.formState.errors.password ? <InlineErrorText>{form.formState.errors.password.message}</InlineErrorText> : null}
             </div>
 
-            {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+            {serverError ? <AppAlert description={serverError} title="Login failed" variant="error" /> : null}
 
-            <Button className="w-full" disabled={loginMutation.isPending} type="submit">
+            <AppButton className="w-full" disabled={loginMutation.isPending} type="submit">
               {loginMutation.isPending ? "Signing in..." : "Sign in"}
-            </Button>
+            </AppButton>
 
             <p className="text-sm text-muted-foreground">
               No account?{" "}
-              <Link className="underline" to="/register">
+              <Link className="font-medium text-primary underline-offset-4 hover:underline" to="/register">
                 Register
               </Link>
             </p>

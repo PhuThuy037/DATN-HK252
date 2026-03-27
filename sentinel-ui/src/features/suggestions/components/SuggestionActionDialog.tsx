@@ -1,12 +1,13 @@
-﻿import { type ReactNode } from "react";
-import { Button } from "@/shared/ui/button";
-import { Card } from "@/shared/ui/card";
+import type { ReactNode } from "react";
+import { AppButton } from "@/shared/ui/app-button";
+import { AppModal } from "@/shared/ui/app-modal";
 
 type SuggestionActionDialogProps = {
   open: boolean;
   title: string;
   description: string;
   confirmLabel: string;
+  confirmVariant?: "primary" | "secondary" | "danger" | "ghost";
   isBusy: boolean;
   onConfirm: () => void;
   onClose: () => void;
@@ -18,6 +19,7 @@ export function SuggestionActionDialog({
   title,
   description,
   confirmLabel,
+  confirmVariant = "primary",
   isBusy,
   onConfirm,
   onClose,
@@ -28,24 +30,24 @@ export function SuggestionActionDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <Card className="w-full max-w-lg space-y-4 p-4">
-        <div>
-          <h3 className="text-base font-semibold">{title}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-        </div>
-
-        {children}
-
+    <AppModal
+      description={description}
+      footer={
         <div className="flex justify-end gap-2">
-          <Button onClick={onClose} type="button" variant="outline">
+          <AppButton onClick={onClose} type="button" variant="secondary">
             Cancel
-          </Button>
-          <Button disabled={isBusy} onClick={onConfirm} type="button">
+          </AppButton>
+          <AppButton disabled={isBusy} onClick={onConfirm} type="button" variant={confirmVariant}>
             {confirmLabel}
-          </Button>
+          </AppButton>
         </div>
-      </Card>
-    </div>
+      }
+      onClose={onClose}
+      open={open}
+      size="md"
+      title={title}
+    >
+      {children}
+    </AppModal>
   );
 }

@@ -1,4 +1,4 @@
-import { Badge } from "@/shared/ui/badge";
+import { StatusBadge } from "@/shared/ui/status-badge";
 
 type SimilarityBadgeProps = {
   similarity?: number | null;
@@ -6,7 +6,7 @@ type SimilarityBadgeProps = {
 
 type SimilarityMeta = {
   label: string;
-  className: string;
+  tone: "success" | "warning" | "danger" | "muted";
   percent?: number | null;
 };
 
@@ -14,17 +14,25 @@ export function getSimilarityMeta(similarity?: number | null): SimilarityMeta {
   if (typeof similarity !== "number" || Number.isNaN(similarity)) {
     return {
       label: "Unknown similarity",
-      className: "bg-muted text-muted-foreground",
+      tone: "muted",
       percent: null,
     };
   }
 
   const percent = Math.max(0, Math.min(100, Math.round(similarity * 100)));
 
+  if (similarity >= 0.99) {
+    return {
+      label: "Exact duplicate",
+      tone: "danger",
+      percent,
+    };
+  }
+
   if (similarity > 0.9) {
     return {
       label: "Very similar",
-      className: "bg-red-100 text-red-800",
+      tone: "danger",
       percent,
     };
   }
@@ -32,19 +40,22 @@ export function getSimilarityMeta(similarity?: number | null): SimilarityMeta {
   if (similarity > 0.75) {
     return {
       label: "Similar",
-      className: "bg-amber-100 text-amber-800",
+      tone: "warning",
       percent,
     };
   }
 
   return {
     label: "Low similarity",
-    className: "bg-emerald-100 text-emerald-800",
+    tone: "success",
     percent,
   };
 }
 
 export function SimilarityBadge({ similarity }: SimilarityBadgeProps) {
   const level = getSimilarityMeta(similarity);
-  return <Badge className={level.className}>{level.label}</Badge>;
+  const label =
+    typeof level.percent === "number" ? `${level.label} (${level.percent}%)` : level.label;
+
+  return <StatusBadge label={label} tone={level.tone} />;
 }

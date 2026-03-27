@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import { getRuleDetail } from "@/features/rules";
 import type { RuleDetail } from "@/features/rules/types";
@@ -27,6 +27,8 @@ import {
   SuggestionStepper,
   SuggestionTechnicalDetails,
   type SuggestionStepKey,
+  type SuggestionStepState,
+  suggestionWorkflowSteps,
 } from "@/features/suggestions/components";
 import type {
   RuleSuggestionGetOut,
@@ -37,7 +39,14 @@ import type {
   SuggestionDuplicateCheck,
 } from "@/features/suggestions/types";
 import { canEditDraft } from "@/features/suggestions/components/StatusBadge";
-import { Card } from "@/shared/ui/card";
+import { resolveDuplicateUiState } from "@/features/suggestions/components/duplicateUiState";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppSectionCard } from "@/shared/ui/app-section-card";
+import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
+import { EmptyState } from "@/shared/ui/empty-state";
+import { AppLoadingState } from "@/shared/ui/app-loading-state";
+import { FieldHelpText } from "@/shared/ui/field-help-text";
+import { Label } from "@/shared/ui/label";
 import { Textarea } from "@/shared/ui/textarea";
 import { toast } from "@/shared/ui/use-toast";
 
@@ -78,6 +87,10 @@ function mapStatusToInitialStep(status: RuleSuggestionGetOut["status"]): Suggest
 
 function getSuggestionStepStorageKey(suggestionId: string) {
   return `${SUGGESTION_STEP_STORAGE_PREFIX}${suggestionId}`;
+}
+
+function getSuggestionStepIndex(step: SuggestionStepKey) {
+  return suggestionWorkflowSteps.findIndex((item) => item.key === step);
 }
 
 function getStoredSuggestionStep(suggestionId: string): SuggestionStepKey | null {
@@ -361,6 +374,7 @@ export function SuggestionDetailPage() {
 
   const [activeStep, setActiveStep] = useState<SuggestionStepKey>("draft");
   const [draftState, setDraftState] = useState<SuggestionDraft | null>(null);
+  const [draftSaveState, setDraftSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
   const [draftValidationError, setDraftValidationError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [staleBanner, setStaleBanner] = useState<string | null>(null);
@@ -382,6 +396,7 @@ export function SuggestionDetailPage() {
   const [rejectReasonInput, setRejectReasonInput] = useState("");
   const initializedSuggestionIdRef = useRef<string | null>(null);
   const ruleInspectorRequestIdRef = useRef(0);
+  const workflowContentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!detailQuery.data) {
@@ -414,6 +429,7 @@ export function SuggestionDetailPage() {
     setDraftValidationError(null);
     setActionError(null);
     setStaleBanner(null);
+    setDraftSaveState("saved");
   }, [
     detailQuery.data?.id,
     detailQuery.data?.version,
@@ -446,25 +462,104 @@ export function SuggestionDetailPage() {
     return extractDuplicateInsight(detailQuery.data, logsQuery.data, locationState);
   }, [detailQuery.data, locationState, logsQuery.data]);
 
+  const duplicateState = useMemo(
+    () =>
+      resolveDuplicateUiState({
+        decision: duplicateInsight?.duplicateRisk,
+        level: duplicateInsight?.level,
+        candidatesCount:
+          duplicateInsight?.similarRules?.length ?? duplicateInsight?.candidates?.length ?? 0,
+        topSimilarity:
+          duplicateInsight?.similarRules?.[0]?.similarity ??
+          duplicateInsight?.candidates?.[0]?.similarity,
+      }),
+    [
+      duplicateInsight?.candidates,
+      duplicateInsight?.duplicateRisk,
+      duplicateInsight?.level,
+      duplicateInsight?.similarRules,
+    ]
+  );
+
+  const stepStates = useMemo<Record<SuggestionStepKey, SuggestionStepState>>(() => {
+    const unlocked = new Set<SuggestionStepKey>(["generate", "draft"]);
+    if (draftState) {
+      unlocked.add("simulate");
+    }
+    if (
+      simulateResult ||
+      activeStep === "review" ||
+      activeStep === "decision" ||
+      activeStep === "apply" ||
+      suggestionId === undefined ||
+      detailQuery.data?.status === "approved" ||
+      detailQuery.data?.status === "applied" ||
+      detailQuery.data?.status === "rejected" ||
+      detailQuery.data?.status === "expired" ||
+      detailQuery.data?.status === "failed"
+    ) {
+      unlocked.add("review");
+      unlocked.add("decision");
+    }
+    if (
+      detailQuery.data?.status === "approved" ||
+      detailQuery.data?.status === "applied" ||
+      activeStep === "apply"
+    ) {
+      unlocked.add("apply");
+    }
+
+    const activeIndex = getSuggestionStepIndex(activeStep);
+
+    return Object.fromEntries(
+      suggestionWorkflowSteps.map((step, index) => {
+        if (step.key === activeStep) {
+          return [step.key, "current"];
+        }
+        if (!unlocked.has(step.key)) {
+          return [step.key, "locked"];
+        }
+        return [step.key, index < activeIndex ? "done" : "available"];
+      })
+    ) as Record<SuggestionStepKey, SuggestionStepState>;
+  }, [activeStep, detailQuery.data?.status, draftState, simulateResult, suggestionId]);
+
+  const highlightTerms = useMemo(
+    () =>
+      (draftState ?? detailQuery.data?.draft)?.context_terms
+        ?.map((term) => term.term?.trim())
+        .filter((term): term is string => Boolean(term)) ?? [],
+    [detailQuery.data?.draft, draftState]
+  );
+
+  const expectedAction = draftState?.rule.action ?? detailQuery.data?.draft.rule.action ?? null;
+
+  const goToStep = useCallback((step: SuggestionStepKey) => {
+    setActiveStep(step);
+  }, []);
+
   const handleStaleConflict = async (message: string) => {
     setStaleBanner(message);
     setUnsavedDraftSnapshot(draftState ? JSON.stringify(draftState, null, 2) : null);
+    setDraftSaveState("error");
     await detailQuery.refetch();
   };
 
-  const handleSaveDraft = async () => {
+  const saveDraft = useCallback(async (options?: { silent?: boolean }) => {
     if (!detailQuery.data || !draftState || !canEditDraft(detailQuery.data.status)) {
-      return;
+      return false;
     }
 
     setDraftValidationError(null);
     setActionError(null);
     setStaleBanner(null);
+    setDraftSaveState("saving");
 
     const validationMessage = validateDraft(draftState.rule, draftState.context_terms);
     if (validationMessage) {
       setDraftValidationError(validationMessage);
-      return;
+      setDraftSaveState("error");
+      return false;
     }
 
     try {
@@ -475,18 +570,22 @@ export function SuggestionDetailPage() {
 
       setDraftState(cloneDraft(saved.draft));
       await detailQuery.refetch();
+      setDraftSaveState("saved");
 
-      toast({
-        title: "Draft saved",
-        description: "Suggestion draft has been updated.",
-        variant: "success",
-      });
+      if (!options?.silent) {
+        toast({
+          title: "Draft saved",
+          description: "Suggestion draft has been updated.",
+          variant: "success",
+        });
+      }
+      return true;
     } catch (error) {
       if (error instanceof SuggestionApiError && isStaleVersionConflict(error)) {
         await handleStaleConflict(
           "Suggestion was updated elsewhere. Please review the latest data and apply your changes again."
         );
-        return;
+        return false;
       }
       if (error instanceof SuggestionApiError) {
         const fieldMessage = getDraftValidationMessageFromApiError(error);
@@ -496,13 +595,21 @@ export function SuggestionDetailPage() {
       }
       const message = getSuggestionErrorMessage(error, "Failed to save draft");
       setActionError(message);
-      toast({
-        title: "Save draft failed",
-        description: message,
-        variant: "destructive",
-      });
+      setDraftSaveState("error");
+      if (!options?.silent) {
+        toast({
+          title: "Save draft failed",
+          description: message,
+          variant: "destructive",
+        });
+      }
+      return false;
     }
-  };
+  }, [detailQuery.data, draftState, editMutation, detailQuery, handleStaleConflict]);
+
+  const handleSaveDraft = useCallback(async () => {
+    await saveDraft();
+  }, [saveDraft]);
 
   const handleConfirm = async () => {
     if (!detailQuery.data) {
@@ -516,6 +623,7 @@ export function SuggestionDetailPage() {
       await confirmMutation.mutateAsync({ expected_version: detailQuery.data.version });
       await detailQuery.refetch();
       setIsConfirmDialogOpen(false);
+      setActiveStep("apply");
       toast({
         title: "Suggestion confirmed",
         description: "Status is now approved.",
@@ -588,6 +696,7 @@ export function SuggestionDetailPage() {
       const applied = await applyMutation.mutateAsync({ expected_version: detailQuery.data.version });
       await detailQuery.refetch();
       setIsApplyDialogOpen(false);
+      setActiveStep("apply");
       toast({
         title: "Suggestion applied",
         description: `Rule ${applied.stable_key} has been applied.`,
@@ -616,6 +725,7 @@ export function SuggestionDetailPage() {
     try {
       const result = await simulateMutation.mutateAsync(payload);
       setSimulateResult(result);
+      setActiveStep("review");
       toast({
         title: "Simulation complete",
         description: `Processed ${result.sample_size} samples.`,
@@ -635,6 +745,58 @@ export function SuggestionDetailPage() {
   const handleContinueToDraft = () => {
     setActiveStep("draft");
   };
+
+  useEffect(() => {
+    workflowContentRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [activeStep]);
+
+  useEffect(() => {
+    if (!detailQuery.data || !draftState) {
+      return;
+    }
+
+    if (editMutation.isPending) {
+      setDraftSaveState("saving");
+      return;
+    }
+
+    setDraftSaveState(hasDirtyDraft ? "dirty" : "saved");
+  }, [detailQuery.data?.version, draftState, editMutation.isPending, hasDirtyDraft]);
+
+  useEffect(() => {
+    if (
+      activeStep !== "draft" ||
+      !detailQuery.data ||
+      !draftState ||
+      !canEditDraft(detailQuery.data.status) ||
+      !hasDirtyDraft ||
+      editMutation.isPending
+    ) {
+      return;
+    }
+
+    const validationMessage = validateDraft(draftState.rule, draftState.context_terms);
+    if (validationMessage) {
+      setDraftSaveState("error");
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void saveDraft({ silent: true });
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
+  }, [activeStep, detailQuery.data, draftState, editMutation.isPending, hasDirtyDraft, saveDraft]);
+
+  useEffect(() => {
+    if (stepStates[activeStep] !== "locked") {
+      return;
+    }
+    setActiveStep(detailQuery.data?.status === "approved" || detailQuery.data?.status === "applied" ? "review" : "draft");
+  }, [activeStep, detailQuery.data?.status, stepStates]);
 
   const loadRuleDetailByCandidate = async (candidate: SuggestionDuplicateCandidate) => {
     const requestId = ruleInspectorRequestIdRef.current + 1;
@@ -716,7 +878,15 @@ export function SuggestionDetailPage() {
   };
 
   if (!isRuleSetResolved) {
-    return <section className="p-6 text-sm text-muted-foreground">Resolving workspace...</section>;
+    return (
+      <section className="p-6">
+        <AppLoadingState
+          className="mx-auto max-w-3xl"
+          description="We are resolving the current workspace before loading this suggestion."
+          title="Loading suggestion"
+        />
+      </section>
+    );
   }
 
   if (!currentRuleSetId) {
@@ -724,7 +894,15 @@ export function SuggestionDetailPage() {
   }
 
   if (detailQuery.isLoading) {
-    return <section className="p-6 text-sm text-muted-foreground">Loading suggestion detail...</section>;
+    return (
+      <section className="p-6">
+        <AppLoadingState
+          className="mx-auto max-w-3xl"
+          description="Loading the suggestion details and workflow state."
+          title="Loading suggestion"
+        />
+      </section>
+    );
   }
 
   if (detailQuery.isError || !detailQuery.data) {
@@ -733,9 +911,11 @@ export function SuggestionDetailPage() {
     if (status === 403) {
       return (
         <section className="p-6">
-          <Card className="p-4 text-sm text-destructive">
-            You do not have permission to view this suggestion.
-          </Card>
+          <AppAlert
+            description="You do not have permission to view this suggestion."
+            title="Access denied"
+            variant="error"
+          />
         </section>
       );
     }
@@ -743,16 +923,21 @@ export function SuggestionDetailPage() {
     if (status === 404) {
       return (
         <section className="p-6">
-          <Card className="p-4 text-sm">Suggestion not found.</Card>
+          <EmptyState
+            description="The suggestion may have been deleted or is no longer available."
+            title="Suggestion not found"
+          />
         </section>
       );
     }
 
     return (
       <section className="p-6">
-        <Card className="p-4 text-sm text-destructive">
-          {getSuggestionErrorMessage(detailQuery.error, "Failed to load suggestion detail")}
-        </Card>
+        <AppAlert
+          description={getSuggestionErrorMessage(detailQuery.error, "Failed to load suggestion detail")}
+          title="Suggestion unavailable"
+          variant="error"
+        />
       </section>
     );
   }
@@ -762,7 +947,7 @@ export function SuggestionDetailPage() {
   return (
     <section className="h-full overflow-auto p-6">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
-        <Card className="p-4">
+        <AppSectionCard className="p-5 md:p-6" contentClassName="space-y-0">
           <SuggestionHeader
             createdAt={suggestion.created_at}
             expiresAt={suggestion.expires_at}
@@ -773,71 +958,94 @@ export function SuggestionDetailPage() {
             updatedAt={suggestion.updated_at}
             version={suggestion.version}
           />
-        </Card>
+        </AppSectionCard>
 
         {staleBanner && (
-          <Card className="border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">{staleBanner}</Card>
+          <AppAlert description={staleBanner} title="Suggestion changed" variant="warning" />
         )}
 
         {actionError && (
-          <Card className="border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-            {actionError}
-          </Card>
+          <AppAlert description={actionError} title="Action failed" variant="error" />
         )}
 
-        <SuggestionStepper activeStep={activeStep} onStepChange={setActiveStep} status={suggestion.status} />
+        <SuggestionStepper
+          activeStep={activeStep}
+          onStepChange={(step) => {
+            if (stepStates[step] !== "locked") {
+              goToStep(step);
+            }
+          }}
+          stepStates={stepStates}
+        />
 
-        {activeStep === "generate" && (
-          <SuggestionGenerateStep
-            duplicateInsight={duplicateInsight}
-            onCompareDuplicateRule={handleCompareDuplicateRule}
-            onContinueToDraft={handleContinueToDraft}
-            onViewDuplicateRule={handleViewDuplicateRule}
-            prompt={suggestion.nl_input}
-          />
-        )}
+        <div ref={workflowContentRef}>
+          {activeStep === "generate" && (
+            <SuggestionGenerateStep
+              duplicateInsight={duplicateInsight}
+              onCompareDuplicateRule={handleCompareDuplicateRule}
+              onContinueToDraft={handleContinueToDraft}
+              onViewDuplicateRule={handleViewDuplicateRule}
+              prompt={suggestion.nl_input}
+            />
+          )}
 
-        {activeStep === "draft" && draftState && (
-          <SuggestionDraftStep
-            draft={draftState}
-            hasDirtyDraft={hasDirtyDraft}
-            isSaving={editMutation.isPending}
-            onDraftChange={setDraftState}
-            onSaveDraft={() => void handleSaveDraft()}
-            status={suggestion.status}
-            validationError={draftValidationError}
-          />
-        )}
+          {activeStep === "draft" && draftState && (
+            <SuggestionDraftStep
+              draft={draftState}
+              hasDirtyDraft={hasDirtyDraft}
+              isSaving={editMutation.isPending}
+              onBack={() => goToStep("generate")}
+              onContinue={() => goToStep("simulate")}
+              onDraftChange={setDraftState}
+              onSaveDraft={() => void handleSaveDraft()}
+              saveState={draftSaveState}
+              status={suggestion.status}
+              validationError={draftValidationError}
+            />
+          )}
 
-        {activeStep === "simulate" && (
-          <SuggestionSimulateStep
-            errorMessage={simulateError}
-            isSubmitting={simulateMutation.isPending}
-            onSimulate={handleSimulate}
-            result={simulateResult}
-            status={suggestion.status}
-          />
-        )}
+          {activeStep === "simulate" && (
+            <SuggestionSimulateStep
+              errorMessage={simulateError}
+              expectedAction={expectedAction}
+              highlightTerms={highlightTerms}
+              isSubmitting={simulateMutation.isPending}
+              onBack={() => goToStep("draft")}
+              onContinue={() => goToStep("review")}
+              onSimulate={handleSimulate}
+              result={simulateResult}
+              status={suggestion.status}
+            />
+          )}
 
-        {activeStep === "review" && <SuggestionReviewStep suggestion={suggestion} />}
+          {activeStep === "review" && (
+            <SuggestionReviewStep
+              onBack={() => goToStep("simulate")}
+              onContinue={() => goToStep("decision")}
+              suggestion={suggestion}
+            />
+          )}
 
-        {activeStep === "decision" && (
-          <SuggestionDecisionStep
-            isConfirming={confirmMutation.isPending}
-            isRejecting={rejectMutation.isPending}
-            onOpenConfirm={() => setIsConfirmDialogOpen(true)}
-            onOpenReject={() => setIsRejectDialogOpen(true)}
-            status={suggestion.status}
-          />
-        )}
+          {activeStep === "decision" && (
+            <SuggestionDecisionStep
+              duplicateRisk={duplicateState === "EXACT_DUPLICATE" ? "Exact duplicate" : duplicateInsight?.duplicateRisk}
+              isConfirming={confirmMutation.isPending}
+              isRejecting={rejectMutation.isPending}
+              onBack={() => goToStep("review")}
+              onOpenConfirm={() => setIsConfirmDialogOpen(true)}
+              onOpenReject={() => setIsRejectDialogOpen(true)}
+              status={suggestion.status}
+            />
+          )}
 
-        {activeStep === "apply" && (
-          <SuggestionApplyStep
-            isApplying={applyMutation.isPending}
-            onOpenApply={() => setIsApplyDialogOpen(true)}
-            suggestion={suggestion}
-          />
-        )}
+          {activeStep === "apply" && (
+            <SuggestionApplyStep
+              isApplying={applyMutation.isPending}
+              onOpenApply={() => setIsApplyDialogOpen(true)}
+              suggestion={suggestion}
+            />
+          )}
+        </div>
 
         <SuggestionTechnicalDetails
           duplicateInsight={duplicateInsight}
@@ -850,7 +1058,7 @@ export function SuggestionDetailPage() {
         />
       </div>
 
-      <SuggestionActionDialog
+      <ConfirmDialog
         confirmLabel={confirmMutation.isPending ? "Confirming..." : "Confirm"}
         description="This will move suggestion status to approved and lock draft editing."
         isBusy={confirmMutation.isPending}
@@ -858,7 +1066,16 @@ export function SuggestionDetailPage() {
         onConfirm={() => void handleConfirm()}
         open={isConfirmDialogOpen}
         title="Confirm suggestion"
-      />
+      >
+        {typeof duplicateInsight?.duplicateRisk === "string" &&
+        !["", "none", "different", "low"].includes(duplicateInsight.duplicateRisk.trim().toLowerCase()) ? (
+          <AppAlert
+            description="Duplicate signal is still present for this suggestion. Review compare and generate steps before confirming."
+            title="Duplicate warning"
+            variant="warning"
+          />
+        ) : null}
+      </ConfirmDialog>
 
       <SuggestionActionDialog
         confirmLabel={rejectMutation.isPending ? "Rejecting..." : "Reject"}
@@ -868,15 +1085,18 @@ export function SuggestionDetailPage() {
         onConfirm={() => void handleReject()}
         open={isRejectDialogOpen}
         title="Reject suggestion"
+        confirmVariant="danger"
       >
         <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">Reason (optional)</p>
+          <Label htmlFor="suggestion-reject-reason">Reason</Label>
           <Textarea
+            id="suggestion-reject-reason"
             onChange={(event) => setRejectReasonInput(event.target.value)}
             placeholder="Why are you rejecting this suggestion?"
             rows={3}
             value={rejectReasonInput}
           />
+          <FieldHelpText>Optional context for reviewers who revisit this suggestion later.</FieldHelpText>
         </div>
       </SuggestionActionDialog>
 

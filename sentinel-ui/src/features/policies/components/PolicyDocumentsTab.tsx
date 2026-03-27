@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Trash2 } from "lucide-react";
 import { getPolicyErrorMessage } from "@/features/policies/api/policiesApi";
 import {
@@ -6,9 +7,14 @@ import {
   useTogglePolicyDocumentEnabled,
 } from "@/features/policies/hooks";
 import { formatPolicyDate } from "@/features/policies/components/PolicyStatusBadge";
-import { Button } from "@/shared/ui/button";
-import { Card } from "@/shared/ui/card";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppButton } from "@/shared/ui/app-button";
+import { AppLoadingState } from "@/shared/ui/app-loading-state";
+import { AppSectionCard } from "@/shared/ui/app-section-card";
+import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
+import { EmptyState } from "@/shared/ui/empty-state";
 import { ScrollArea } from "@/shared/ui/scroll-area";
+import { StatusBadge } from "@/shared/ui/status-badge";
 import { toast } from "@/shared/ui/use-toast";
 
 type PolicyDocumentsTabProps = {
@@ -19,6 +25,10 @@ export function PolicyDocumentsTab({ ruleSetId }: PolicyDocumentsTabProps) {
   const documentsQuery = usePolicyDocuments(ruleSetId);
   const toggleMutation = useTogglePolicyDocumentEnabled(ruleSetId);
   const deleteMutation = useDeletePolicyDocument(ruleSetId);
+  const [documentPendingDelete, setDocumentPendingDelete] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
 
   const handleToggle = async (documentId: string, enabled: boolean) => {
     try {
@@ -40,19 +50,19 @@ export function PolicyDocumentsTab({ ruleSetId }: PolicyDocumentsTabProps) {
     }
   };
 
-  const handleDelete = async (documentId: string) => {
-    const confirmed = window.confirm("Delete this policy document?");
-    if (!confirmed) {
+  const handleDelete = async () => {
+    if (!documentPendingDelete) {
       return;
     }
 
     try {
-      await deleteMutation.mutateAsync(documentId);
+      await deleteMutation.mutateAsync(documentPendingDelete.id);
       toast({
         title: "Document deleted",
-        description: "Policy document was soft deleted.",
+        description: "Policy document removed from this workspace.",
         variant: "success",
       });
+      setDocumentPendingDelete(null);
     } catch (error) {
       toast({
         title: "Delete failed",
@@ -63,34 +73,45 @@ export function PolicyDocumentsTab({ ruleSetId }: PolicyDocumentsTabProps) {
   };
 
   if (documentsQuery.isLoading) {
-    return <Card className="p-4 text-sm text-muted-foreground">Loading policy documents...</Card>;
+    return (
+      <AppLoadingState
+        compact
+        description="Loading policy documents for this rule set."
+        title="Loading documents"
+      />
+    );
   }
 
   if (documentsQuery.isError) {
     return (
-      <Card className="p-4 text-sm text-destructive">
-        {getPolicyErrorMessage(documentsQuery.error, "Failed to load policy documents")}
-      </Card>
+      <AppAlert
+        description={getPolicyErrorMessage(documentsQuery.error, "Failed to load policy documents")}
+        title="Unable to load policy documents"
+        variant="error"
+      />
     );
   }
 
   const documents = documentsQuery.data ?? [];
 
-  if (documents.length === 0) {
+  const visibleDocuments = documentPendingDelete
+    ? documents.filter((doc) => doc.id !== documentPendingDelete.id)
+    : documents;
+
+  if (visibleDocuments.length === 0) {
     return (
-      <Card className="p-6 text-center">
-        <p className="text-sm font-medium">No policy documents</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Create an ingest job to add policy documents.
-        </p>
-      </Card>
+      <EmptyState
+        description="Run an ingest job to add policy documents to this workspace."
+        title="No documents yet"
+      />
     );
   }
 
   return (
-    <Card className="p-0">
-      <ScrollArea className="max-h-[60vh]">
-        <table className="w-full min-w-[900px] text-sm">
+    <>
+      <AppSectionCard className="p-0" contentClassName="space-y-0">
+        <ScrollArea className="max-h-[60vh]">
+          <table className="w-full min-w-[900px] text-sm">
           <thead className="sticky top-0 bg-muted/50 text-left text-xs uppercase text-muted-foreground">
             <tr>
               <th className="px-3 py-2">Title</th>
@@ -103,7 +124,7 @@ export function PolicyDocumentsTab({ ruleSetId }: PolicyDocumentsTabProps) {
             </tr>
           </thead>
           <tbody>
-            {documents.map((doc) => {
+            {visibleDocuments.map((doc) => {
               // API returns global docs too (rule_set_id=null), but update/delete are only allowed for current rule-set owned docs.
               // Keep global docs visible and mark them read-only to avoid avoidable 404 on mutable endpoints.
               const isEditable = doc.rule_set_id === ruleSetId;
@@ -125,38 +146,62 @@ export function PolicyDocumentsTab({ ruleSetId }: PolicyDocumentsTabProps) {
                     {formatPolicyDate(doc.created_at)}
                   </td>
                   <td className="px-3 py-2">
-                    <label className="inline-flex cursor-pointer items-center gap-2 text-xs">
-                      <input
-                        checked={doc.enabled}
+                    <div className="inline-flex items-center gap-2">
+                      <StatusBadge status={doc.enabled ? "enabled" : "disabled"} />
+                      <AppButton
                         disabled={toggleMutation.isPending || !isEditable}
-                        onChange={(event) => {
-                          void handleToggle(doc.id, event.target.checked);
+                        onClick={() => {
+                          void handleToggle(doc.id, !doc.enabled);
                         }}
-                        type="checkbox"
-                      />
-                      {doc.enabled ? "Enabled" : "Disabled"}
-                    </label>
+                        size="sm"
+                        type="button"
+                        variant="secondary"
+                      >
+                        {doc.enabled ? "Disable" : "Enable"}
+                      </AppButton>
+                    </div>
                   </td>
                   <td className="px-3 py-2">
-                    <Button
+                    <AppButton
                       disabled={deleteMutation.isPending || !isEditable}
                       onClick={() => {
-                        void handleDelete(doc.id);
+                        setDocumentPendingDelete({
+                          id: doc.id,
+                          title: doc.title,
+                        });
                       }}
                       size="sm"
                       type="button"
-                      variant="outline"
+                      variant="secondary"
                     >
                       <Trash2 className="mr-1 h-3.5 w-3.5" />
                       Delete
-                    </Button>
+                    </AppButton>
                   </td>
                 </tr>
               );
             })}
           </tbody>
-        </table>
-      </ScrollArea>
-    </Card>
+          </table>
+        </ScrollArea>
+      </AppSectionCard>
+
+      <ConfirmDialog
+        confirmLabel={deleteMutation.isPending ? "Deleting..." : "Delete document"}
+        confirmVariant="danger"
+        description={
+          documentPendingDelete
+            ? `Delete "${documentPendingDelete.title}" from this workspace? This action cannot be undone.`
+            : undefined
+        }
+        isBusy={deleteMutation.isPending}
+        onClose={() => setDocumentPendingDelete(null)}
+        onConfirm={() => {
+          void handleDelete();
+        }}
+        open={Boolean(documentPendingDelete)}
+        title="Delete policy document?"
+      />
+    </>
   );
 }

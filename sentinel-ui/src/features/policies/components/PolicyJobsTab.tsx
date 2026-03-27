@@ -5,8 +5,14 @@ import { getPolicyErrorMessage } from "@/features/policies/api/policiesApi";
 import { PolicyStatusBadge, formatPolicyDate, shortPolicyId } from "@/features/policies/components/PolicyStatusBadge";
 import { useCreatePolicyIngestJob, usePolicyIngestJobs } from "@/features/policies/hooks";
 import type { PolicyIngestItemInput } from "@/features/policies/types";
-import { Button } from "@/shared/ui/button";
-import { Card } from "@/shared/ui/card";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppButton } from "@/shared/ui/app-button";
+import { AppLoadingState } from "@/shared/ui/app-loading-state";
+import { AppSectionCard } from "@/shared/ui/app-section-card";
+import { FieldHelpText } from "@/shared/ui/field-help-text";
+import { EmptyState } from "@/shared/ui/empty-state";
+import { InlineErrorText } from "@/shared/ui/inline-error-text";
+import { Label } from "@/shared/ui/label";
 import { ScrollArea } from "@/shared/ui/scroll-area";
 import { Textarea } from "@/shared/ui/textarea";
 import { toast } from "@/shared/ui/use-toast";
@@ -95,24 +101,29 @@ export function PolicyJobsTab({ ruleSetId }: PolicyJobsTabProps) {
 
   return (
     <div className="space-y-4">
-      <Card className="space-y-3 p-4">
-        <div>
-          <p className="text-sm font-semibold">Create ingest job</p>
-          <p className="text-xs text-muted-foreground">
-            Input items JSON array. Each item needs stable_key, title, content.
-          </p>
+      <AppSectionCard
+        description="Provide a JSON array of items. Each item needs `stable_key`, `title`, and `content`."
+        title="Create ingest job"
+      >
+        <div className="space-y-2">
+          <Label htmlFor="policy-ingest-items" required>
+            Items JSON
+          </Label>
+          <FieldHelpText>
+            Paste a JSON array of policy records to queue a new ingest run.
+          </FieldHelpText>
         </div>
-
         <Textarea
+          id="policy-ingest-items"
           className="min-h-[180px] font-mono text-xs"
           onChange={(event) => setItemsJson(event.target.value)}
           value={itemsJson}
         />
 
-        {validationError && <p className="text-xs text-destructive">{validationError}</p>}
+        {validationError ? <InlineErrorText>{validationError}</InlineErrorText> : null}
 
         <div className="flex justify-end">
-          <Button
+          <AppButton
             disabled={createMutation.isPending}
             onClick={() => {
               void handleCreateJob();
@@ -120,31 +131,35 @@ export function PolicyJobsTab({ ruleSetId }: PolicyJobsTabProps) {
             type="button"
           >
             {createMutation.isPending ? "Creating..." : "Create ingest job"}
-          </Button>
+          </AppButton>
         </div>
-      </Card>
+      </AppSectionCard>
 
       {jobsQuery.isLoading && (
-        <Card className="p-4 text-sm text-muted-foreground">Loading ingest jobs...</Card>
+        <AppLoadingState
+          compact
+          description="Loading recent ingest jobs for this workspace."
+          title="Loading ingest jobs"
+        />
       )}
 
       {jobsQuery.isError && (
-        <Card className="p-4 text-sm text-destructive">
-          {getPolicyErrorMessage(jobsQuery.error, "Failed to load ingest jobs")}
-        </Card>
+        <AppAlert
+          description={getPolicyErrorMessage(jobsQuery.error, "Failed to load ingest jobs")}
+          title="Unable to load ingest jobs"
+          variant="error"
+        />
       )}
 
       {!jobsQuery.isLoading && !jobsQuery.isError && sortedJobs.length === 0 && (
-        <Card className="p-6 text-center">
-          <p className="text-sm font-medium">No ingest jobs</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Create your first ingest job to add policy documents.
-          </p>
-        </Card>
+        <EmptyState
+          description="Create the first ingest job to bring policy documents into this workspace."
+          title="No ingest jobs yet"
+        />
       )}
 
       {sortedJobs.length > 0 && (
-        <Card className="p-0">
+        <AppSectionCard className="p-0" contentClassName="space-y-0">
           <ScrollArea className="max-h-[60vh]">
             <table className="w-full min-w-[980px] text-sm">
               <thead className="sticky top-0 bg-muted/50 text-left text-xs uppercase text-muted-foreground">
@@ -183,7 +198,7 @@ export function PolicyJobsTab({ ruleSetId }: PolicyJobsTabProps) {
               </tbody>
             </table>
           </ScrollArea>
-        </Card>
+        </AppSectionCard>
       )}
     </div>
   );

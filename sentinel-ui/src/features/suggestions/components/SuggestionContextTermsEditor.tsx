@@ -1,8 +1,10 @@
-﻿import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import type { SuggestionContextTerm } from "@/features/suggestions/types";
-import { Button } from "@/shared/ui/button";
+import { AppButton } from "@/shared/ui/app-button";
+import { EmptyState } from "@/shared/ui/empty-state";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
+import { StatusBadge } from "@/shared/ui/status-badge";
 
 type SuggestionContextTermsEditorProps = {
   terms: SuggestionContextTerm[];
@@ -47,6 +49,16 @@ function detectDuplicateTerms(terms: SuggestionContextTerm[]) {
 function toNumber(value: string, fallback = 0) {
   const parsed = Number(value);
   return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+function toTitleCase(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 export function SuggestionContextTermsEditor({
@@ -94,30 +106,32 @@ export function SuggestionContextTermsEditor({
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h4 className="text-sm font-semibold">Context terms</h4>
-          <p className="text-xs text-muted-foreground">
-            Keep the business-facing fields simple here. Language and scoring parameters live in
-            Advanced settings.
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-1">
+          <h4 className="text-sm font-semibold text-foreground">Context terms</h4>
+          <p className="text-sm text-muted-foreground">
+            Keywords work best when they are specific, easy to scan, and grouped by entity type.
           </p>
         </div>
-        <Button
+        <AppButton
           disabled={readOnly}
+          leadingIcon={<Plus className="h-3.5 w-3.5" />}
           onClick={addTerm}
           size="sm"
           type="button"
-          variant="outline"
+          variant="secondary"
         >
-          <Plus className="mr-1 h-3.5 w-3.5" />
           Add term
-        </Button>
+        </AppButton>
       </div>
 
-      {terms.length === 0 && (
-        <p className="text-sm text-muted-foreground">No context terms.</p>
-      )}
+      {terms.length === 0 ? (
+        <EmptyState
+          description="Add focused keywords to improve rule matching and retrieval."
+          title="No context terms yet"
+        />
+      ) : null}
 
       <div className="space-y-4">
         {Object.entries(groups).map(([entityType, groupTerms]) => {
@@ -126,54 +140,92 @@ export function SuggestionContextTermsEditor({
           );
 
           return (
-            <div className="rounded-md border p-3" key={entityType}>
-              <div className="flex items-center justify-between gap-2">
-                <h5 className="text-sm font-medium">{entityType}</h5>
-                <span className="text-xs text-muted-foreground">{groupTerms.length} term(s)</span>
+            <div className="rounded-xl border border-border/80 bg-background p-4" key={entityType}>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h5 className="text-sm font-semibold text-foreground">{toTitleCase(entityType)}</h5>
+                  <StatusBadge label={`${groupTerms.length} term${groupTerms.length === 1 ? "" : "s"}`} tone="muted" />
+                  {groupHasDuplicates ? <StatusBadge label="Duplicate keyword" tone="warning" /> : null}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Group keywords that support the same detection intent.
+                </p>
               </div>
 
-              {groupHasDuplicates && (
-                <p className="mt-1 text-xs text-amber-700">Possible duplicate terms detected in this group.</p>
-              )}
-
-              <div className="mt-3 space-y-3">
+              <div className="mt-4 grid gap-3">
                 {groupTerms.map(({ index, term }) => {
                   const isDuplicate = duplicateKeys.has(
                     `${normalize(term.entity_type)}::${normalize(term.term)}`
                   );
 
                   return (
-                    <div className="rounded-md border p-3" key={index}>
-                      <div className="grid gap-3 md:grid-cols-2">
+                    <div
+                      className="space-y-4 rounded-xl border border-border/80 bg-muted/10 p-4"
+                      key={index}
+                    >
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge label={toTitleCase(term.entity_type || "Entity type")} tone="primary" />
+                            <StatusBadge status={term.enabled ? "enabled" : "disabled"} />
+                            {isDuplicate ? <StatusBadge label="Duplicate" tone="warning" /> : null}
+                          </div>
+                          <div className="rounded-xl border border-primary/15 bg-primary/5 px-3 py-2">
+                            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                              Keyword
+                            </p>
+                            <p className="mt-1 break-all font-mono text-sm text-foreground">
+                              {term.term?.trim() || "Enter a keyword"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <AppButton
+                          disabled={readOnly}
+                          leadingIcon={<Trash2 className="h-3.5 w-3.5" />}
+                          onClick={() => removeTerm(index)}
+                          size="sm"
+                          type="button"
+                          variant="secondary"
+                        >
+                          Remove
+                        </AppButton>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
                         <InputField
                           disabled={readOnly}
+                          helper="Entity family used to group and interpret this keyword."
                           label="Entity type"
                           onChange={(value) => updateTerm(index, "entity_type", value)}
                           value={term.entity_type}
                         />
                         <InputField
                           disabled={readOnly}
-                          label="Term"
+                          helper="The actual keyword or phrase that should stand out during review."
+                          label="Keyword"
                           onChange={(value) => updateTerm(index, "term", value)}
                           value={term.term}
                         />
                       </div>
 
-                      <details className="mt-3 rounded-md border bg-muted/20 p-2">
-                        <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+                      <details className="rounded-xl border border-border/80 bg-background p-3">
+                        <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           Advanced settings
                         </summary>
-                        <div className="mt-2 grid gap-3 md:grid-cols-2">
+                        <div className="mt-3 grid gap-4 md:grid-cols-2">
                           <InputField
                             disabled={readOnly}
+                            helper="Language used for the keyword."
                             label="Language"
                             onChange={(value) => updateTerm(index, "lang", value)}
                             value={term.lang}
                           />
                         </div>
-                        <div className="mt-3 grid gap-3 md:grid-cols-3">
+                        <div className="mt-4 grid gap-4 md:grid-cols-3">
                           <InputField
                             disabled={readOnly}
+                            helper="Relative influence of this term."
                             label="Weight"
                             onChange={(value) => updateTerm(index, "weight", toNumber(value, 1))}
                             type="number"
@@ -181,6 +233,7 @@ export function SuggestionContextTermsEditor({
                           />
                           <InputField
                             disabled={readOnly}
+                            helper="Primary token window."
                             label="Window 1"
                             onChange={(value) => updateTerm(index, "window_1", toNumber(value, 60))}
                             type="number"
@@ -188,6 +241,7 @@ export function SuggestionContextTermsEditor({
                           />
                           <InputField
                             disabled={readOnly}
+                            helper="Secondary token window."
                             label="Window 2"
                             onChange={(value) => updateTerm(index, "window_2", toNumber(value, 20))}
                             type="number"
@@ -196,34 +250,11 @@ export function SuggestionContextTermsEditor({
                         </div>
                       </details>
 
-                      <div className="mt-3 flex items-center justify-between gap-2">
-                        <label className="inline-flex items-center gap-2 text-sm">
-                          <input
-                            checked={term.enabled}
-                            disabled={readOnly}
-                            onChange={(event) => updateTerm(index, "enabled", event.target.checked)}
-                            type="checkbox"
-                          />
-                          <span>{term.enabled ? "Enabled" : "Disabled"}</span>
-                        </label>
-
-                        <Button
-                          disabled={readOnly}
-                          onClick={() => removeTerm(index)}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Trash2 className="mr-1 h-3.5 w-3.5" />
-                          Remove
-                        </Button>
-                      </div>
-
-                      {isDuplicate && (
-                        <p className="mt-2 text-xs text-amber-700">
-                          This term looks duplicated within the same entity type.
+                      {isDuplicate ? (
+                        <p className="text-xs text-warning">
+                          This keyword appears more than once within the same entity type.
                         </p>
-                      )}
+                      ) : null}
                     </div>
                   );
                 })}
@@ -238,12 +269,14 @@ export function SuggestionContextTermsEditor({
 
 function InputField({
   label,
+  helper,
   value,
   onChange,
   type = "text",
   disabled = false,
 }: {
   label: string;
+  helper?: string;
   value: string | number;
   onChange: (value: string) => void;
   type?: string;
@@ -258,6 +291,7 @@ function InputField({
         type={type}
         value={value}
       />
+      {helper ? <p className="text-xs text-muted-foreground">{helper}</p> : null}
     </div>
   );
 }

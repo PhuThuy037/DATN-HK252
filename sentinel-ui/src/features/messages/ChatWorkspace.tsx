@@ -62,9 +62,9 @@ export function ChatWorkspace({ conversationId }: ChatWorkspaceProps) {
   };
 
   return (
-    <section className="flex h-full flex-col">
-      <div className="min-h-0 flex-1 p-4">
-        <Card className="h-full overflow-hidden">
+    <section className="flex h-full flex-col bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,1))]">
+      <div className="min-h-0 flex-1 px-4 py-4">
+        <Card className="h-full overflow-hidden rounded-[28px] border-border/80 bg-background/80 shadow-app-md">
           <MessageList
             isError={messagesQuery.isError}
             isLoading={messagesQuery.isLoading}
@@ -78,7 +78,7 @@ export function ChatWorkspace({ conversationId }: ChatWorkspaceProps) {
         </Card>
       </div>
 
-      <footer className="border-t px-4 py-4">
+      <footer className="border-t border-border/70 bg-background/80 px-4 py-4 backdrop-blur">
         <MessageComposer
           disabled={!conversationId}
           isSending={sendMutation.isPending}

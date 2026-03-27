@@ -1,7 +1,13 @@
 import { useMemo } from "react";
+import { ShieldAlert, ShieldCheck, ShieldEllipsis } from "lucide-react";
 import { useMessageDetail } from "@/features/messages/hooks/useMessageDetail";
 import { useChatUiStore } from "@/features/messages/store/chatUiStore";
-import { Card } from "@/shared/ui/card";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppLoadingState } from "@/shared/ui/app-loading-state";
+import { AppSectionCard } from "@/shared/ui/app-section-card";
+import { EmptyState } from "@/shared/ui/empty-state";
+import { StatusBadge } from "@/shared/ui/status-badge";
+import { TechnicalDetailsAccordion } from "@/shared/ui/technical-details-accordion";
 import type { MessageMatchedRule } from "@/shared/types";
 
 type CompliancePanelProps = {
@@ -9,20 +15,9 @@ type CompliancePanelProps = {
   className?: string;
 };
 
-function formatJson(value: unknown) {
-  if (value == null) {
-    return "-";
-  }
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
 type ComplianceMatchedRuleItem = {
   key: string;
-  name: string;
+  displayName: string;
   stableKey?: string | null;
   ruleId?: string | null;
 };
@@ -45,7 +40,7 @@ function buildMatchedRuleItems(
     seen.add(key);
     items.push({
       key,
-      name: name || "Unknown rule",
+      displayName: name || stableKey || "Unnamed rule",
       stableKey,
       ruleId,
     });
@@ -59,7 +54,7 @@ function buildMatchedRuleItems(
     seen.add(normalizedId);
     items.push({
       key: normalizedId,
-      name: "Unknown rule",
+      displayName: "Unknown rule",
       ruleId: normalizedId,
     });
   }
@@ -67,15 +62,64 @@ function buildMatchedRuleItems(
   return items;
 }
 
+function normalizeAction(value?: string | null) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "allow" || normalized === "mask" || normalized === "block") {
+    return normalized;
+  }
+  return null;
+}
+
+function getRiskValue(score?: number | null) {
+  if (typeof score !== "number" || Number.isNaN(score)) {
+    return null;
+  }
+  const normalized = score <= 1 ? score * 100 : score;
+  return Math.max(0, Math.min(100, normalized));
+}
+
+function getRiskTone(riskValue: number | null) {
+  if (riskValue == null) {
+    return "muted";
+  }
+  if (riskValue >= 75) {
+    return "danger";
+  }
+  if (riskValue >= 40) {
+    return "warning";
+  }
+  return "success";
+}
+
+function formatRiskLabel(riskValue: number | null) {
+  if (riskValue == null) {
+    return "Unavailable";
+  }
+  return `${Math.round(riskValue)}/100`;
+}
+
 function formatShortRuleId(ruleId?: string | null) {
   const value = String(ruleId ?? "").trim();
   if (!value) {
     return null;
   }
-  if (value.length <= 12) {
+  if (value.length <= 14) {
     return value;
   }
-  return `${value.slice(0, 8)}...`;
+  return `${value.slice(0, 10)}...`;
+}
+
+function getActionIcon(action: "allow" | "mask" | "block" | null) {
+  if (action === "allow") {
+    return <ShieldCheck className="h-4 w-4 text-success" />;
+  }
+  if (action === "mask") {
+    return <ShieldEllipsis className="h-4 w-4 text-warning" />;
+  }
+  if (action === "block") {
+    return <ShieldAlert className="h-4 w-4 text-danger" />;
+  }
+  return null;
 }
 
 export function CompliancePanel({
@@ -83,7 +127,6 @@ export function CompliancePanel({
   className,
 }: CompliancePanelProps) {
   const selectedMessageId = useChatUiStore((state) => state.selectedMessageId);
-
   const detailQuery = useMessageDetail(conversationId, selectedMessageId);
 
   const matchedRules = useMemo(
@@ -95,110 +138,145 @@ export function CompliancePanel({
     [detailQuery.data?.matched_rule_ids, detailQuery.data?.matched_rules]
   );
 
+  const action = normalizeAction(detailQuery.data?.final_action);
+  const riskValue = getRiskValue(detailQuery.data?.risk_score);
+  const riskTone = getRiskTone(riskValue);
+
   return (
     <aside className={className}>
-      <Card className="h-full overflow-y-auto rounded-2xl p-4">
-        <h3 className="text-sm font-semibold">Compliance Detail</h3>
+      <div className="flex h-full flex-col gap-4 overflow-y-auto rounded-[30px] border border-border/80 bg-background/88 p-4 shadow-app-md backdrop-blur lg:p-5">
+        <div className="space-y-1.5">
+          <h3 className="text-lg font-semibold">Compliance Detail</h3>
+          <p className="text-sm text-muted-foreground">
+            Review the selected message outcome and the rules that contributed to it.
+          </p>
+        </div>
 
         {!selectedMessageId && (
-          <div className="mt-4 rounded-lg border border-dashed p-4 text-center">
-            <p className="text-sm font-medium">No message selected</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Select a message in chat to view scan details.
-            </p>
-          </div>
+          <EmptyState
+            description="Select a message in chat to view scan details."
+            title="No message selected"
+          />
         )}
 
         {selectedMessageId && detailQuery.isLoading && (
-          <p className="mt-3 text-sm text-muted-foreground">Loading message detail...</p>
+          <AppLoadingState
+            compact
+            description="Loading the selected message outcome and matched rules."
+            title="Loading message detail"
+          />
         )}
 
         {selectedMessageId && detailQuery.isError && (
-          <p className="mt-3 text-sm text-destructive">
-            Failed to load compliance detail.
-          </p>
+          <AppAlert
+            description="Failed to load compliance detail."
+            title="Compliance detail unavailable"
+            variant="error"
+          />
         )}
 
         {selectedMessageId && detailQuery.data && (
-          <div className="mt-4 space-y-4 text-sm">
-            <section className="rounded-xl border bg-background p-3">
-              <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-                Scan Result
-              </p>
-              <div className="space-y-2">
-                <div>
-                  <p className="text-xs text-muted-foreground">Final action</p>
-                  <p className="font-medium">{detailQuery.data.final_action ?? "-"}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Risk score</p>
-                  <p className="font-medium">{detailQuery.data.risk_score ?? "-"}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Blocked</p>
-                  <p className="font-medium">{detailQuery.data.blocked ? "Yes" : "No"}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Blocked reason</p>
-                  <p className="font-medium">{detailQuery.data.blocked_reason ?? "-"}</p>
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-xl border bg-background p-3">
-              <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-                Matched Rules
-              </p>
-              <div className="space-y-2">
-                {matchedRules.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No matched rules.</p>
-                )}
-                {matchedRules.map((rule) => (
-                  <div className="rounded-lg border bg-muted/30 p-2.5" key={rule.key}>
-                    <p className="text-sm font-medium">{rule.name}</p>
-                    {rule.stableKey && (
-                      <p className="mt-1 break-all text-xs text-muted-foreground">
-                        {rule.stableKey}
-                      </p>
-                    )}
-                    {!rule.stableKey && rule.ruleId && (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        ID: {formatShortRuleId(rule.ruleId)}
-                      </p>
-                    )}
+          <>
+            <AppSectionCard
+              description="This summary highlights the final moderation outcome for the selected message."
+              title="Summary"
+            >
+              <div className="space-y-3">
+                <div className="rounded-[24px] border border-border/70 bg-muted/20 p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Final action
+                  </p>
+                  <div className="mt-4 flex items-center gap-3">
+                    {getActionIcon(action)}
+                    <StatusBadge
+                      label={action ? undefined : detailQuery.data.final_action ?? "Unavailable"}
+                      status={action ?? undefined}
+                      tone={action === null ? "muted" : undefined}
+                    />
                   </div>
-                ))}
-              </div>
-            </section>
-
-            <details className="rounded-xl border bg-background p-3">
-              <summary className="cursor-pointer list-none text-xs font-semibold uppercase text-muted-foreground">
-                Technical details
-              </summary>
-
-              <div className="mt-3 space-y-3">
-                <div>
-                  <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-                    Entities
+                  <p className="mt-4 text-sm leading-6 text-muted-foreground">
+                    {detailQuery.data.blocked
+                      ? detailQuery.data.blocked_reason ?? "Message content was blocked."
+                      : "The message was processed and recorded successfully."}
                   </p>
-                  <pre className="overflow-auto rounded-md bg-muted p-2 text-xs">
-                    {formatJson(detailQuery.data.entities_json)}
-                  </pre>
                 </div>
 
-                <div>
-                  <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-                    RAG Evidence
-                  </p>
-                  <pre className="overflow-auto rounded-md bg-muted p-2 text-xs">
-                    {formatJson(detailQuery.data.rag_evidence_json)}
-                  </pre>
+                <div className="rounded-[24px] border border-border/70 bg-muted/20 p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Risk score
+                    </p>
+                    <StatusBadge
+                      label={formatRiskLabel(riskValue)}
+                      tone={riskTone}
+                    />
+                  </div>
+                  <div className="mt-5 h-3 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={
+                        riskTone === "danger"
+                          ? "h-full rounded-full bg-danger"
+                          : riskTone === "warning"
+                            ? "h-full rounded-full bg-warning"
+                            : riskTone === "success"
+                              ? "h-full rounded-full bg-success"
+                              : "h-full rounded-full bg-muted-foreground/40"
+                      }
+                      style={{ width: `${riskValue ?? 0}%` }}
+                    />
+                  </div>
+                  <div className="mt-4 grid gap-2 text-sm text-muted-foreground">
+                    <p>Blocked: {detailQuery.data.blocked ? "Yes" : "No"}</p>
+                    <p>Scan status: {detailQuery.data.scan_status ?? "-"}</p>
+                    <p>Latency: {detailQuery.data.latency_ms ?? "-"} ms</p>
+                  </div>
                 </div>
               </div>
-            </details>
-          </div>
+            </AppSectionCard>
+
+            <AppSectionCard
+              description="Matched rules are ordered from the message detail payload. Names are shown first, with stable keys as secondary context."
+              title="Matched Rules"
+            >
+              {matchedRules.length === 0 ? (
+                <EmptyState
+                  description="No rules were attached to this message outcome."
+                  title="No matched rules"
+                />
+              ) : (
+                <div className="space-y-3">
+                  {matchedRules.map((rule) => (
+                    <div className="rounded-[22px] border border-border/70 bg-muted/18 px-4 py-4" key={rule.key}>
+                      <p className="text-sm font-semibold text-foreground">{rule.displayName}</p>
+                      {rule.stableKey ? (
+                        <p className="mt-1.5 break-all text-xs leading-5 text-muted-foreground">{rule.stableKey}</p>
+                      ) : rule.ruleId ? (
+                        <p className="mt-1.5 text-xs leading-5 text-muted-foreground">ID: {formatShortRuleId(rule.ruleId)}</p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </AppSectionCard>
+
+            <TechnicalDetailsAccordion
+              className="opacity-90"
+              description="Raw evidence and extracted entities are available for deeper inspection."
+              sections={[
+                {
+                  title: "Entities",
+                  data: detailQuery.data.entities_json,
+                },
+                {
+                  title: "RAG evidence",
+                  data: detailQuery.data.rag_evidence_json,
+                },
+              ]}
+              title="Technical details"
+            />
+          </>
         )}
-      </Card>
+      </div>
     </aside>
   );
 }

@@ -5,7 +5,8 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useNavigate } from "react-router-dom";
 import { extractAuthErrorMessage, register } from "@/features/auth/api/authApi";
-import { Button } from "@/shared/ui/button";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppButton } from "@/shared/ui/app-button";
 import {
   Card,
   CardContent,
@@ -13,7 +14,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/shared/ui/card";
+import { FieldHelpText } from "@/shared/ui/field-help-text";
 import { Input } from "@/shared/ui/input";
+import { InlineErrorText } from "@/shared/ui/inline-error-text";
 import { Label } from "@/shared/ui/label";
 import { toast } from "@/shared/ui/use-toast";
 
@@ -84,79 +87,79 @@ export function RegisterPage() {
   });
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-6 py-12">
-      <Card className="w-full max-w-md shadow-sm">
+    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,rgba(37,99,235,0.12),transparent_32%),linear-gradient(180deg,rgba(248,250,252,1),rgba(255,255,255,1))] px-6 py-12">
+      <Card className="w-full max-w-md rounded-[28px] border-border/80 bg-background/96 shadow-app-lg">
         <CardHeader>
-          <CardTitle>Create account</CardTitle>
-          <CardDescription>Register to access your compliance workspace.</CardDescription>
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Sentinel UI</p>
+            <CardTitle className="text-title">Create account</CardTitle>
+            <CardDescription>Register to access your compliance workspace.</CardDescription>
+          </div>
         </CardHeader>
 
         <CardContent>
           <form className="space-y-4" onSubmit={onSubmit}>
             <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
-              <Input id="name" placeholder="Your name" type="text" {...form.register("name")} />
-              {form.formState.errors.name && (
-                <p className="text-xs text-destructive">
-                  {form.formState.errors.name.message}
-                </p>
-              )}
+              <Label htmlFor="name" required>Name</Label>
+              <Input
+                className={form.formState.errors.name ? "border-destructive focus-visible:ring-destructive" : undefined}
+                id="name"
+                placeholder="Your name"
+                type="text"
+                {...form.register("name")}
+              />
+              <FieldHelpText>This name helps teammates identify your account.</FieldHelpText>
+              {form.formState.errors.name ? <InlineErrorText>{form.formState.errors.name.message}</InlineErrorText> : null}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email" required>Email</Label>
               <Input
+                className={form.formState.errors.email ? "border-destructive focus-visible:ring-destructive" : undefined}
                 id="email"
                 placeholder="you@example.com"
                 type="email"
                 {...form.register("email")}
               />
-              {form.formState.errors.email && (
-                <p className="text-xs text-destructive">
-                  {form.formState.errors.email.message}
-                </p>
-              )}
+              <FieldHelpText>Use a work email you can access for future sign-in.</FieldHelpText>
+              {form.formState.errors.email ? <InlineErrorText>{form.formState.errors.email.message}</InlineErrorText> : null}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password" required>Password</Label>
               <Input
+                className={form.formState.errors.password ? "border-destructive focus-visible:ring-destructive" : undefined}
                 id="password"
                 placeholder="At least 6 characters"
                 type="password"
                 {...form.register("password")}
               />
-              {form.formState.errors.password && (
-                <p className="text-xs text-destructive">
-                  {form.formState.errors.password.message}
-                </p>
-              )}
+              <FieldHelpText>Choose a password with at least 6 characters.</FieldHelpText>
+              {form.formState.errors.password ? <InlineErrorText>{form.formState.errors.password.message}</InlineErrorText> : null}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm password</Label>
+              <Label htmlFor="confirmPassword" required>Confirm password</Label>
               <Input
+                className={form.formState.errors.confirmPassword ? "border-destructive focus-visible:ring-destructive" : undefined}
                 id="confirmPassword"
                 placeholder="Re-enter password"
                 type="password"
                 {...form.register("confirmPassword")}
               />
-              {form.formState.errors.confirmPassword && (
-                <p className="text-xs text-destructive">
-                  {form.formState.errors.confirmPassword.message}
-                </p>
-              )}
+              <FieldHelpText>Re-enter the same password to confirm.</FieldHelpText>
+              {form.formState.errors.confirmPassword ? <InlineErrorText>{form.formState.errors.confirmPassword.message}</InlineErrorText> : null}
             </div>
 
-            {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+            {serverError ? <AppAlert description={serverError} title="Registration failed" variant="error" /> : null}
 
-            <Button className="w-full" disabled={registerMutation.isPending} type="submit">
+            <AppButton className="w-full" disabled={registerMutation.isPending} type="submit">
               {registerMutation.isPending ? "Creating account..." : "Create account"}
-            </Button>
+            </AppButton>
 
             <p className="text-sm text-muted-foreground">
               Already have an account?{" "}
-              <Link className="underline" to="/login">
+              <Link className="font-medium text-primary underline-offset-4 hover:underline" to="/login">
                 Login
               </Link>
             </p>

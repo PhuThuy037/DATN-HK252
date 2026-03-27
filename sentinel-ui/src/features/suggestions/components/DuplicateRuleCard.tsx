@@ -1,14 +1,16 @@
 import type { SuggestionDuplicateCandidate } from "@/features/suggestions/types";
-import { Badge } from "@/shared/ui/badge";
-import { Button } from "@/shared/ui/button";
+import { AppButton } from "@/shared/ui/app-button";
 import { Card } from "@/shared/ui/card";
+import { HighlightedText } from "@/features/suggestions/components/HighlightedText";
 import {
   getSimilarityMeta,
   SimilarityBadge,
 } from "@/features/suggestions/components/SimilarityBadge";
+import { StatusBadge } from "@/shared/ui/status-badge";
 
 type DuplicateRuleCardProps = {
   candidate: SuggestionDuplicateCandidate;
+  highlightTerms?: string[];
   onViewRule?: (candidate: SuggestionDuplicateCandidate) => void;
   onCompareRule?: (candidate: SuggestionDuplicateCandidate) => void;
 };
@@ -42,6 +44,19 @@ function normalizeScope(candidate: SuggestionDuplicateCandidate) {
   return "prompt";
 }
 
+function getActionTone(action: string): "success" | "warning" | "danger" | "primary" {
+  if (action === "allow") {
+    return "success";
+  }
+  if (action === "mask") {
+    return "warning";
+  }
+  if (action === "block") {
+    return "danger";
+  }
+  return "primary";
+}
+
 function buildSummary(candidate: SuggestionDuplicateCandidate) {
   const summary = String(candidate.summary ?? "").trim();
   if (summary) {
@@ -54,6 +69,7 @@ function buildSummary(candidate: SuggestionDuplicateCandidate) {
 
 export function DuplicateRuleCard({
   candidate,
+  highlightTerms = [],
   onViewRule,
   onCompareRule,
 }: DuplicateRuleCardProps) {
@@ -67,37 +83,53 @@ export function DuplicateRuleCard({
       : `Match level: ${similarityMeta.label}`;
 
   return (
-    <Card className="space-y-3 p-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-sm font-semibold">{candidate.name || "Unnamed rule"}</p>
-          <div className="mt-1 flex items-center gap-2">
-            <Badge className="bg-muted text-muted-foreground">Action: {toTitleCase(action)}</Badge>
-            <Badge className="bg-muted text-muted-foreground">Scope: {toTitleCase(scope)}</Badge>
+    <Card className="space-y-4 p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-sm font-semibold text-foreground">
+              <HighlightedText
+                terms={highlightTerms}
+                text={candidate.name || "Unnamed rule"}
+              />
+            </h4>
+            <StatusBadge label={toTitleCase(action)} tone={getActionTone(action)} />
+            <StatusBadge label={toTitleCase(scope)} tone="muted" />
           </div>
+          <p className="text-sm text-muted-foreground">
+            <HighlightedText terms={highlightTerms} text={summary} />
+          </p>
+          <p className="break-all text-xs text-muted-foreground">
+            <HighlightedText
+              terms={highlightTerms}
+              text={candidate.stable_key?.trim() || candidate.rule_id}
+            />
+          </p>
         </div>
-        <SimilarityBadge similarity={candidate.similarity} />
+
+        <div className="space-y-1 md:text-right">
+          <SimilarityBadge similarity={candidate.similarity} />
+          <p className="text-xs text-muted-foreground">{matchLevelText}</p>
+        </div>
       </div>
 
-      <p className="text-xs text-muted-foreground">{matchLevelText}</p>
-      <p className="text-sm text-muted-foreground">{summary}</p>
-
       <div className="flex flex-wrap gap-2">
-        <Button
+        <AppButton
           onClick={() => onViewRule?.(candidate)}
           size="sm"
           type="button"
-          variant="outline"
+          variant="secondary"
         >
           View rule
-        </Button>
-        <Button
+        </AppButton>
+        <AppButton
           onClick={() => onCompareRule?.(candidate)}
           size="sm"
           type="button"
+          variant="primary"
         >
           Review differences
-        </Button>
+        </AppButton>
       </div>
     </Card>
   );

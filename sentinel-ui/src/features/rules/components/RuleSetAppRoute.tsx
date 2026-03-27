@@ -2,6 +2,8 @@ import { ReactNode, useEffect } from "react";
 import { Navigate } from "react-router-dom";
 import { useMyRuleSets } from "@/features/rules/hooks/useMyRuleSets";
 import { useRuleSetStore } from "@/features/rules/store/ruleSetStore";
+import { AppAlert } from "@/shared/ui/app-alert";
+import { AppLoadingState } from "@/shared/ui/app-loading-state";
 
 type RuleSetAppRouteProps = {
   children: ReactNode;
@@ -37,19 +39,38 @@ export function RuleSetAppRoute({ children }: RuleSetAppRouteProps) {
   }, [myRuleSetsQuery.isError, setRuleSetResolved]);
 
   if (!myRuleSetsQuery.isFetchedAfterMount && !myRuleSetsQuery.isError) {
-    return null;
+    return (
+      <div className="flex h-screen items-center justify-center px-6">
+        <AppLoadingState
+          className="w-full max-w-md"
+          description="We are finding the active workspace for this account."
+          title="Loading workspace"
+        />
+      </div>
+    );
   }
 
   if (myRuleSetsQuery.isLoading) {
-    return null;
+    return (
+      <div className="flex h-screen items-center justify-center px-6">
+        <AppLoadingState
+          className="w-full max-w-md"
+          description="We are finding the active workspace for this account."
+          title="Loading workspace"
+        />
+      </div>
+    );
   }
 
   if (myRuleSetsQuery.isError) {
     return (
       <div className="flex h-screen items-center justify-center px-6">
-        <p className="text-sm text-destructive">
-          Failed to load your workspace. Please refresh and try again.
-        </p>
+        <AppAlert
+          className="w-full max-w-md"
+          description="Please refresh and try again."
+          title="We couldn't load your workspace"
+          variant="error"
+        />
       </div>
     );
   }

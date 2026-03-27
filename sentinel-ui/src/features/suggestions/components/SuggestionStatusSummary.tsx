@@ -1,9 +1,6 @@
-﻿import { StatusBadge, formatDate } from "@/features/suggestions/components/StatusBadge";
-import type { SuggestionStatus } from "@/features/suggestions/types";
+import { formatDate, shortId } from "@/features/suggestions/components/StatusBadge";
 
 type SuggestionStatusSummaryProps = {
-  status: SuggestionStatus;
-  version: number;
   suggestionId: string;
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -11,26 +8,29 @@ type SuggestionStatusSummaryProps = {
 };
 
 export function SuggestionStatusSummary({
-  status,
-  version,
   suggestionId,
   createdAt,
   updatedAt,
   expiresAt,
 }: SuggestionStatusSummaryProps) {
   return (
-    <>
-      <div className="flex flex-wrap items-center gap-2">
-        <StatusBadge status={status} />
-        <span className="text-xs text-muted-foreground">Version {version}</span>
-        <span className="text-xs text-muted-foreground">ID: {suggestionId}</span>
+    <div className="space-y-3">
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-xl border border-border/70 bg-background px-4 py-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Created</p>
+          <p className="mt-1 text-sm font-medium text-foreground">{formatDate(createdAt)}</p>
+        </div>
+        <div className="rounded-xl border border-border/70 bg-background px-4 py-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Updated</p>
+          <p className="mt-1 text-sm font-medium text-foreground">{formatDate(updatedAt)}</p>
+        </div>
+        <div className="rounded-xl border border-border/70 bg-background px-4 py-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Expires</p>
+          <p className="mt-1 text-sm font-medium text-foreground">{formatDate(expiresAt)}</p>
+        </div>
       </div>
 
-      <div className="grid gap-1 text-xs text-muted-foreground md:grid-cols-3">
-        <p>Created: {formatDate(createdAt)}</p>
-        <p>Updated: {formatDate(updatedAt)}</p>
-        <p>Expires: {formatDate(expiresAt)}</p>
-      </div>
-    </>
+      <p className="text-xs text-muted-foreground">Suggestion reference {shortId(suggestionId, 12)}</p>
+    </div>
   );
 }

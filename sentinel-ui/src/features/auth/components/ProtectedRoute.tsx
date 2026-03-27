@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import { useMe } from "@/features/auth/hooks/useMe";
 import { useRuleSetStore } from "@/features/rules/store/ruleSetStore";
+import { AppLoadingState } from "@/shared/ui/app-loading-state";
 
 type ProtectedRouteProps = {
   children: ReactNode;
@@ -32,7 +33,15 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   ]);
 
   if (!hasHydrated) {
-    return null;
+    return (
+      <div className="flex min-h-screen items-center justify-center px-6">
+        <AppLoadingState
+          className="w-full max-w-md"
+          description="Checking your session and preparing the workspace."
+          title="Loading workspace"
+        />
+      </div>
+    );
   }
 
   if (!isAuthenticated || !accessToken) {
@@ -40,7 +49,15 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (meQuery.isLoading) {
-    return null;
+    return (
+      <div className="flex min-h-screen items-center justify-center px-6">
+        <AppLoadingState
+          className="w-full max-w-md"
+          description="Checking your session and preparing the workspace."
+          title="Loading workspace"
+        />
+      </div>
+    );
   }
 
   if (meQuery.isError) {
