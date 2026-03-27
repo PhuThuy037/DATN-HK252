@@ -1,0 +1,1273 @@
+{
+  "meta": {
+    "time": "2026-03-26T16:55:27.649764+00:00",
+    "api_base": "http://localhost:8000/v1",
+    "email": "retest.rule.suggestion.utf8.1774544127@test.com",
+    "register_status": 200,
+    "login_status": 200,
+    "create_rule_set_status": 200,
+    "rule_set_id": "3eaf5fdf-1d90-477c-9468-00e16ac91514",
+    "list_global_rules_status": 200
+  },
+  "cases": [
+    {
+      "idx": 1,
+      "prompt": "Tôi muốn che mã này 1234-xxx-yyy",
+      "generate_status": 200,
+      "suggestion_id": "5e3ea834-3e54-46cb-937c-5e87a8dc8f3e",
+      "generate_snapshot": {
+        "nl_input": "Tôi muốn che mã này 1234-xxx-yyy",
+        "status": "draft",
+        "version": 1,
+        "rule": {},
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "duplicate_check": {
+          "decision": "DIFFERENT",
+          "confidence": 0.0,
+          "rationale": "no_candidates",
+          "matched_rule_ids": [],
+          "candidates": [],
+          "top_k": 5,
+          "exact_threshold": 0.92,
+          "near_threshold": 0.82,
+          "source": "hybrid_fastpath",
+          "llm_provider": null,
+          "llm_model": null,
+          "llm_fallback_used": false
+        },
+        "explanation": {
+          "summary": "Rule 'Protect internal token 1234-xxx-yyy' proposes mask in prompt scope.",
+          "detected_intent": "prompt_mask_control",
+          "derived_terms": [
+            "1234-xxx-yyy",
+            "context_keywords",
+            "muon",
+            "che",
+            "nay",
+            "1234",
+            "xxx",
+            "yyy"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.91,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "detail_status": 200,
+      "detail_snapshot": {
+        "nl_input": "Tôi muốn che mã này 1234-xxx-yyy",
+        "rule_action": null,
+        "rule_name": null,
+        "rule_conditions": null,
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "explanation": {
+          "summary": "Rule 'Protect internal token 1234-xxx-yyy' proposes mask in prompt scope.",
+          "detected_intent": "prompt_mask_control",
+          "derived_terms": [
+            "1234-xxx-yyy",
+            "context_keywords",
+            "muon",
+            "che",
+            "nay",
+            "1234",
+            "xxx",
+            "yyy"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.91,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "logs_status": 200,
+      "log_actions": [
+        "suggestion.generate.telemetry",
+        "suggestion.create"
+      ],
+      "log_reasons": [
+        "draft_source=llm draft_provider=groq duplicate_source=hybrid_fastpath duplicate_provider=none",
+        null
+      ]
+    },
+    {
+      "idx": 2,
+      "prompt": "Tôi muốn che mã này 1234-xxx-zzz",
+      "generate_status": 200,
+      "suggestion_id": "df56eeac-8611-4ff9-811a-785ed4dd603d",
+      "generate_snapshot": {
+        "nl_input": "Tôi muốn che mã này 1234-xxx-zzz",
+        "status": "draft",
+        "version": 1,
+        "rule": {},
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "duplicate_check": {
+          "decision": "DIFFERENT",
+          "confidence": 0.0,
+          "rationale": "no_candidates",
+          "matched_rule_ids": [],
+          "candidates": [],
+          "top_k": 5,
+          "exact_threshold": 0.92,
+          "near_threshold": 0.82,
+          "source": "hybrid_fastpath",
+          "llm_provider": null,
+          "llm_model": null,
+          "llm_fallback_used": false
+        },
+        "explanation": {
+          "summary": "Rule 'Protect internal token 1234-xxx-zzz' proposes mask in prompt scope.",
+          "detected_intent": "prompt_mask_control",
+          "derived_terms": [
+            "1234-xxx-zzz",
+            "context_keywords",
+            "muon",
+            "che",
+            "nay",
+            "1234",
+            "xxx",
+            "zzz"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.91,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "detail_status": 200,
+      "detail_snapshot": {
+        "nl_input": "Tôi muốn che mã này 1234-xxx-zzz",
+        "rule_action": null,
+        "rule_name": null,
+        "rule_conditions": null,
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "explanation": {
+          "summary": "Rule 'Protect internal token 1234-xxx-zzz' proposes mask in prompt scope.",
+          "detected_intent": "prompt_mask_control",
+          "derived_terms": [
+            "1234-xxx-zzz",
+            "context_keywords",
+            "muon",
+            "che",
+            "nay",
+            "1234",
+            "xxx",
+            "zzz"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.91,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "logs_status": 200,
+      "log_actions": [
+        "suggestion.generate.telemetry",
+        "suggestion.create"
+      ],
+      "log_reasons": [
+        "draft_source=llm draft_provider=gemini duplicate_source=hybrid_fastpath duplicate_provider=none",
+        null
+      ]
+    },
+    {
+      "idx": 3,
+      "prompt": "Che mã THUY-XX-YY",
+      "generate_status": 200,
+      "suggestion_id": "8d29c8a6-78cb-4628-8f24-b49c916f3df6",
+      "generate_snapshot": {
+        "nl_input": "Che mã THUY-XX-YY",
+        "status": "draft",
+        "version": 1,
+        "rule": {},
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "duplicate_check": {
+          "decision": "DIFFERENT",
+          "confidence": 0.0,
+          "rationale": "no_candidates",
+          "matched_rule_ids": [],
+          "candidates": [],
+          "top_k": 5,
+          "exact_threshold": 0.92,
+          "near_threshold": 0.82,
+          "source": "hybrid_fastpath",
+          "llm_provider": null,
+          "llm_model": null,
+          "llm_fallback_used": false
+        },
+        "explanation": {
+          "summary": "Rule 'Protect internal token thuy-xx-yy' proposes mask in prompt scope.",
+          "detected_intent": "prompt_mask_control",
+          "derived_terms": [
+            "thuy-xx-yy",
+            "context_keywords",
+            "che",
+            "thuy"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.83,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "detail_status": 200,
+      "detail_snapshot": {
+        "nl_input": "Che mã THUY-XX-YY",
+        "rule_action": null,
+        "rule_name": null,
+        "rule_conditions": null,
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "explanation": {
+          "summary": "Rule 'Protect internal token thuy-xx-yy' proposes mask in prompt scope.",
+          "detected_intent": "prompt_mask_control",
+          "derived_terms": [
+            "thuy-xx-yy",
+            "context_keywords",
+            "che",
+            "thuy"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.83,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "logs_status": 200,
+      "log_actions": [
+        "suggestion.generate.telemetry",
+        "suggestion.create"
+      ],
+      "log_reasons": [
+        "draft_source=llm draft_provider=groq duplicate_source=hybrid_fastpath duplicate_provider=none",
+        null
+      ]
+    },
+    {
+      "idx": 4,
+      "prompt": "Mask mã THUY-XX-YY",
+      "generate_status": 200,
+      "suggestion_id": "4eb5033b-d680-4147-8cd1-f8210ba65a5b",
+      "generate_snapshot": {
+        "nl_input": "Mask mã THUY-XX-YY",
+        "status": "draft",
+        "version": 1,
+        "rule": {},
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "duplicate_check": {
+          "decision": "DIFFERENT",
+          "confidence": 0.0,
+          "rationale": "no_candidates",
+          "matched_rule_ids": [],
+          "candidates": [],
+          "top_k": 5,
+          "exact_threshold": 0.92,
+          "near_threshold": 0.82,
+          "source": "hybrid_fastpath",
+          "llm_provider": null,
+          "llm_model": null,
+          "llm_fallback_used": false
+        },
+        "explanation": {
+          "summary": "Rule 'Mask mã THUY-XX-YY' proposes mask in prompt scope for INTERNAL_CODE related content.",
+          "detected_intent": "protect_internal_code",
+          "derived_terms": [
+            "thuy",
+            "xx",
+            "yy",
+            "internal_code",
+            "context_keywords",
+            "mask"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.83,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "detail_status": 200,
+      "detail_snapshot": {
+        "nl_input": "Mask mã THUY-XX-YY",
+        "rule_action": null,
+        "rule_name": null,
+        "rule_conditions": null,
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "explanation": {
+          "summary": "Rule 'Mask mã THUY-XX-YY' proposes mask in prompt scope for INTERNAL_CODE related content.",
+          "detected_intent": "protect_internal_code",
+          "derived_terms": [
+            "thuy",
+            "xx",
+            "yy",
+            "internal_code",
+            "context_keywords",
+            "mask"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.83,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "logs_status": 200,
+      "log_actions": [
+        "suggestion.generate.telemetry",
+        "suggestion.create"
+      ],
+      "log_reasons": [
+        "draft_source=llm draft_provider=groq duplicate_source=hybrid_fastpath duplicate_provider=none",
+        null
+      ]
+    },
+    {
+      "idx": 5,
+      "prompt": "Che mã ABC-SECRET-ZZ",
+      "generate_status": 200,
+      "suggestion_id": "2c72ae79-c5d6-471e-b43a-e91d7b124a53",
+      "generate_snapshot": {
+        "nl_input": "Che mã ABC-SECRET-ZZ",
+        "status": "draft",
+        "version": 1,
+        "rule": {},
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "duplicate_check": {
+          "decision": "DIFFERENT",
+          "confidence": 0.0,
+          "rationale": "no_candidates",
+          "matched_rule_ids": [],
+          "candidates": [],
+          "top_k": 5,
+          "exact_threshold": 0.92,
+          "near_threshold": 0.82,
+          "source": "hybrid_fastpath",
+          "llm_provider": null,
+          "llm_model": null,
+          "llm_fallback_used": false
+        },
+        "explanation": {
+          "summary": "Rule 'Protect internal token abc-secret-zz' proposes mask in prompt scope.",
+          "detected_intent": "prompt_mask_control",
+          "derived_terms": [
+            "abc-secret-zz",
+            "context_keywords",
+            "che",
+            "abc",
+            "secret"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.91,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "detail_status": 200,
+      "detail_snapshot": {
+        "nl_input": "Che mã ABC-SECRET-ZZ",
+        "rule_action": null,
+        "rule_name": null,
+        "rule_conditions": null,
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "explanation": {
+          "summary": "Rule 'Protect internal token abc-secret-zz' proposes mask in prompt scope.",
+          "detected_intent": "prompt_mask_control",
+          "derived_terms": [
+            "abc-secret-zz",
+            "context_keywords",
+            "che",
+            "abc",
+            "secret"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.91,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "logs_status": 200,
+      "log_actions": [
+        "suggestion.generate.telemetry",
+        "suggestion.create"
+      ],
+      "log_reasons": [
+        "draft_source=llm draft_provider=groq duplicate_source=hybrid_fastpath duplicate_provider=none",
+        null
+      ]
+    },
+    {
+      "idx": 6,
+      "prompt": "Ẩn email cá nhân",
+      "generate_status": 200,
+      "suggestion_id": "ac60c01b-386a-4a3d-912b-0de78b95f65a",
+      "generate_snapshot": {
+        "nl_input": "Ẩn email cá nhân",
+        "status": "draft",
+        "version": 1,
+        "rule": {},
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "duplicate_check": {
+          "decision": "DIFFERENT",
+          "confidence": 0.0,
+          "rationale": "no_candidates",
+          "matched_rule_ids": [],
+          "candidates": [],
+          "top_k": 5,
+          "exact_threshold": 0.92,
+          "near_threshold": 0.82,
+          "source": "hybrid_fastpath",
+          "llm_provider": null,
+          "llm_model": null,
+          "llm_fallback_used": false
+        },
+        "explanation": {
+          "summary": "Rule 'Che email cá nhân' proposes mask in prompt scope for EMAIL related content.",
+          "detected_intent": "protect_email",
+          "derived_terms": [
+            "email ca nhan",
+            "email",
+            "context_keywords",
+            "nhan"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.83,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "detail_status": 200,
+      "detail_snapshot": {
+        "nl_input": "Ẩn email cá nhân",
+        "rule_action": null,
+        "rule_name": null,
+        "rule_conditions": null,
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "explanation": {
+          "summary": "Rule 'Che email cá nhân' proposes mask in prompt scope for EMAIL related content.",
+          "detected_intent": "protect_email",
+          "derived_terms": [
+            "email ca nhan",
+            "email",
+            "context_keywords",
+            "nhan"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.83,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "logs_status": 200,
+      "log_actions": [
+        "suggestion.generate.telemetry",
+        "suggestion.create"
+      ],
+      "log_reasons": [
+        "draft_source=llm draft_provider=groq duplicate_source=hybrid_fastpath duplicate_provider=none",
+        null
+      ]
+    },
+    {
+      "idx": 7,
+      "prompt": "Mask email cá nhân",
+      "generate_status": 200,
+      "suggestion_id": "9a7b42c1-3057-4605-927f-2020aefca70f",
+      "generate_snapshot": {
+        "nl_input": "Mask email cá nhân",
+        "status": "draft",
+        "version": 1,
+        "rule": {},
+        "context_terms": [],
+        "duplicate": {
+          "level": "strong",
+          "reason": "semantic_signature_match",
+          "similar_rules": [
+            {
+              "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+              "stable_key": "global.pii.email.mask",
+              "name": "Che email",
+              "origin": "global_default",
+              "similarity": 0.8879282129083034,
+              "lexical_score": 0.7857142857142857
+            }
+          ]
+        },
+        "duplicate_check": {
+          "decision": "EXACT_DUPLICATE",
+          "confidence": 1.0,
+          "rationale": "semantic_signature_match",
+          "matched_rule_ids": [
+            "02c8d37b-c53e-4829-bb76-6a51bcd959da"
+          ],
+          "candidates": [
+            {
+              "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+              "stable_key": "global.pii.email.mask",
+              "name": "Che email",
+              "origin": "global_default",
+              "similarity": 0.8879282129083034,
+              "lexical_score": 0.7857142857142857
+            }
+          ],
+          "top_k": 5,
+          "exact_threshold": 0.92,
+          "near_threshold": 0.82,
+          "source": "hard_deterministic",
+          "llm_provider": null,
+          "llm_model": null,
+          "llm_fallback_used": false
+        },
+        "explanation": {
+          "summary": "Rule 'Che email cá nhân' proposes mask in prompt scope for EMAIL related content.",
+          "detected_intent": "protect_email",
+          "derived_terms": [
+            "email ca nhan",
+            "email",
+            "mask",
+            "nhan"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask. Duplicate check indicates high overlap with an existing rule."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.83,
+          "duplicate_risk": "high",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "detail_status": 200,
+      "detail_snapshot": {
+        "nl_input": "Mask email cá nhân",
+        "rule_action": null,
+        "rule_name": null,
+        "rule_conditions": null,
+        "context_terms": [],
+        "duplicate": {
+          "level": "strong",
+          "reason": "semantic_signature_match",
+          "similar_rules": [
+            {
+              "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+              "stable_key": "global.pii.email.mask",
+              "name": "Che email",
+              "origin": "global_default",
+              "similarity": 0.8879282129083034,
+              "lexical_score": 0.7857142857142857
+            }
+          ]
+        },
+        "explanation": {
+          "summary": "Rule 'Che email cá nhân' proposes mask in prompt scope for EMAIL related content.",
+          "detected_intent": "protect_email",
+          "derived_terms": [
+            "email ca nhan",
+            "email",
+            "mask",
+            "nhan"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask. Duplicate check indicates high overlap with an existing rule."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.83,
+          "duplicate_risk": "high",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "logs_status": 200,
+      "log_actions": [
+        "suggestion.generate.telemetry",
+        "suggestion.create"
+      ],
+      "log_reasons": [
+        "draft_source=llm draft_provider=groq duplicate_source=hard_deterministic duplicate_provider=none",
+        null
+      ]
+    },
+    {
+      "idx": 8,
+      "prompt": "Ẩn CCCD",
+      "generate_status": 200,
+      "suggestion_id": "b66c8bdf-44f2-46e6-afdc-8036317812d2",
+      "generate_snapshot": {
+        "nl_input": "Ẩn CCCD",
+        "status": "draft",
+        "version": 1,
+        "rule": {},
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "duplicate_check": {
+          "decision": "DIFFERENT",
+          "confidence": 0.0,
+          "rationale": "no_candidates",
+          "matched_rule_ids": [],
+          "candidates": [],
+          "top_k": 5,
+          "exact_threshold": 0.92,
+          "near_threshold": 0.82,
+          "source": "hybrid_fastpath",
+          "llm_provider": null,
+          "llm_model": null,
+          "llm_fallback_used": false
+        },
+        "explanation": {
+          "summary": "Rule 'Chặn CCCD' proposes mask in prompt scope for CCCD related content.",
+          "detected_intent": "protect_cccd",
+          "derived_terms": [
+            "cccd"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.79,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": true,
+          "intent_mismatch_detected": true,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "detail_status": 200,
+      "detail_snapshot": {
+        "nl_input": "Ẩn CCCD",
+        "rule_action": null,
+        "rule_name": null,
+        "rule_conditions": null,
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "explanation": {
+          "summary": "Rule 'Chặn CCCD' proposes mask in prompt scope for CCCD related content.",
+          "detected_intent": "protect_cccd",
+          "derived_terms": [
+            "cccd"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.79,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": true,
+          "intent_mismatch_detected": true,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "logs_status": 200,
+      "log_actions": [
+        "suggestion.generate.telemetry",
+        "suggestion.create"
+      ],
+      "log_reasons": [
+        "draft_source=llm draft_provider=groq duplicate_source=hybrid_fastpath duplicate_provider=none",
+        null
+      ]
+    },
+    {
+      "idx": 9,
+      "prompt": "Chặn CCCD",
+      "generate_status": 200,
+      "suggestion_id": "09bfd981-0c09-4f9f-a8d7-aed63765cd2a",
+      "generate_snapshot": {
+        "nl_input": "Chặn CCCD",
+        "status": "draft",
+        "version": 1,
+        "rule": {},
+        "context_terms": [],
+        "duplicate": {
+          "level": "strong",
+          "reason": "semantic_signature_match",
+          "similar_rules": [
+            {
+              "rule_id": "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+              "stable_key": "global.pii.cccd.block",
+              "name": "Chặn CCCD",
+              "origin": "global_default",
+              "similarity": 0.6892314494939309,
+              "lexical_score": 0.5116279069767442
+            }
+          ]
+        },
+        "duplicate_check": {
+          "decision": "EXACT_DUPLICATE",
+          "confidence": 0.8901586701401498,
+          "rationale": "semantic_signature_match",
+          "matched_rule_ids": [
+            "fd69030e-dadf-4ad9-b2a5-201da63e1352"
+          ],
+          "candidates": [
+            {
+              "rule_id": "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+              "stable_key": "global.pii.cccd.block",
+              "name": "Chặn CCCD",
+              "origin": "global_default",
+              "similarity": 0.6892314494939309,
+              "lexical_score": 0.5116279069767442
+            }
+          ],
+          "top_k": 5,
+          "exact_threshold": 0.92,
+          "near_threshold": 0.82,
+          "source": "hard_deterministic",
+          "llm_provider": null,
+          "llm_model": null,
+          "llm_fallback_used": false
+        },
+        "explanation": {
+          "summary": "Rule 'Chặn CCCD' proposes block in prompt scope for CCCD related content.",
+          "detected_intent": "protect_cccd",
+          "derived_terms": [
+            "cccd",
+            "chan"
+          ],
+          "action_reason": "Prompt intent indicates strict prevention, so action is set to block. Duplicate check indicates high overlap with an existing rule."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.53,
+          "duplicate_risk": "high",
+          "conflict_risk": "unknown",
+          "generation_source": "heuristic_fallback",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "detail_status": 200,
+      "detail_snapshot": {
+        "nl_input": "Chặn CCCD",
+        "rule_action": null,
+        "rule_name": null,
+        "rule_conditions": null,
+        "context_terms": [],
+        "duplicate": {
+          "level": "strong",
+          "reason": "semantic_signature_match",
+          "similar_rules": [
+            {
+              "rule_id": "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+              "stable_key": "global.pii.cccd.block",
+              "name": "Chặn CCCD",
+              "origin": "global_default",
+              "similarity": 0.6892314494939309,
+              "lexical_score": 0.5116279069767442
+            }
+          ]
+        },
+        "explanation": {
+          "summary": "Rule 'Chặn CCCD' proposes block in prompt scope for CCCD related content.",
+          "detected_intent": "protect_cccd",
+          "derived_terms": [
+            "cccd",
+            "chan"
+          ],
+          "action_reason": "Prompt intent indicates strict prevention, so action is set to block. Duplicate check indicates high overlap with an existing rule."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.53,
+          "duplicate_risk": "high",
+          "conflict_risk": "unknown",
+          "generation_source": "heuristic_fallback",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "logs_status": 200,
+      "log_actions": [
+        "suggestion.generate.telemetry",
+        "suggestion.create"
+      ],
+      "log_reasons": [
+        "draft_source=fallback_generator draft_provider=none duplicate_source=hard_deterministic duplicate_provider=none",
+        null
+      ]
+    },
+    {
+      "idx": 10,
+      "prompt": "Che mã số thuế 0101234567",
+      "generate_status": 200,
+      "suggestion_id": "63256cf6-27f4-4ee6-96d8-1e81ccde7533",
+      "generate_snapshot": {
+        "nl_input": "Che mã số thuế 0101234567",
+        "status": "draft",
+        "version": 1,
+        "rule": {},
+        "context_terms": [],
+        "duplicate": {
+          "level": "strong",
+          "reason": "semantic_signature_match",
+          "similar_rules": [
+            {
+              "rule_id": "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+              "stable_key": "global.pii.tax.mask",
+              "name": "Che mã số thuế",
+              "origin": "global_default",
+              "similarity": 0.958034203605265,
+              "lexical_score": 0.9117647058823529
+            }
+          ]
+        },
+        "duplicate_check": {
+          "decision": "EXACT_DUPLICATE",
+          "confidence": 1.0,
+          "rationale": "semantic_signature_match",
+          "matched_rule_ids": [
+            "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b"
+          ],
+          "candidates": [
+            {
+              "rule_id": "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+              "stable_key": "global.pii.tax.mask",
+              "name": "Che mã số thuế",
+              "origin": "global_default",
+              "similarity": 0.958034203605265,
+              "lexical_score": 0.9117647058823529
+            }
+          ],
+          "top_k": 5,
+          "exact_threshold": 0.92,
+          "near_threshold": 0.82,
+          "source": "hard_deterministic",
+          "llm_provider": null,
+          "llm_model": null,
+          "llm_fallback_used": false
+        },
+        "explanation": {
+          "summary": "Rule 'Che mã số thuế' proposes mask in prompt scope for TAX_ID related content.",
+          "detected_intent": "protect_tax_id",
+          "derived_terms": [
+            "0101234567",
+            "tax_id",
+            "che",
+            "thue"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask. Duplicate check indicates high overlap with an existing rule."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.83,
+          "duplicate_risk": "high",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "detail_status": 200,
+      "detail_snapshot": {
+        "nl_input": "Che mã số thuế 0101234567",
+        "rule_action": null,
+        "rule_name": null,
+        "rule_conditions": null,
+        "context_terms": [],
+        "duplicate": {
+          "level": "strong",
+          "reason": "semantic_signature_match",
+          "similar_rules": [
+            {
+              "rule_id": "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+              "stable_key": "global.pii.tax.mask",
+              "name": "Che mã số thuế",
+              "origin": "global_default",
+              "similarity": 0.958034203605265,
+              "lexical_score": 0.9117647058823529
+            }
+          ]
+        },
+        "explanation": {
+          "summary": "Rule 'Che mã số thuế' proposes mask in prompt scope for TAX_ID related content.",
+          "detected_intent": "protect_tax_id",
+          "derived_terms": [
+            "0101234567",
+            "tax_id",
+            "che",
+            "thue"
+          ],
+          "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask. Duplicate check indicates high overlap with an existing rule."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.83,
+          "duplicate_risk": "high",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "logs_status": 200,
+      "log_actions": [
+        "suggestion.generate.telemetry",
+        "suggestion.create"
+      ],
+      "log_reasons": [
+        "draft_source=llm draft_provider=groq duplicate_source=hard_deterministic duplicate_provider=none",
+        null
+      ]
+    },
+    {
+      "idx": 11,
+      "prompt": "Chặn số điện thoại Việt Nam",
+      "generate_status": 200,
+      "suggestion_id": "20357142-6144-474d-beef-fd782d357f88",
+      "generate_snapshot": {
+        "nl_input": "Chặn số điện thoại Việt Nam",
+        "status": "draft",
+        "version": 1,
+        "rule": {},
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "duplicate_check": {
+          "decision": "DIFFERENT",
+          "confidence": 0.0,
+          "rationale": "no_candidates",
+          "matched_rule_ids": [],
+          "candidates": [],
+          "top_k": 5,
+          "exact_threshold": 0.92,
+          "near_threshold": 0.82,
+          "source": "hybrid_fastpath",
+          "llm_provider": null,
+          "llm_model": null,
+          "llm_fallback_used": false
+        },
+        "explanation": {
+          "summary": "Rule 'Chặn số điện thoại' proposes block in prompt scope for PHONE related content.",
+          "detected_intent": "protect_phone",
+          "derived_terms": [
+            "so dien thoai",
+            "so dien thoai viet nam",
+            "phone",
+            "context_keywords",
+            "chan",
+            "dien",
+            "thoai",
+            "viet"
+          ],
+          "action_reason": "Prompt intent indicates strict prevention, so action is set to block."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.91,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "detail_status": 200,
+      "detail_snapshot": {
+        "nl_input": "Chặn số điện thoại Việt Nam",
+        "rule_action": null,
+        "rule_name": null,
+        "rule_conditions": null,
+        "context_terms": [],
+        "duplicate": {
+          "level": "none",
+          "reason": "no_candidates",
+          "similar_rules": []
+        },
+        "explanation": {
+          "summary": "Rule 'Chặn số điện thoại' proposes block in prompt scope for PHONE related content.",
+          "detected_intent": "protect_phone",
+          "derived_terms": [
+            "so dien thoai",
+            "so dien thoai viet nam",
+            "phone",
+            "context_keywords",
+            "chan",
+            "dien",
+            "thoai",
+            "viet"
+          ],
+          "action_reason": "Prompt intent indicates strict prevention, so action is set to block."
+        },
+        "quality_signals": {
+          "intent_confidence": 0.91,
+          "duplicate_risk": "low",
+          "conflict_risk": "unknown",
+          "generation_source": "llm",
+          "has_policy_context": false,
+          "intent_guard_applied": false,
+          "intent_mismatch_detected": false,
+          "runtime_usable": true,
+          "runtime_warnings": []
+        }
+      },
+      "logs_status": 200,
+      "log_actions": [
+        "suggestion.generate.telemetry",
+        "suggestion.create"
+      ],
+      "log_reasons": [
+        "draft_source=llm draft_provider=groq duplicate_source=hybrid_fastpath duplicate_provider=none",
+        null
+      ]
+    }
+  ],
+  "global_rules": [
+    {
+      "id": "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+      "name": "Chặn CCCD",
+      "action": "block",
+      "scope": "prompt",
+      "is_global": null,
+      "stable_key": "global.pii.cccd.block"
+    },
+    {
+      "id": "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+      "name": "Che mã số thuế",
+      "action": "mask",
+      "scope": "prompt",
+      "is_global": null,
+      "stable_key": "global.pii.tax.mask"
+    },
+    {
+      "id": "c1c1b51e-75a3-46a2-a35c-bce68e98866b",
+      "name": "Rag block",
+      "action": "block",
+      "scope": "prompt",
+      "is_global": null,
+      "stable_key": "global.security.rag.block"
+    },
+    {
+      "id": "904897f3-c37a-4282-8266-76570ade7d11",
+      "name": "Chặn API secret (dev)",
+      "action": "block",
+      "scope": "prompt",
+      "is_global": null,
+      "stable_key": "global.dev.api_secret.block"
+    },
+    {
+      "id": "8a63068d-88fd-4e8f-8d15-195806a430d9",
+      "name": "Chặn prompt injection",
+      "action": "block",
+      "scope": "prompt",
+      "is_global": null,
+      "stable_key": "global.security.prompt_injection.block"
+    },
+    {
+      "id": "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+      "name": "Che SĐT",
+      "action": "mask",
+      "scope": "prompt",
+      "is_global": null,
+      "stable_key": "global.pii.phone.mask"
+    },
+    {
+      "id": "3d40912b-4eed-470f-bf30-577c613ec93f",
+      "name": "Che thẻ tín dụng",
+      "action": "mask",
+      "scope": "prompt",
+      "is_global": null,
+      "stable_key": "global.pii.credit_card.mask"
+    },
+    {
+      "id": "33b5779a-f4cb-4a7a-8765-a2421e06fc1e",
+      "name": "Rag mask",
+      "action": "mask",
+      "scope": "prompt",
+      "is_global": null,
+      "stable_key": "global.security.rag.mask"
+    },
+    {
+      "id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+      "name": "Che email",
+      "action": "mask",
+      "scope": "prompt",
+      "is_global": null,
+      "stable_key": "global.pii.email.mask"
+    }
+  ]
+}

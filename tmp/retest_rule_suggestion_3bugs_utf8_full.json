@@ -1,0 +1,4714 @@
+{
+  "meta": {
+    "time": "2026-03-26T16:59:18.771606+00:00",
+    "api_base": "http://localhost:8000/v1",
+    "email": "retest.rule.suggestion.full.1774544358@test.com",
+    "register_status": 200,
+    "login_status": 200,
+    "create_rule_set_status": 200,
+    "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+    "list_global_rules_status": 200
+  },
+  "cases": [
+    {
+      "idx": 1,
+      "prompt": "Tôi muốn che mã này 1234-xxx-yyy",
+      "generate_status": 200,
+      "generate_raw": {
+        "ok": true,
+        "data": {
+          "id": "c58e6bc0-dc01-445f-88db-09b138bfaaea",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Tôi muốn che mã này 1234-xxx-yyy",
+          "dedupe_key": "4ef769636d370c588d54cf895f5e954863095d2778d59c309834489a69acbcaa",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.secret.internal_code.mask.cdb84c45",
+              "name": "Protect internal token 1234-xxx-yyy",
+              "description": "Protect exact internal code/token from prompt: Tôi muốn che mã này 1234-xxx-yyy",
+              "scope": "prompt",
+              "conditions": {
+                "all": [
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "1234-xxx-yyy"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "medium",
+              "priority": 130,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "PERSONA_OFFICE",
+                "term": "1234-xxx-yyy",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 80,
+                "window_2": 24,
+                "enabled": true
+              },
+              {
+                "entity_type": "INTERNAL_CODE",
+                "term": "1234-xxx-yyy",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 80,
+                "window_2": 24,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-02T23:59:19.962042+07:00",
+          "created_at": "2026-03-26T23:59:19.305037+07:00",
+          "updated_at": "2026-03-26T23:59:19.305037+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "duplicate_check": {
+            "decision": "DIFFERENT",
+            "confidence": 0.0,
+            "rationale": "no_candidates",
+            "matched_rule_ids": [],
+            "candidates": [],
+            "top_k": 5,
+            "exact_threshold": 0.92,
+            "near_threshold": 0.82,
+            "source": "hybrid_fastpath",
+            "llm_provider": null,
+            "llm_model": null,
+            "llm_fallback_used": false
+          },
+          "explanation": {
+            "summary": "Rule 'Protect internal token 1234-xxx-yyy' proposes mask in prompt scope.",
+            "detected_intent": "prompt_mask_control",
+            "derived_terms": [
+              "1234-xxx-yyy",
+              "context_keywords",
+              "muon",
+              "che",
+              "nay",
+              "1234",
+              "xxx",
+              "yyy"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.91,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          },
+          "retrieval_context": {
+            "has_policy_context": false,
+            "policy_chunk_ids": [],
+            "related_rule_ids": [
+              "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+              "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+              "3d40912b-4eed-470f-bf30-577c613ec93f",
+              "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+              "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+              "8a63068d-88fd-4e8f-8d15-195806a430d9",
+              "904897f3-c37a-4282-8266-76570ade7d11"
+            ]
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "suggestion_id": "c58e6bc0-dc01-445f-88db-09b138bfaaea",
+      "detail_status": 200,
+      "detail_raw": {
+        "ok": true,
+        "data": {
+          "id": "c58e6bc0-dc01-445f-88db-09b138bfaaea",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Tôi muốn che mã này 1234-xxx-yyy",
+          "dedupe_key": "4ef769636d370c588d54cf895f5e954863095d2778d59c309834489a69acbcaa",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.secret.internal_code.mask.cdb84c45",
+              "name": "Protect internal token 1234-xxx-yyy",
+              "description": "Protect exact internal code/token from prompt: Tôi muốn che mã này 1234-xxx-yyy",
+              "scope": "prompt",
+              "conditions": {
+                "all": [
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "1234-xxx-yyy"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "medium",
+              "priority": 130,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "PERSONA_OFFICE",
+                "term": "1234-xxx-yyy",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 80,
+                "window_2": 24,
+                "enabled": true
+              },
+              {
+                "entity_type": "INTERNAL_CODE",
+                "term": "1234-xxx-yyy",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 80,
+                "window_2": 24,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-02T23:59:19.962042+07:00",
+          "created_at": "2026-03-26T23:59:19.305037+07:00",
+          "updated_at": "2026-03-26T23:59:19.305037+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "explanation": {
+            "summary": "Rule 'Protect internal token 1234-xxx-yyy' proposes mask in prompt scope.",
+            "detected_intent": "prompt_mask_control",
+            "derived_terms": [
+              "1234-xxx-yyy",
+              "context_keywords",
+              "muon",
+              "che",
+              "nay",
+              "1234",
+              "xxx",
+              "yyy"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.91,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "logs_status": 200,
+      "logs_raw": {
+        "ok": true,
+        "data": [
+          {
+            "id": "61360467-fd31-4647-be30-fdf2f60ebf24",
+            "suggestion_id": "c58e6bc0-dc01-445f-88db-09b138bfaaea",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.generate.telemetry",
+            "reason": "draft_source=llm draft_provider=groq duplicate_source=hybrid_fastpath duplicate_provider=none",
+            "before_json": null,
+            "after_json": {
+              "duplicate": {
+                "level": "none",
+                "top_k": 5,
+                "reason": "no_candidates",
+                "source": "hybrid_fastpath",
+                "decision": "DIFFERENT",
+                "llm_model": null,
+                "rationale": "no_candidates",
+                "candidates": [],
+                "confidence": 0.0,
+                "llm_provider": null,
+                "similar_rules": [],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [],
+                "llm_fallback_used": false
+              },
+              "duplicate_check": {
+                "level": "none",
+                "top_k": 5,
+                "reason": "no_candidates",
+                "source": "hybrid_fastpath",
+                "decision": "DIFFERENT",
+                "llm_model": null,
+                "rationale": "no_candidates",
+                "candidates": [],
+                "confidence": 0.0,
+                "llm_provider": null,
+                "similar_rules": [],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [],
+                "llm_fallback_used": false
+              },
+              "draft_generation": {
+                "model": "llama-3.1-8b-instant",
+                "source": "llm",
+                "provider": "groq",
+                "intent_guard": {
+                  "applied": false,
+                  "reasons": [],
+                  "mismatch_detected": false
+                },
+                "fallback_used": false,
+                "context_retrieval": {
+                  "policy_chunks": 0,
+                  "related_rules": 7,
+                  "policy_chunk_ids": [],
+                  "related_rule_ids": [
+                    "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+                    "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                    "3d40912b-4eed-470f-bf30-577c613ec93f",
+                    "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+                    "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "8a63068d-88fd-4e8f-8d15-195806a430d9",
+                    "904897f3-c37a-4282-8266-76570ade7d11"
+                  ],
+                  "has_policy_context": false
+                },
+                "runtime_usability": {
+                  "reasons": [],
+                  "warnings": [],
+                  "abstract_terms": [],
+                  "repair_applied": false,
+                  "runtime_usable": true
+                }
+              }
+            },
+            "created_at": "2026-03-26T23:59:19.305037+07:00"
+          },
+          {
+            "id": "b0908972-249a-4471-b674-881743059ada",
+            "suggestion_id": "c58e6bc0-dc01-445f-88db-09b138bfaaea",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.create",
+            "reason": null,
+            "before_json": null,
+            "after_json": {
+              "id": "c58e6bc0-dc01-445f-88db-09b138bfaaea",
+              "type": "rule_with_context",
+              "status": "draft",
+              "version": 1,
+              "nl_input": "Tôi muốn che mã này 1234-xxx-yyy",
+              "applied_at": null,
+              "applied_by": null,
+              "company_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+              "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+              "dedupe_key": "4ef769636d370c588d54cf895f5e954863095d2778d59c309834489a69acbcaa",
+              "draft_json": {
+                "rule": {
+                  "name": "Protect internal token 1234-xxx-yyy",
+                  "scope": "prompt",
+                  "action": "mask",
+                  "enabled": true,
+                  "priority": 130,
+                  "rag_mode": "off",
+                  "severity": "medium",
+                  "conditions": {
+                    "all": [
+                      {
+                        "signal": {
+                          "field": "context_keywords",
+                          "any_of": [
+                            "1234-xxx-yyy"
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  "stable_key": "personal.secret.internal_code.mask.cdb84c45",
+                  "description": "Protect exact internal code/token from prompt: Tôi muốn che mã này 1234-xxx-yyy"
+                },
+                "context_terms": [
+                  {
+                    "lang": "vi",
+                    "term": "1234-xxx-yyy",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 80,
+                    "window_2": 24,
+                    "entity_type": "PERSONA_OFFICE"
+                  },
+                  {
+                    "lang": "vi",
+                    "term": "1234-xxx-yyy",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 80,
+                    "window_2": 24,
+                    "entity_type": "INTERNAL_CODE"
+                  }
+                ]
+              },
+              "expires_at": "2026-04-02T16:59:19.962042+00:00",
+              "approved_at": null,
+              "approved_by": null,
+              "rejected_at": null,
+              "rejected_by": null,
+              "reject_reason": null,
+              "approve_reason": null,
+              "applied_result_json": null
+            },
+            "created_at": "2026-03-26T23:59:19.305037+07:00"
+          }
+        ],
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      }
+    },
+    {
+      "idx": 2,
+      "prompt": "Tôi muốn che mã này 1234-xxx-zzz",
+      "generate_status": 200,
+      "generate_raw": {
+        "ok": true,
+        "data": {
+          "id": "034d299d-4193-4656-8301-422496132005",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Tôi muốn che mã này 1234-xxx-zzz",
+          "dedupe_key": "38b99c63a84b7bd838013895d2b17a35d8a48695e0499275a6e79e7ecac216d2",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.secret.custom_secret.mask.5f38e18d",
+              "name": "Che mã",
+              "description": "Che mã",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "entity_type": "CUSTOM_SECRET"
+                  },
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "1234-xxx-zzz"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "medium",
+              "priority": 50,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "CUSTOM_SECRET",
+                "term": "1234-xxx-zzz",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-02T23:59:20.805813+07:00",
+          "created_at": "2026-03-26T23:59:20.003894+07:00",
+          "updated_at": "2026-03-26T23:59:20.003894+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "duplicate_check": {
+            "decision": "DIFFERENT",
+            "confidence": 0.0,
+            "rationale": "no_candidates",
+            "matched_rule_ids": [],
+            "candidates": [],
+            "top_k": 5,
+            "exact_threshold": 0.92,
+            "near_threshold": 0.82,
+            "source": "hybrid_fastpath",
+            "llm_provider": null,
+            "llm_model": null,
+            "llm_fallback_used": false
+          },
+          "explanation": {
+            "summary": "Rule 'Che mã' proposes mask in prompt scope for CUSTOM_SECRET related content.",
+            "detected_intent": "protect_custom_secret",
+            "derived_terms": [
+              "1234-xxx-zzz",
+              "custom_secret",
+              "context_keywords",
+              "muon",
+              "che",
+              "nay",
+              "1234",
+              "xxx"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.91,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          },
+          "retrieval_context": {
+            "has_policy_context": false,
+            "policy_chunk_ids": [],
+            "related_rule_ids": [
+              "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+              "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+              "3d40912b-4eed-470f-bf30-577c613ec93f",
+              "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+              "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+              "8a63068d-88fd-4e8f-8d15-195806a430d9",
+              "904897f3-c37a-4282-8266-76570ade7d11"
+            ]
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "suggestion_id": "034d299d-4193-4656-8301-422496132005",
+      "detail_status": 200,
+      "detail_raw": {
+        "ok": true,
+        "data": {
+          "id": "034d299d-4193-4656-8301-422496132005",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Tôi muốn che mã này 1234-xxx-zzz",
+          "dedupe_key": "38b99c63a84b7bd838013895d2b17a35d8a48695e0499275a6e79e7ecac216d2",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.secret.custom_secret.mask.5f38e18d",
+              "name": "Che mã",
+              "description": "Che mã",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "entity_type": "CUSTOM_SECRET"
+                  },
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "1234-xxx-zzz"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "medium",
+              "priority": 50,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "CUSTOM_SECRET",
+                "term": "1234-xxx-zzz",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-02T23:59:20.805813+07:00",
+          "created_at": "2026-03-26T23:59:20.003894+07:00",
+          "updated_at": "2026-03-26T23:59:20.003894+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "explanation": {
+            "summary": "Rule 'Che mã' proposes mask in prompt scope for CUSTOM_SECRET related content.",
+            "detected_intent": "protect_custom_secret",
+            "derived_terms": [
+              "1234-xxx-zzz",
+              "custom_secret",
+              "context_keywords",
+              "muon",
+              "che",
+              "nay",
+              "1234",
+              "xxx"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.91,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "logs_status": 200,
+      "logs_raw": {
+        "ok": true,
+        "data": [
+          {
+            "id": "ae031da9-30fb-44ba-897f-c0012e92b8f9",
+            "suggestion_id": "034d299d-4193-4656-8301-422496132005",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.generate.telemetry",
+            "reason": "draft_source=llm draft_provider=groq duplicate_source=hybrid_fastpath duplicate_provider=none",
+            "before_json": null,
+            "after_json": {
+              "duplicate": {
+                "level": "none",
+                "top_k": 5,
+                "reason": "no_candidates",
+                "source": "hybrid_fastpath",
+                "decision": "DIFFERENT",
+                "llm_model": null,
+                "rationale": "no_candidates",
+                "candidates": [],
+                "confidence": 0.0,
+                "llm_provider": null,
+                "similar_rules": [],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [],
+                "llm_fallback_used": false
+              },
+              "duplicate_check": {
+                "level": "none",
+                "top_k": 5,
+                "reason": "no_candidates",
+                "source": "hybrid_fastpath",
+                "decision": "DIFFERENT",
+                "llm_model": null,
+                "rationale": "no_candidates",
+                "candidates": [],
+                "confidence": 0.0,
+                "llm_provider": null,
+                "similar_rules": [],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [],
+                "llm_fallback_used": false
+              },
+              "draft_generation": {
+                "model": "llama-3.1-8b-instant",
+                "source": "llm",
+                "provider": "groq",
+                "intent_guard": {
+                  "applied": false,
+                  "reasons": [],
+                  "mismatch_detected": false
+                },
+                "fallback_used": false,
+                "context_retrieval": {
+                  "policy_chunks": 0,
+                  "related_rules": 7,
+                  "policy_chunk_ids": [],
+                  "related_rule_ids": [
+                    "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+                    "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                    "3d40912b-4eed-470f-bf30-577c613ec93f",
+                    "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+                    "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "8a63068d-88fd-4e8f-8d15-195806a430d9",
+                    "904897f3-c37a-4282-8266-76570ade7d11"
+                  ],
+                  "has_policy_context": false
+                },
+                "runtime_usability": {
+                  "reasons": [],
+                  "warnings": [],
+                  "abstract_terms": [],
+                  "repair_applied": false,
+                  "runtime_usable": true
+                }
+              }
+            },
+            "created_at": "2026-03-26T23:59:20.003894+07:00"
+          },
+          {
+            "id": "22e6388a-ea43-4782-9144-efc7d828e9d6",
+            "suggestion_id": "034d299d-4193-4656-8301-422496132005",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.create",
+            "reason": null,
+            "before_json": null,
+            "after_json": {
+              "id": "034d299d-4193-4656-8301-422496132005",
+              "type": "rule_with_context",
+              "status": "draft",
+              "version": 1,
+              "nl_input": "Tôi muốn che mã này 1234-xxx-zzz",
+              "applied_at": null,
+              "applied_by": null,
+              "company_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+              "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+              "dedupe_key": "38b99c63a84b7bd838013895d2b17a35d8a48695e0499275a6e79e7ecac216d2",
+              "draft_json": {
+                "rule": {
+                  "name": "Che mã",
+                  "scope": "prompt",
+                  "action": "mask",
+                  "enabled": true,
+                  "priority": 50,
+                  "rag_mode": "off",
+                  "severity": "medium",
+                  "conditions": {
+                    "any": [
+                      {
+                        "entity_type": "CUSTOM_SECRET"
+                      },
+                      {
+                        "signal": {
+                          "field": "context_keywords",
+                          "any_of": [
+                            "1234-xxx-zzz"
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  "stable_key": "personal.secret.custom_secret.mask.5f38e18d",
+                  "description": "Che mã"
+                },
+                "context_terms": [
+                  {
+                    "lang": "vi",
+                    "term": "1234-xxx-zzz",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 60,
+                    "window_2": 20,
+                    "entity_type": "CUSTOM_SECRET"
+                  }
+                ]
+              },
+              "expires_at": "2026-04-02T16:59:20.805813+00:00",
+              "approved_at": null,
+              "approved_by": null,
+              "rejected_at": null,
+              "rejected_by": null,
+              "reject_reason": null,
+              "approve_reason": null,
+              "applied_result_json": null
+            },
+            "created_at": "2026-03-26T23:59:20.003894+07:00"
+          }
+        ],
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      }
+    },
+    {
+      "idx": 3,
+      "prompt": "Che mã THUY-XX-YY",
+      "generate_status": 200,
+      "generate_raw": {
+        "ok": true,
+        "data": {
+          "id": "8849a688-2eb7-4e42-992e-d43b19d9030f",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Che mã THUY-XX-YY",
+          "dedupe_key": "12fa138ccb6538c5d5d742aa18440c5c390623c413d3ecb45b54d945fd988ae6",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.secret.internal_code.mask.d2a85a8b",
+              "name": "Protect internal token thuy-xx-yy",
+              "description": "Protect exact internal code/token from prompt: Che mã THUY-XX-YY",
+              "scope": "prompt",
+              "conditions": {
+                "all": [
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "thuy-xx-yy"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "medium",
+              "priority": 130,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "PERSONA_OFFICE",
+                "term": "thuy-xx-yy",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 80,
+                "window_2": 24,
+                "enabled": true
+              },
+              {
+                "entity_type": "INTERNAL_CODE",
+                "term": "thuy-xx-yy",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 80,
+                "window_2": 24,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-02T23:59:21.993541+07:00",
+          "created_at": "2026-03-26T23:59:20.866779+07:00",
+          "updated_at": "2026-03-26T23:59:20.866779+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "duplicate_check": {
+            "decision": "DIFFERENT",
+            "confidence": 0.0,
+            "rationale": "no_candidates",
+            "matched_rule_ids": [],
+            "candidates": [],
+            "top_k": 5,
+            "exact_threshold": 0.92,
+            "near_threshold": 0.82,
+            "source": "hybrid_fastpath",
+            "llm_provider": null,
+            "llm_model": null,
+            "llm_fallback_used": false
+          },
+          "explanation": {
+            "summary": "Rule 'Protect internal token thuy-xx-yy' proposes mask in prompt scope.",
+            "detected_intent": "prompt_mask_control",
+            "derived_terms": [
+              "thuy-xx-yy",
+              "context_keywords",
+              "che",
+              "thuy"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.83,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          },
+          "retrieval_context": {
+            "has_policy_context": false,
+            "policy_chunk_ids": [],
+            "related_rule_ids": [
+              "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+              "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+              "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+              "3d40912b-4eed-470f-bf30-577c613ec93f"
+            ]
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "suggestion_id": "8849a688-2eb7-4e42-992e-d43b19d9030f",
+      "detail_status": 200,
+      "detail_raw": {
+        "ok": true,
+        "data": {
+          "id": "8849a688-2eb7-4e42-992e-d43b19d9030f",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Che mã THUY-XX-YY",
+          "dedupe_key": "12fa138ccb6538c5d5d742aa18440c5c390623c413d3ecb45b54d945fd988ae6",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.secret.internal_code.mask.d2a85a8b",
+              "name": "Protect internal token thuy-xx-yy",
+              "description": "Protect exact internal code/token from prompt: Che mã THUY-XX-YY",
+              "scope": "prompt",
+              "conditions": {
+                "all": [
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "thuy-xx-yy"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "medium",
+              "priority": 130,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "PERSONA_OFFICE",
+                "term": "thuy-xx-yy",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 80,
+                "window_2": 24,
+                "enabled": true
+              },
+              {
+                "entity_type": "INTERNAL_CODE",
+                "term": "thuy-xx-yy",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 80,
+                "window_2": 24,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-02T23:59:21.993541+07:00",
+          "created_at": "2026-03-26T23:59:20.866779+07:00",
+          "updated_at": "2026-03-26T23:59:20.866779+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "explanation": {
+            "summary": "Rule 'Protect internal token thuy-xx-yy' proposes mask in prompt scope.",
+            "detected_intent": "prompt_mask_control",
+            "derived_terms": [
+              "thuy-xx-yy",
+              "context_keywords",
+              "che",
+              "thuy"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.83,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "logs_status": 200,
+      "logs_raw": {
+        "ok": true,
+        "data": [
+          {
+            "id": "918dc327-c105-4e2c-9a27-943ee91c6c0e",
+            "suggestion_id": "8849a688-2eb7-4e42-992e-d43b19d9030f",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.generate.telemetry",
+            "reason": "draft_source=llm draft_provider=groq duplicate_source=hybrid_fastpath duplicate_provider=none",
+            "before_json": null,
+            "after_json": {
+              "duplicate": {
+                "level": "none",
+                "top_k": 5,
+                "reason": "no_candidates",
+                "source": "hybrid_fastpath",
+                "decision": "DIFFERENT",
+                "llm_model": null,
+                "rationale": "no_candidates",
+                "candidates": [],
+                "confidence": 0.0,
+                "llm_provider": null,
+                "similar_rules": [],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [],
+                "llm_fallback_used": false
+              },
+              "duplicate_check": {
+                "level": "none",
+                "top_k": 5,
+                "reason": "no_candidates",
+                "source": "hybrid_fastpath",
+                "decision": "DIFFERENT",
+                "llm_model": null,
+                "rationale": "no_candidates",
+                "candidates": [],
+                "confidence": 0.0,
+                "llm_provider": null,
+                "similar_rules": [],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [],
+                "llm_fallback_used": false
+              },
+              "draft_generation": {
+                "model": "llama-3.1-8b-instant",
+                "source": "llm",
+                "provider": "groq",
+                "intent_guard": {
+                  "applied": false,
+                  "reasons": [],
+                  "mismatch_detected": false
+                },
+                "fallback_used": false,
+                "context_retrieval": {
+                  "policy_chunks": 0,
+                  "related_rules": 4,
+                  "policy_chunk_ids": [],
+                  "related_rule_ids": [
+                    "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+                    "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+                    "3d40912b-4eed-470f-bf30-577c613ec93f"
+                  ],
+                  "has_policy_context": false
+                },
+                "runtime_usability": {
+                  "reasons": [],
+                  "warnings": [],
+                  "abstract_terms": [],
+                  "repair_applied": false,
+                  "runtime_usable": true
+                }
+              }
+            },
+            "created_at": "2026-03-26T23:59:20.866779+07:00"
+          },
+          {
+            "id": "ab81efea-eb61-4706-b225-6b1c51a3ff0c",
+            "suggestion_id": "8849a688-2eb7-4e42-992e-d43b19d9030f",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.create",
+            "reason": null,
+            "before_json": null,
+            "after_json": {
+              "id": "8849a688-2eb7-4e42-992e-d43b19d9030f",
+              "type": "rule_with_context",
+              "status": "draft",
+              "version": 1,
+              "nl_input": "Che mã THUY-XX-YY",
+              "applied_at": null,
+              "applied_by": null,
+              "company_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+              "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+              "dedupe_key": "12fa138ccb6538c5d5d742aa18440c5c390623c413d3ecb45b54d945fd988ae6",
+              "draft_json": {
+                "rule": {
+                  "name": "Protect internal token thuy-xx-yy",
+                  "scope": "prompt",
+                  "action": "mask",
+                  "enabled": true,
+                  "priority": 130,
+                  "rag_mode": "off",
+                  "severity": "medium",
+                  "conditions": {
+                    "all": [
+                      {
+                        "signal": {
+                          "field": "context_keywords",
+                          "any_of": [
+                            "thuy-xx-yy"
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  "stable_key": "personal.secret.internal_code.mask.d2a85a8b",
+                  "description": "Protect exact internal code/token from prompt: Che mã THUY-XX-YY"
+                },
+                "context_terms": [
+                  {
+                    "lang": "vi",
+                    "term": "thuy-xx-yy",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 80,
+                    "window_2": 24,
+                    "entity_type": "PERSONA_OFFICE"
+                  },
+                  {
+                    "lang": "vi",
+                    "term": "thuy-xx-yy",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 80,
+                    "window_2": 24,
+                    "entity_type": "INTERNAL_CODE"
+                  }
+                ]
+              },
+              "expires_at": "2026-04-02T16:59:21.993541+00:00",
+              "approved_at": null,
+              "approved_by": null,
+              "rejected_at": null,
+              "rejected_by": null,
+              "reject_reason": null,
+              "approve_reason": null,
+              "applied_result_json": null
+            },
+            "created_at": "2026-03-26T23:59:20.866779+07:00"
+          }
+        ],
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      }
+    },
+    {
+      "idx": 4,
+      "prompt": "Mask mã THUY-XX-YY",
+      "generate_status": 200,
+      "generate_raw": {
+        "ok": true,
+        "data": {
+          "id": "719db002-86ff-4bf3-9926-5ae22d3cdf12",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Mask mã THUY-XX-YY",
+          "dedupe_key": "f009c6bfe8a2b14cbb607878fa9518c67108984829de35bff7e7b545ea3e96cd",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.secret.internal_code.mask.2d24384d",
+              "name": "Mask mã THUY-XX-YY",
+              "description": null,
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "thuy-xx-yy"
+                      ]
+                    }
+                  },
+                  {
+                    "entity_type": "INTERNAL_CODE"
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "medium",
+              "priority": 80,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "INTERNAL_CODE",
+                "term": "thuy-xx-yy",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-02T23:59:22.931500+07:00",
+          "created_at": "2026-03-26T23:59:22.067921+07:00",
+          "updated_at": "2026-03-26T23:59:22.067921+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "duplicate_check": {
+            "decision": "DIFFERENT",
+            "confidence": 0.0,
+            "rationale": "no_candidates",
+            "matched_rule_ids": [],
+            "candidates": [],
+            "top_k": 5,
+            "exact_threshold": 0.92,
+            "near_threshold": 0.82,
+            "source": "hybrid_fastpath",
+            "llm_provider": null,
+            "llm_model": null,
+            "llm_fallback_used": false
+          },
+          "explanation": {
+            "summary": "Rule 'Mask mã THUY-XX-YY' proposes mask in prompt scope for INTERNAL_CODE related content.",
+            "detected_intent": "protect_internal_code",
+            "derived_terms": [
+              "thuy-xx-yy",
+              "internal_code",
+              "context_keywords",
+              "mask",
+              "thuy"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.83,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          },
+          "retrieval_context": {
+            "has_policy_context": false,
+            "policy_chunk_ids": [],
+            "related_rule_ids": [
+              "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+              "33b5779a-f4cb-4a7a-8765-a2421e06fc1e",
+              "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+              "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+              "3d40912b-4eed-470f-bf30-577c613ec93f"
+            ]
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "suggestion_id": "719db002-86ff-4bf3-9926-5ae22d3cdf12",
+      "detail_status": 200,
+      "detail_raw": {
+        "ok": true,
+        "data": {
+          "id": "719db002-86ff-4bf3-9926-5ae22d3cdf12",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Mask mã THUY-XX-YY",
+          "dedupe_key": "f009c6bfe8a2b14cbb607878fa9518c67108984829de35bff7e7b545ea3e96cd",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.secret.internal_code.mask.2d24384d",
+              "name": "Mask mã THUY-XX-YY",
+              "description": null,
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "thuy-xx-yy"
+                      ]
+                    }
+                  },
+                  {
+                    "entity_type": "INTERNAL_CODE"
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "medium",
+              "priority": 80,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "INTERNAL_CODE",
+                "term": "thuy-xx-yy",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-02T23:59:22.931500+07:00",
+          "created_at": "2026-03-26T23:59:22.067921+07:00",
+          "updated_at": "2026-03-26T23:59:22.067921+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "explanation": {
+            "summary": "Rule 'Mask mã THUY-XX-YY' proposes mask in prompt scope for INTERNAL_CODE related content.",
+            "detected_intent": "protect_internal_code",
+            "derived_terms": [
+              "thuy-xx-yy",
+              "internal_code",
+              "context_keywords",
+              "mask",
+              "thuy"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.83,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "logs_status": 200,
+      "logs_raw": {
+        "ok": true,
+        "data": [
+          {
+            "id": "cd55d918-4036-462c-a086-b57dce9305ef",
+            "suggestion_id": "719db002-86ff-4bf3-9926-5ae22d3cdf12",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.generate.telemetry",
+            "reason": "draft_source=llm draft_provider=groq duplicate_source=hybrid_fastpath duplicate_provider=none",
+            "before_json": null,
+            "after_json": {
+              "duplicate": {
+                "level": "none",
+                "top_k": 5,
+                "reason": "no_candidates",
+                "source": "hybrid_fastpath",
+                "decision": "DIFFERENT",
+                "llm_model": null,
+                "rationale": "no_candidates",
+                "candidates": [],
+                "confidence": 0.0,
+                "llm_provider": null,
+                "similar_rules": [],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [],
+                "llm_fallback_used": false
+              },
+              "duplicate_check": {
+                "level": "none",
+                "top_k": 5,
+                "reason": "no_candidates",
+                "source": "hybrid_fastpath",
+                "decision": "DIFFERENT",
+                "llm_model": null,
+                "rationale": "no_candidates",
+                "candidates": [],
+                "confidence": 0.0,
+                "llm_provider": null,
+                "similar_rules": [],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [],
+                "llm_fallback_used": false
+              },
+              "draft_generation": {
+                "model": "llama-3.1-8b-instant",
+                "source": "llm",
+                "provider": "groq",
+                "intent_guard": {
+                  "applied": false,
+                  "reasons": [],
+                  "mismatch_detected": false
+                },
+                "fallback_used": false,
+                "context_retrieval": {
+                  "policy_chunks": 0,
+                  "related_rules": 5,
+                  "policy_chunk_ids": [],
+                  "related_rule_ids": [
+                    "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+                    "33b5779a-f4cb-4a7a-8765-a2421e06fc1e",
+                    "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+                    "3d40912b-4eed-470f-bf30-577c613ec93f"
+                  ],
+                  "has_policy_context": false
+                },
+                "runtime_usability": {
+                  "reasons": [],
+                  "warnings": [],
+                  "abstract_terms": [],
+                  "repair_applied": false,
+                  "runtime_usable": true
+                }
+              }
+            },
+            "created_at": "2026-03-26T23:59:22.067921+07:00"
+          },
+          {
+            "id": "ffade2fc-c88d-4a86-9df2-8e6db656e1f0",
+            "suggestion_id": "719db002-86ff-4bf3-9926-5ae22d3cdf12",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.create",
+            "reason": null,
+            "before_json": null,
+            "after_json": {
+              "id": "719db002-86ff-4bf3-9926-5ae22d3cdf12",
+              "type": "rule_with_context",
+              "status": "draft",
+              "version": 1,
+              "nl_input": "Mask mã THUY-XX-YY",
+              "applied_at": null,
+              "applied_by": null,
+              "company_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+              "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+              "dedupe_key": "f009c6bfe8a2b14cbb607878fa9518c67108984829de35bff7e7b545ea3e96cd",
+              "draft_json": {
+                "rule": {
+                  "name": "Mask mã THUY-XX-YY",
+                  "scope": "prompt",
+                  "action": "mask",
+                  "enabled": true,
+                  "priority": 80,
+                  "rag_mode": "off",
+                  "severity": "medium",
+                  "conditions": {
+                    "any": [
+                      {
+                        "signal": {
+                          "field": "context_keywords",
+                          "any_of": [
+                            "thuy-xx-yy"
+                          ]
+                        }
+                      },
+                      {
+                        "entity_type": "INTERNAL_CODE"
+                      }
+                    ]
+                  },
+                  "stable_key": "personal.secret.internal_code.mask.2d24384d",
+                  "description": null
+                },
+                "context_terms": [
+                  {
+                    "lang": "vi",
+                    "term": "thuy-xx-yy",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 60,
+                    "window_2": 20,
+                    "entity_type": "INTERNAL_CODE"
+                  }
+                ]
+              },
+              "expires_at": "2026-04-02T16:59:22.931500+00:00",
+              "approved_at": null,
+              "approved_by": null,
+              "rejected_at": null,
+              "rejected_by": null,
+              "reject_reason": null,
+              "approve_reason": null,
+              "applied_result_json": null
+            },
+            "created_at": "2026-03-26T23:59:22.067921+07:00"
+          }
+        ],
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      }
+    },
+    {
+      "idx": 5,
+      "prompt": "Che mã ABC-SECRET-ZZ",
+      "generate_status": 200,
+      "generate_raw": {
+        "ok": true,
+        "data": {
+          "id": "6939b9ae-8213-41a3-aca7-6e71516cceb3",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Che mã ABC-SECRET-ZZ",
+          "dedupe_key": "33efc47d6618220d831748bcc2d0b83479a65648100daba43d5d583fad11c813",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.secret.internal_code.mask.c120c68b",
+              "name": "Protect internal token abc-secret-zz",
+              "description": "Protect exact internal code/token from prompt: Che mã ABC-SECRET-ZZ",
+              "scope": "prompt",
+              "conditions": {
+                "all": [
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "abc-secret-zz"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "medium",
+              "priority": 130,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "PERSONA_OFFICE",
+                "term": "abc-secret-zz",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 80,
+                "window_2": 24,
+                "enabled": true
+              },
+              {
+                "entity_type": "INTERNAL_CODE",
+                "term": "abc-secret-zz",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 80,
+                "window_2": 24,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-02T23:59:38.341445+07:00",
+          "created_at": "2026-03-26T23:59:22.975385+07:00",
+          "updated_at": "2026-03-26T23:59:22.975385+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "duplicate_check": {
+            "decision": "DIFFERENT",
+            "confidence": 0.0,
+            "rationale": "no_candidates",
+            "matched_rule_ids": [],
+            "candidates": [],
+            "top_k": 5,
+            "exact_threshold": 0.92,
+            "near_threshold": 0.82,
+            "source": "hybrid_fastpath",
+            "llm_provider": null,
+            "llm_model": null,
+            "llm_fallback_used": false
+          },
+          "explanation": {
+            "summary": "Rule 'Protect internal token abc-secret-zz' proposes mask in prompt scope.",
+            "detected_intent": "prompt_mask_control",
+            "derived_terms": [
+              "abc-secret-zz",
+              "context_keywords",
+              "che",
+              "abc",
+              "secret"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.91,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          },
+          "retrieval_context": {
+            "has_policy_context": false,
+            "policy_chunk_ids": [],
+            "related_rule_ids": [
+              "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+              "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+              "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+              "3d40912b-4eed-470f-bf30-577c613ec93f",
+              "904897f3-c37a-4282-8266-76570ade7d11"
+            ]
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "suggestion_id": "6939b9ae-8213-41a3-aca7-6e71516cceb3",
+      "detail_status": 200,
+      "detail_raw": {
+        "ok": true,
+        "data": {
+          "id": "6939b9ae-8213-41a3-aca7-6e71516cceb3",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Che mã ABC-SECRET-ZZ",
+          "dedupe_key": "33efc47d6618220d831748bcc2d0b83479a65648100daba43d5d583fad11c813",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.secret.internal_code.mask.c120c68b",
+              "name": "Protect internal token abc-secret-zz",
+              "description": "Protect exact internal code/token from prompt: Che mã ABC-SECRET-ZZ",
+              "scope": "prompt",
+              "conditions": {
+                "all": [
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "abc-secret-zz"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "medium",
+              "priority": 130,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "PERSONA_OFFICE",
+                "term": "abc-secret-zz",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 80,
+                "window_2": 24,
+                "enabled": true
+              },
+              {
+                "entity_type": "INTERNAL_CODE",
+                "term": "abc-secret-zz",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 80,
+                "window_2": 24,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-02T23:59:38.341445+07:00",
+          "created_at": "2026-03-26T23:59:22.975385+07:00",
+          "updated_at": "2026-03-26T23:59:22.975385+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "explanation": {
+            "summary": "Rule 'Protect internal token abc-secret-zz' proposes mask in prompt scope.",
+            "detected_intent": "prompt_mask_control",
+            "derived_terms": [
+              "abc-secret-zz",
+              "context_keywords",
+              "che",
+              "abc",
+              "secret"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.91,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "logs_status": 200,
+      "logs_raw": {
+        "ok": true,
+        "data": [
+          {
+            "id": "e31c7143-d096-463d-bcdb-effac9cde2bb",
+            "suggestion_id": "6939b9ae-8213-41a3-aca7-6e71516cceb3",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.generate.telemetry",
+            "reason": "draft_source=llm draft_provider=groq duplicate_source=hybrid_fastpath duplicate_provider=none",
+            "before_json": null,
+            "after_json": {
+              "duplicate": {
+                "level": "none",
+                "top_k": 5,
+                "reason": "no_candidates",
+                "source": "hybrid_fastpath",
+                "decision": "DIFFERENT",
+                "llm_model": null,
+                "rationale": "no_candidates",
+                "candidates": [],
+                "confidence": 0.0,
+                "llm_provider": null,
+                "similar_rules": [],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [],
+                "llm_fallback_used": false
+              },
+              "duplicate_check": {
+                "level": "none",
+                "top_k": 5,
+                "reason": "no_candidates",
+                "source": "hybrid_fastpath",
+                "decision": "DIFFERENT",
+                "llm_model": null,
+                "rationale": "no_candidates",
+                "candidates": [],
+                "confidence": 0.0,
+                "llm_provider": null,
+                "similar_rules": [],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [],
+                "llm_fallback_used": false
+              },
+              "draft_generation": {
+                "model": "llama-3.1-8b-instant",
+                "source": "llm",
+                "provider": "groq",
+                "intent_guard": {
+                  "applied": false,
+                  "reasons": [],
+                  "mismatch_detected": false
+                },
+                "fallback_used": false,
+                "context_retrieval": {
+                  "policy_chunks": 0,
+                  "related_rules": 5,
+                  "policy_chunk_ids": [],
+                  "related_rule_ids": [
+                    "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+                    "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+                    "3d40912b-4eed-470f-bf30-577c613ec93f",
+                    "904897f3-c37a-4282-8266-76570ade7d11"
+                  ],
+                  "has_policy_context": false
+                },
+                "runtime_usability": {
+                  "reasons": [],
+                  "warnings": [],
+                  "abstract_terms": [],
+                  "repair_applied": false,
+                  "runtime_usable": true
+                }
+              }
+            },
+            "created_at": "2026-03-26T23:59:22.975385+07:00"
+          },
+          {
+            "id": "642272fe-360e-4321-91fa-5e53ff39e918",
+            "suggestion_id": "6939b9ae-8213-41a3-aca7-6e71516cceb3",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.create",
+            "reason": null,
+            "before_json": null,
+            "after_json": {
+              "id": "6939b9ae-8213-41a3-aca7-6e71516cceb3",
+              "type": "rule_with_context",
+              "status": "draft",
+              "version": 1,
+              "nl_input": "Che mã ABC-SECRET-ZZ",
+              "applied_at": null,
+              "applied_by": null,
+              "company_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+              "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+              "dedupe_key": "33efc47d6618220d831748bcc2d0b83479a65648100daba43d5d583fad11c813",
+              "draft_json": {
+                "rule": {
+                  "name": "Protect internal token abc-secret-zz",
+                  "scope": "prompt",
+                  "action": "mask",
+                  "enabled": true,
+                  "priority": 130,
+                  "rag_mode": "off",
+                  "severity": "medium",
+                  "conditions": {
+                    "all": [
+                      {
+                        "signal": {
+                          "field": "context_keywords",
+                          "any_of": [
+                            "abc-secret-zz"
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  "stable_key": "personal.secret.internal_code.mask.c120c68b",
+                  "description": "Protect exact internal code/token from prompt: Che mã ABC-SECRET-ZZ"
+                },
+                "context_terms": [
+                  {
+                    "lang": "vi",
+                    "term": "abc-secret-zz",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 80,
+                    "window_2": 24,
+                    "entity_type": "PERSONA_OFFICE"
+                  },
+                  {
+                    "lang": "vi",
+                    "term": "abc-secret-zz",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 80,
+                    "window_2": 24,
+                    "entity_type": "INTERNAL_CODE"
+                  }
+                ]
+              },
+              "expires_at": "2026-04-02T16:59:38.341445+00:00",
+              "approved_at": null,
+              "approved_by": null,
+              "rejected_at": null,
+              "rejected_by": null,
+              "reject_reason": null,
+              "approve_reason": null,
+              "applied_result_json": null
+            },
+            "created_at": "2026-03-26T23:59:22.975385+07:00"
+          }
+        ],
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      }
+    },
+    {
+      "idx": 6,
+      "prompt": "Ẩn email cá nhân",
+      "generate_status": 200,
+      "generate_raw": {
+        "ok": true,
+        "data": {
+          "id": "58716f50-449a-4900-af62-7a1135b2673a",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Ẩn email cá nhân",
+          "dedupe_key": "dbea8a4658b91b2aff178b904cf7d2158d2c701f4182849f9b111cfd2150d4bd",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.pii.email.mask",
+              "name": "Ẩn email cá nhân",
+              "description": "Ẩn thông tin email cá nhân",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.8,
+                    "entity_type": "EMAIL"
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "low",
+              "priority": 30,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": []
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T00:00:03.836276+07:00",
+          "created_at": "2026-03-26T23:59:38.403545+07:00",
+          "updated_at": "2026-03-26T23:59:38.403545+07:00",
+          "duplicate": {
+            "level": "strong",
+            "reason": "semantic_signature_match",
+            "similar_rules": [
+              {
+                "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                "stable_key": "global.pii.email.mask",
+                "name": "Che email",
+                "origin": "global_default",
+                "similarity": 0.8267304379547209,
+                "lexical_score": 0.7
+              }
+            ]
+          },
+          "duplicate_check": {
+            "decision": "EXACT_DUPLICATE",
+            "confidence": 1.0,
+            "rationale": "semantic_signature_match",
+            "matched_rule_ids": [
+              "02c8d37b-c53e-4829-bb76-6a51bcd959da"
+            ],
+            "candidates": [
+              {
+                "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                "stable_key": "global.pii.email.mask",
+                "name": "Che email",
+                "origin": "global_default",
+                "similarity": 0.8267304379547209,
+                "lexical_score": 0.7
+              }
+            ],
+            "top_k": 5,
+            "exact_threshold": 0.92,
+            "near_threshold": 0.82,
+            "source": "hard_deterministic",
+            "llm_provider": null,
+            "llm_model": null,
+            "llm_fallback_used": false
+          },
+          "explanation": {
+            "summary": "Rule 'Ẩn email cá nhân' proposes mask in prompt scope for EMAIL related content.",
+            "detected_intent": "protect_email",
+            "derived_terms": [
+              "email",
+              "nhan"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask. Duplicate check indicates high overlap with an existing rule."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.65,
+            "duplicate_risk": "high",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          },
+          "retrieval_context": {
+            "has_policy_context": false,
+            "policy_chunk_ids": [],
+            "related_rule_ids": [
+              "8a63068d-88fd-4e8f-8d15-195806a430d9",
+              "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+              "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+              "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+              "3d40912b-4eed-470f-bf30-577c613ec93f",
+              "904897f3-c37a-4282-8266-76570ade7d11",
+              "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b"
+            ]
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "suggestion_id": "58716f50-449a-4900-af62-7a1135b2673a",
+      "detail_status": 200,
+      "detail_raw": {
+        "ok": true,
+        "data": {
+          "id": "58716f50-449a-4900-af62-7a1135b2673a",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Ẩn email cá nhân",
+          "dedupe_key": "dbea8a4658b91b2aff178b904cf7d2158d2c701f4182849f9b111cfd2150d4bd",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.pii.email.mask",
+              "name": "Ẩn email cá nhân",
+              "description": "Ẩn thông tin email cá nhân",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.8,
+                    "entity_type": "EMAIL"
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "low",
+              "priority": 30,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": []
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T00:00:03.836276+07:00",
+          "created_at": "2026-03-26T23:59:38.403545+07:00",
+          "updated_at": "2026-03-26T23:59:38.403545+07:00",
+          "duplicate": {
+            "level": "strong",
+            "reason": "semantic_signature_match",
+            "similar_rules": [
+              {
+                "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                "stable_key": "global.pii.email.mask",
+                "name": "Che email",
+                "origin": "global_default",
+                "similarity": 0.8267304379547209,
+                "lexical_score": 0.7
+              }
+            ]
+          },
+          "explanation": {
+            "summary": "Rule 'Ẩn email cá nhân' proposes mask in prompt scope for EMAIL related content.",
+            "detected_intent": "protect_email",
+            "derived_terms": [
+              "email",
+              "nhan"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask. Duplicate check indicates high overlap with an existing rule."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.65,
+            "duplicate_risk": "high",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "logs_status": 200,
+      "logs_raw": {
+        "ok": true,
+        "data": [
+          {
+            "id": "c160191c-06ea-4c7f-9e1f-75e59108ffe8",
+            "suggestion_id": "58716f50-449a-4900-af62-7a1135b2673a",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.generate.telemetry",
+            "reason": "draft_source=llm draft_provider=gemini duplicate_source=hard_deterministic duplicate_provider=none",
+            "before_json": null,
+            "after_json": {
+              "duplicate": {
+                "level": "strong",
+                "top_k": 5,
+                "reason": "semantic_signature_match",
+                "source": "hard_deterministic",
+                "decision": "EXACT_DUPLICATE",
+                "llm_model": null,
+                "rationale": "semantic_signature_match",
+                "candidates": [
+                  {
+                    "name": "Che email",
+                    "origin": "global_default",
+                    "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "similarity": 0.8267304379547209,
+                    "stable_key": "global.pii.email.mask",
+                    "lexical_score": 0.7
+                  }
+                ],
+                "confidence": 1.0,
+                "llm_provider": null,
+                "similar_rules": [
+                  {
+                    "name": "Che email",
+                    "origin": "global_default",
+                    "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "similarity": 0.8267304379547209,
+                    "stable_key": "global.pii.email.mask",
+                    "lexical_score": 0.7
+                  }
+                ],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [
+                  "02c8d37b-c53e-4829-bb76-6a51bcd959da"
+                ],
+                "llm_fallback_used": false
+              },
+              "duplicate_check": {
+                "level": "strong",
+                "top_k": 5,
+                "reason": "semantic_signature_match",
+                "source": "hard_deterministic",
+                "decision": "EXACT_DUPLICATE",
+                "llm_model": null,
+                "rationale": "semantic_signature_match",
+                "candidates": [
+                  {
+                    "name": "Che email",
+                    "origin": "global_default",
+                    "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "similarity": 0.8267304379547209,
+                    "stable_key": "global.pii.email.mask",
+                    "lexical_score": 0.7
+                  }
+                ],
+                "confidence": 1.0,
+                "llm_provider": null,
+                "similar_rules": [
+                  {
+                    "name": "Che email",
+                    "origin": "global_default",
+                    "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "similarity": 0.8267304379547209,
+                    "stable_key": "global.pii.email.mask",
+                    "lexical_score": 0.7
+                  }
+                ],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [
+                  "02c8d37b-c53e-4829-bb76-6a51bcd959da"
+                ],
+                "llm_fallback_used": false
+              },
+              "draft_generation": {
+                "model": "gemini-2.5-flash",
+                "source": "llm",
+                "provider": "gemini",
+                "intent_guard": {
+                  "applied": false,
+                  "reasons": [],
+                  "mismatch_detected": false
+                },
+                "fallback_used": true,
+                "context_retrieval": {
+                  "policy_chunks": 0,
+                  "related_rules": 7,
+                  "policy_chunk_ids": [],
+                  "related_rule_ids": [
+                    "8a63068d-88fd-4e8f-8d15-195806a430d9",
+                    "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                    "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+                    "3d40912b-4eed-470f-bf30-577c613ec93f",
+                    "904897f3-c37a-4282-8266-76570ade7d11",
+                    "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b"
+                  ],
+                  "has_policy_context": false
+                },
+                "runtime_usability": {
+                  "reasons": [],
+                  "warnings": [],
+                  "abstract_terms": [],
+                  "repair_applied": false,
+                  "runtime_usable": true
+                }
+              }
+            },
+            "created_at": "2026-03-26T23:59:38.403545+07:00"
+          },
+          {
+            "id": "9055667b-fcc9-4b7e-bcaf-4fb781e2d3dc",
+            "suggestion_id": "58716f50-449a-4900-af62-7a1135b2673a",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.create",
+            "reason": null,
+            "before_json": null,
+            "after_json": {
+              "id": "58716f50-449a-4900-af62-7a1135b2673a",
+              "type": "rule_with_context",
+              "status": "draft",
+              "version": 1,
+              "nl_input": "Ẩn email cá nhân",
+              "applied_at": null,
+              "applied_by": null,
+              "company_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+              "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+              "dedupe_key": "dbea8a4658b91b2aff178b904cf7d2158d2c701f4182849f9b111cfd2150d4bd",
+              "draft_json": {
+                "rule": {
+                  "name": "Ẩn email cá nhân",
+                  "scope": "prompt",
+                  "action": "mask",
+                  "enabled": true,
+                  "priority": 30,
+                  "rag_mode": "off",
+                  "severity": "low",
+                  "conditions": {
+                    "any": [
+                      {
+                        "min_score": 0.8,
+                        "entity_type": "EMAIL"
+                      }
+                    ]
+                  },
+                  "stable_key": "personal.pii.email.mask",
+                  "description": "Ẩn thông tin email cá nhân"
+                },
+                "context_terms": []
+              },
+              "expires_at": "2026-04-02T17:00:03.836276+00:00",
+              "approved_at": null,
+              "approved_by": null,
+              "rejected_at": null,
+              "rejected_by": null,
+              "reject_reason": null,
+              "approve_reason": null,
+              "applied_result_json": null
+            },
+            "created_at": "2026-03-26T23:59:38.403545+07:00"
+          }
+        ],
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      }
+    },
+    {
+      "idx": 7,
+      "prompt": "Mask email cá nhân",
+      "generate_status": 200,
+      "generate_raw": {
+        "ok": true,
+        "data": {
+          "id": "70808f2a-8363-45c5-98e0-77492bfde055",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Mask email cá nhân",
+          "dedupe_key": "7dafacf2905446d6760a124a042501c1ad86829cc08f4a75db7a62c537e8fed2",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.custom.pii.email.mask",
+              "name": "Che email cá nhân",
+              "description": "Che email cá nhân",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.8,
+                    "entity_type": "EMAIL"
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "low",
+              "priority": 30,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "EMAIL",
+                "term": "email cá nhân",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T00:00:04.613881+07:00",
+          "created_at": "2026-03-27T00:00:03.887623+07:00",
+          "updated_at": "2026-03-27T00:00:03.887623+07:00",
+          "duplicate": {
+            "level": "strong",
+            "reason": "semantic_signature_match",
+            "similar_rules": [
+              {
+                "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                "stable_key": "global.pii.email.mask",
+                "name": "Che email",
+                "origin": "global_default",
+                "similarity": 0.8879282129083034,
+                "lexical_score": 0.7857142857142857
+              }
+            ]
+          },
+          "duplicate_check": {
+            "decision": "EXACT_DUPLICATE",
+            "confidence": 1.0,
+            "rationale": "semantic_signature_match",
+            "matched_rule_ids": [
+              "02c8d37b-c53e-4829-bb76-6a51bcd959da"
+            ],
+            "candidates": [
+              {
+                "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                "stable_key": "global.pii.email.mask",
+                "name": "Che email",
+                "origin": "global_default",
+                "similarity": 0.8879282129083034,
+                "lexical_score": 0.7857142857142857
+              }
+            ],
+            "top_k": 5,
+            "exact_threshold": 0.92,
+            "near_threshold": 0.82,
+            "source": "hard_deterministic",
+            "llm_provider": null,
+            "llm_model": null,
+            "llm_fallback_used": false
+          },
+          "explanation": {
+            "summary": "Rule 'Che email cá nhân' proposes mask in prompt scope for EMAIL related content.",
+            "detected_intent": "protect_email",
+            "derived_terms": [
+              "email ca nhan",
+              "email",
+              "mask",
+              "nhan"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask. Duplicate check indicates high overlap with an existing rule."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.83,
+            "duplicate_risk": "high",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          },
+          "retrieval_context": {
+            "has_policy_context": false,
+            "policy_chunk_ids": [],
+            "related_rule_ids": [
+              "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+              "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+              "3d40912b-4eed-470f-bf30-577c613ec93f",
+              "8a63068d-88fd-4e8f-8d15-195806a430d9",
+              "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+              "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+              "33b5779a-f4cb-4a7a-8765-a2421e06fc1e",
+              "904897f3-c37a-4282-8266-76570ade7d11"
+            ]
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "suggestion_id": "70808f2a-8363-45c5-98e0-77492bfde055",
+      "detail_status": 200,
+      "detail_raw": {
+        "ok": true,
+        "data": {
+          "id": "70808f2a-8363-45c5-98e0-77492bfde055",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Mask email cá nhân",
+          "dedupe_key": "7dafacf2905446d6760a124a042501c1ad86829cc08f4a75db7a62c537e8fed2",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.custom.pii.email.mask",
+              "name": "Che email cá nhân",
+              "description": "Che email cá nhân",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.8,
+                    "entity_type": "EMAIL"
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "low",
+              "priority": 30,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "EMAIL",
+                "term": "email cá nhân",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T00:00:04.613881+07:00",
+          "created_at": "2026-03-27T00:00:03.887623+07:00",
+          "updated_at": "2026-03-27T00:00:03.887623+07:00",
+          "duplicate": {
+            "level": "strong",
+            "reason": "semantic_signature_match",
+            "similar_rules": [
+              {
+                "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                "stable_key": "global.pii.email.mask",
+                "name": "Che email",
+                "origin": "global_default",
+                "similarity": 0.8879282129083034,
+                "lexical_score": 0.7857142857142857
+              }
+            ]
+          },
+          "explanation": {
+            "summary": "Rule 'Che email cá nhân' proposes mask in prompt scope for EMAIL related content.",
+            "detected_intent": "protect_email",
+            "derived_terms": [
+              "email ca nhan",
+              "email",
+              "mask",
+              "nhan"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask. Duplicate check indicates high overlap with an existing rule."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.83,
+            "duplicate_risk": "high",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "logs_status": 200,
+      "logs_raw": {
+        "ok": true,
+        "data": [
+          {
+            "id": "b87b2a19-9f91-4cff-8fe7-4cd3adfaf5a7",
+            "suggestion_id": "70808f2a-8363-45c5-98e0-77492bfde055",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.generate.telemetry",
+            "reason": "draft_source=llm draft_provider=groq duplicate_source=hard_deterministic duplicate_provider=none",
+            "before_json": null,
+            "after_json": {
+              "duplicate": {
+                "level": "strong",
+                "top_k": 5,
+                "reason": "semantic_signature_match",
+                "source": "hard_deterministic",
+                "decision": "EXACT_DUPLICATE",
+                "llm_model": null,
+                "rationale": "semantic_signature_match",
+                "candidates": [
+                  {
+                    "name": "Che email",
+                    "origin": "global_default",
+                    "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "similarity": 0.8879282129083034,
+                    "stable_key": "global.pii.email.mask",
+                    "lexical_score": 0.7857142857142857
+                  }
+                ],
+                "confidence": 1.0,
+                "llm_provider": null,
+                "similar_rules": [
+                  {
+                    "name": "Che email",
+                    "origin": "global_default",
+                    "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "similarity": 0.8879282129083034,
+                    "stable_key": "global.pii.email.mask",
+                    "lexical_score": 0.7857142857142857
+                  }
+                ],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [
+                  "02c8d37b-c53e-4829-bb76-6a51bcd959da"
+                ],
+                "llm_fallback_used": false
+              },
+              "duplicate_check": {
+                "level": "strong",
+                "top_k": 5,
+                "reason": "semantic_signature_match",
+                "source": "hard_deterministic",
+                "decision": "EXACT_DUPLICATE",
+                "llm_model": null,
+                "rationale": "semantic_signature_match",
+                "candidates": [
+                  {
+                    "name": "Che email",
+                    "origin": "global_default",
+                    "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "similarity": 0.8879282129083034,
+                    "stable_key": "global.pii.email.mask",
+                    "lexical_score": 0.7857142857142857
+                  }
+                ],
+                "confidence": 1.0,
+                "llm_provider": null,
+                "similar_rules": [
+                  {
+                    "name": "Che email",
+                    "origin": "global_default",
+                    "rule_id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "similarity": 0.8879282129083034,
+                    "stable_key": "global.pii.email.mask",
+                    "lexical_score": 0.7857142857142857
+                  }
+                ],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [
+                  "02c8d37b-c53e-4829-bb76-6a51bcd959da"
+                ],
+                "llm_fallback_used": false
+              },
+              "draft_generation": {
+                "model": "llama-3.1-8b-instant",
+                "source": "llm",
+                "provider": "groq",
+                "intent_guard": {
+                  "applied": false,
+                  "reasons": [],
+                  "mismatch_detected": false
+                },
+                "fallback_used": false,
+                "context_retrieval": {
+                  "policy_chunks": 0,
+                  "related_rules": 8,
+                  "policy_chunk_ids": [],
+                  "related_rule_ids": [
+                    "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+                    "3d40912b-4eed-470f-bf30-577c613ec93f",
+                    "8a63068d-88fd-4e8f-8d15-195806a430d9",
+                    "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+                    "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                    "33b5779a-f4cb-4a7a-8765-a2421e06fc1e",
+                    "904897f3-c37a-4282-8266-76570ade7d11"
+                  ],
+                  "has_policy_context": false
+                },
+                "runtime_usability": {
+                  "reasons": [],
+                  "warnings": [],
+                  "abstract_terms": [],
+                  "repair_applied": false,
+                  "runtime_usable": true
+                }
+              }
+            },
+            "created_at": "2026-03-27T00:00:03.887623+07:00"
+          },
+          {
+            "id": "4ffad9ee-ed72-4b6b-85be-62c7415459da",
+            "suggestion_id": "70808f2a-8363-45c5-98e0-77492bfde055",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.create",
+            "reason": null,
+            "before_json": null,
+            "after_json": {
+              "id": "70808f2a-8363-45c5-98e0-77492bfde055",
+              "type": "rule_with_context",
+              "status": "draft",
+              "version": 1,
+              "nl_input": "Mask email cá nhân",
+              "applied_at": null,
+              "applied_by": null,
+              "company_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+              "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+              "dedupe_key": "7dafacf2905446d6760a124a042501c1ad86829cc08f4a75db7a62c537e8fed2",
+              "draft_json": {
+                "rule": {
+                  "name": "Che email cá nhân",
+                  "scope": "prompt",
+                  "action": "mask",
+                  "enabled": true,
+                  "priority": 30,
+                  "rag_mode": "off",
+                  "severity": "low",
+                  "conditions": {
+                    "any": [
+                      {
+                        "min_score": 0.8,
+                        "entity_type": "EMAIL"
+                      }
+                    ]
+                  },
+                  "stable_key": "personal.custom.pii.email.mask",
+                  "description": "Che email cá nhân"
+                },
+                "context_terms": [
+                  {
+                    "lang": "vi",
+                    "term": "email cá nhân",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 60,
+                    "window_2": 20,
+                    "entity_type": "EMAIL"
+                  }
+                ]
+              },
+              "expires_at": "2026-04-02T17:00:04.613881+00:00",
+              "approved_at": null,
+              "approved_by": null,
+              "rejected_at": null,
+              "rejected_by": null,
+              "reject_reason": null,
+              "approve_reason": null,
+              "applied_result_json": null
+            },
+            "created_at": "2026-03-27T00:00:03.887623+07:00"
+          }
+        ],
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      }
+    },
+    {
+      "idx": 8,
+      "prompt": "Ẩn CCCD",
+      "generate_status": 200,
+      "generate_raw": {
+        "ok": true,
+        "data": {
+          "id": "7caafa45-4355-4a9f-b530-e7d8d485454c",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Ẩn CCCD",
+          "dedupe_key": "6cac420245161595cbe35746d13db19dcec5567c4b92ec82597ad83ba6c563c6",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.custom.pii.cccd.block",
+              "name": "Chặn CCCD",
+              "description": "Chặn khi phát hiện CCCD (12 số) với độ tin cậy cao",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.85,
+                    "entity_type": "CCCD"
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "high",
+              "priority": 100,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "CCCD",
+                "term": "cccd",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T00:00:11.535140+07:00",
+          "created_at": "2026-03-27T00:00:04.694397+07:00",
+          "updated_at": "2026-03-27T00:00:04.694397+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "duplicate_check": {
+            "decision": "DIFFERENT",
+            "confidence": 0.0,
+            "rationale": "no_candidates",
+            "matched_rule_ids": [],
+            "candidates": [],
+            "top_k": 5,
+            "exact_threshold": 0.92,
+            "near_threshold": 0.82,
+            "source": "hybrid_fastpath",
+            "llm_provider": null,
+            "llm_model": null,
+            "llm_fallback_used": false
+          },
+          "explanation": {
+            "summary": "Rule 'Chặn CCCD' proposes mask in prompt scope for CCCD related content.",
+            "detected_intent": "protect_cccd",
+            "derived_terms": [
+              "cccd"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.79,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": true,
+            "intent_mismatch_detected": true,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          },
+          "retrieval_context": {
+            "has_policy_context": false,
+            "policy_chunk_ids": [],
+            "related_rule_ids": [
+              "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+              "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+              "3d40912b-4eed-470f-bf30-577c613ec93f",
+              "8a63068d-88fd-4e8f-8d15-195806a430d9",
+              "904897f3-c37a-4282-8266-76570ade7d11"
+            ]
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "suggestion_id": "7caafa45-4355-4a9f-b530-e7d8d485454c",
+      "detail_status": 200,
+      "detail_raw": {
+        "ok": true,
+        "data": {
+          "id": "7caafa45-4355-4a9f-b530-e7d8d485454c",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Ẩn CCCD",
+          "dedupe_key": "6cac420245161595cbe35746d13db19dcec5567c4b92ec82597ad83ba6c563c6",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.custom.pii.cccd.block",
+              "name": "Chặn CCCD",
+              "description": "Chặn khi phát hiện CCCD (12 số) với độ tin cậy cao",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.85,
+                    "entity_type": "CCCD"
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "high",
+              "priority": 100,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "CCCD",
+                "term": "cccd",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T00:00:11.535140+07:00",
+          "created_at": "2026-03-27T00:00:04.694397+07:00",
+          "updated_at": "2026-03-27T00:00:04.694397+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "explanation": {
+            "summary": "Rule 'Chặn CCCD' proposes mask in prompt scope for CCCD related content.",
+            "detected_intent": "protect_cccd",
+            "derived_terms": [
+              "cccd"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.79,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": true,
+            "intent_mismatch_detected": true,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "logs_status": 200,
+      "logs_raw": {
+        "ok": true,
+        "data": [
+          {
+            "id": "f73de8c2-23be-429d-a674-ba5306575bf9",
+            "suggestion_id": "7caafa45-4355-4a9f-b530-e7d8d485454c",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.generate.telemetry",
+            "reason": "draft_source=llm draft_provider=groq duplicate_source=hybrid_fastpath duplicate_provider=none",
+            "before_json": null,
+            "after_json": {
+              "duplicate": {
+                "level": "none",
+                "top_k": 5,
+                "reason": "no_candidates",
+                "source": "hybrid_fastpath",
+                "decision": "DIFFERENT",
+                "llm_model": null,
+                "rationale": "no_candidates",
+                "candidates": [],
+                "confidence": 0.0,
+                "llm_provider": null,
+                "similar_rules": [],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [],
+                "llm_fallback_used": false
+              },
+              "duplicate_check": {
+                "level": "none",
+                "top_k": 5,
+                "reason": "no_candidates",
+                "source": "hybrid_fastpath",
+                "decision": "DIFFERENT",
+                "llm_model": null,
+                "rationale": "no_candidates",
+                "candidates": [],
+                "confidence": 0.0,
+                "llm_provider": null,
+                "similar_rules": [],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [],
+                "llm_fallback_used": false
+              },
+              "draft_generation": {
+                "model": "llama-3.1-8b-instant",
+                "source": "llm",
+                "provider": "groq",
+                "intent_guard": {
+                  "applied": true,
+                  "reasons": [
+                    "action_intent_auto_repair_mask"
+                  ],
+                  "mismatch_detected": true
+                },
+                "fallback_used": false,
+                "context_retrieval": {
+                  "policy_chunks": 0,
+                  "related_rules": 5,
+                  "policy_chunk_ids": [],
+                  "related_rule_ids": [
+                    "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                    "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+                    "3d40912b-4eed-470f-bf30-577c613ec93f",
+                    "8a63068d-88fd-4e8f-8d15-195806a430d9",
+                    "904897f3-c37a-4282-8266-76570ade7d11"
+                  ],
+                  "has_policy_context": false
+                },
+                "runtime_usability": {
+                  "reasons": [],
+                  "warnings": [],
+                  "abstract_terms": [],
+                  "repair_applied": false,
+                  "runtime_usable": true
+                }
+              }
+            },
+            "created_at": "2026-03-27T00:00:04.694397+07:00"
+          },
+          {
+            "id": "1274c565-ee62-4d86-b45c-f2a95b902e37",
+            "suggestion_id": "7caafa45-4355-4a9f-b530-e7d8d485454c",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.create",
+            "reason": null,
+            "before_json": null,
+            "after_json": {
+              "id": "7caafa45-4355-4a9f-b530-e7d8d485454c",
+              "type": "rule_with_context",
+              "status": "draft",
+              "version": 1,
+              "nl_input": "Ẩn CCCD",
+              "applied_at": null,
+              "applied_by": null,
+              "company_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+              "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+              "dedupe_key": "6cac420245161595cbe35746d13db19dcec5567c4b92ec82597ad83ba6c563c6",
+              "draft_json": {
+                "rule": {
+                  "name": "Chặn CCCD",
+                  "scope": "prompt",
+                  "action": "mask",
+                  "enabled": true,
+                  "priority": 100,
+                  "rag_mode": "off",
+                  "severity": "high",
+                  "conditions": {
+                    "any": [
+                      {
+                        "min_score": 0.85,
+                        "entity_type": "CCCD"
+                      }
+                    ]
+                  },
+                  "stable_key": "personal.custom.pii.cccd.block",
+                  "description": "Chặn khi phát hiện CCCD (12 số) với độ tin cậy cao"
+                },
+                "context_terms": [
+                  {
+                    "lang": "vi",
+                    "term": "cccd",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 60,
+                    "window_2": 20,
+                    "entity_type": "CCCD"
+                  }
+                ]
+              },
+              "expires_at": "2026-04-02T17:00:11.535140+00:00",
+              "approved_at": null,
+              "approved_by": null,
+              "rejected_at": null,
+              "rejected_by": null,
+              "reject_reason": null,
+              "approve_reason": null,
+              "applied_result_json": null
+            },
+            "created_at": "2026-03-27T00:00:04.694397+07:00"
+          }
+        ],
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      }
+    },
+    {
+      "idx": 9,
+      "prompt": "Chặn CCCD",
+      "generate_status": 200,
+      "generate_raw": {
+        "ok": true,
+        "data": {
+          "id": "779e4d58-f1f2-47be-9ea0-4905f1c1eb33",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Chặn CCCD",
+          "dedupe_key": "c496bfaa514803e2dbfe685eb0bd08a9fc78534b276d0c26d5bea17c3f410d9e",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.custom.pii.cccd.block",
+              "name": "Chặn CCCD",
+              "description": "Chặn khi phát hiện CCCD (12 số) với độ tin cậy cao",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.85,
+                    "entity_type": "CCCD"
+                  }
+                ]
+              },
+              "action": "block",
+              "severity": "high",
+              "priority": 100,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "CCCD",
+                "term": "cccd",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              },
+              {
+                "entity_type": "CCCD",
+                "term": "ch",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              },
+              {
+                "entity_type": "CCCD",
+                "term": "n",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T00:00:25.935640+07:00",
+          "created_at": "2026-03-27T00:00:11.592465+07:00",
+          "updated_at": "2026-03-27T00:00:11.592465+07:00",
+          "duplicate": {
+            "level": "strong",
+            "reason": "semantic_signature_match",
+            "similar_rules": [
+              {
+                "rule_id": "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                "stable_key": "global.pii.cccd.block",
+                "name": "Chặn CCCD",
+                "origin": "global_default",
+                "similarity": 0.9623676667074895,
+                "lexical_score": 0.9210526315789473
+              }
+            ]
+          },
+          "duplicate_check": {
+            "decision": "EXACT_DUPLICATE",
+            "confidence": 1.0,
+            "rationale": "semantic_signature_match",
+            "matched_rule_ids": [
+              "fd69030e-dadf-4ad9-b2a5-201da63e1352"
+            ],
+            "candidates": [
+              {
+                "rule_id": "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                "stable_key": "global.pii.cccd.block",
+                "name": "Chặn CCCD",
+                "origin": "global_default",
+                "similarity": 0.9623676667074895,
+                "lexical_score": 0.9210526315789473
+              }
+            ],
+            "top_k": 5,
+            "exact_threshold": 0.92,
+            "near_threshold": 0.82,
+            "source": "hard_deterministic",
+            "llm_provider": null,
+            "llm_model": null,
+            "llm_fallback_used": false
+          },
+          "explanation": {
+            "summary": "Rule 'Chặn CCCD' proposes block in prompt scope for CCCD related content.",
+            "detected_intent": "protect_cccd",
+            "derived_terms": [
+              "cccd",
+              "ch",
+              "n",
+              "chan"
+            ],
+            "action_reason": "Prompt intent indicates strict prevention, so action is set to block. Duplicate check indicates high overlap with an existing rule."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.75,
+            "duplicate_risk": "high",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          },
+          "retrieval_context": {
+            "has_policy_context": false,
+            "policy_chunk_ids": [],
+            "related_rule_ids": [
+              "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+              "8a63068d-88fd-4e8f-8d15-195806a430d9",
+              "904897f3-c37a-4282-8266-76570ade7d11",
+              "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+              "3d40912b-4eed-470f-bf30-577c613ec93f"
+            ]
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "suggestion_id": "779e4d58-f1f2-47be-9ea0-4905f1c1eb33",
+      "detail_status": 200,
+      "detail_raw": {
+        "ok": true,
+        "data": {
+          "id": "779e4d58-f1f2-47be-9ea0-4905f1c1eb33",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Chặn CCCD",
+          "dedupe_key": "c496bfaa514803e2dbfe685eb0bd08a9fc78534b276d0c26d5bea17c3f410d9e",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.custom.pii.cccd.block",
+              "name": "Chặn CCCD",
+              "description": "Chặn khi phát hiện CCCD (12 số) với độ tin cậy cao",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.85,
+                    "entity_type": "CCCD"
+                  }
+                ]
+              },
+              "action": "block",
+              "severity": "high",
+              "priority": 100,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "CCCD",
+                "term": "cccd",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              },
+              {
+                "entity_type": "CCCD",
+                "term": "ch",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              },
+              {
+                "entity_type": "CCCD",
+                "term": "n",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T00:00:25.935640+07:00",
+          "created_at": "2026-03-27T00:00:11.592465+07:00",
+          "updated_at": "2026-03-27T00:00:11.592465+07:00",
+          "duplicate": {
+            "level": "strong",
+            "reason": "semantic_signature_match",
+            "similar_rules": [
+              {
+                "rule_id": "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                "stable_key": "global.pii.cccd.block",
+                "name": "Chặn CCCD",
+                "origin": "global_default",
+                "similarity": 0.9623676667074895,
+                "lexical_score": 0.9210526315789473
+              }
+            ]
+          },
+          "explanation": {
+            "summary": "Rule 'Chặn CCCD' proposes block in prompt scope for CCCD related content.",
+            "detected_intent": "protect_cccd",
+            "derived_terms": [
+              "cccd",
+              "ch",
+              "n",
+              "chan"
+            ],
+            "action_reason": "Prompt intent indicates strict prevention, so action is set to block. Duplicate check indicates high overlap with an existing rule."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.75,
+            "duplicate_risk": "high",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "logs_status": 200,
+      "logs_raw": {
+        "ok": true,
+        "data": [
+          {
+            "id": "45cc0d42-80b5-49d8-bd48-b194094d662f",
+            "suggestion_id": "779e4d58-f1f2-47be-9ea0-4905f1c1eb33",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.create",
+            "reason": null,
+            "before_json": null,
+            "after_json": {
+              "id": "779e4d58-f1f2-47be-9ea0-4905f1c1eb33",
+              "type": "rule_with_context",
+              "status": "draft",
+              "version": 1,
+              "nl_input": "Chặn CCCD",
+              "applied_at": null,
+              "applied_by": null,
+              "company_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+              "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+              "dedupe_key": "c496bfaa514803e2dbfe685eb0bd08a9fc78534b276d0c26d5bea17c3f410d9e",
+              "draft_json": {
+                "rule": {
+                  "name": "Chặn CCCD",
+                  "scope": "prompt",
+                  "action": "block",
+                  "enabled": true,
+                  "priority": 100,
+                  "rag_mode": "off",
+                  "severity": "high",
+                  "conditions": {
+                    "any": [
+                      {
+                        "min_score": 0.85,
+                        "entity_type": "CCCD"
+                      }
+                    ]
+                  },
+                  "stable_key": "personal.custom.pii.cccd.block",
+                  "description": "Chặn khi phát hiện CCCD (12 số) với độ tin cậy cao"
+                },
+                "context_terms": [
+                  {
+                    "lang": "vi",
+                    "term": "cccd",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 60,
+                    "window_2": 20,
+                    "entity_type": "CCCD"
+                  },
+                  {
+                    "lang": "vi",
+                    "term": "ch",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 60,
+                    "window_2": 20,
+                    "entity_type": "CCCD"
+                  },
+                  {
+                    "lang": "vi",
+                    "term": "n",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 60,
+                    "window_2": 20,
+                    "entity_type": "CCCD"
+                  }
+                ]
+              },
+              "expires_at": "2026-04-02T17:00:25.935640+00:00",
+              "approved_at": null,
+              "approved_by": null,
+              "rejected_at": null,
+              "rejected_by": null,
+              "reject_reason": null,
+              "approve_reason": null,
+              "applied_result_json": null
+            },
+            "created_at": "2026-03-27T00:00:11.592465+07:00"
+          },
+          {
+            "id": "ca2c58b4-6a52-4f6f-bbcd-9b37b4914627",
+            "suggestion_id": "779e4d58-f1f2-47be-9ea0-4905f1c1eb33",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.generate.telemetry",
+            "reason": "draft_source=llm draft_provider=groq duplicate_source=hard_deterministic duplicate_provider=none",
+            "before_json": null,
+            "after_json": {
+              "duplicate": {
+                "level": "strong",
+                "top_k": 5,
+                "reason": "semantic_signature_match",
+                "source": "hard_deterministic",
+                "decision": "EXACT_DUPLICATE",
+                "llm_model": null,
+                "rationale": "semantic_signature_match",
+                "candidates": [
+                  {
+                    "name": "Chặn CCCD",
+                    "origin": "global_default",
+                    "rule_id": "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                    "similarity": 0.9623676667074895,
+                    "stable_key": "global.pii.cccd.block",
+                    "lexical_score": 0.9210526315789473
+                  }
+                ],
+                "confidence": 1.0,
+                "llm_provider": null,
+                "similar_rules": [
+                  {
+                    "name": "Chặn CCCD",
+                    "origin": "global_default",
+                    "rule_id": "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                    "similarity": 0.9623676667074895,
+                    "stable_key": "global.pii.cccd.block",
+                    "lexical_score": 0.9210526315789473
+                  }
+                ],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [
+                  "fd69030e-dadf-4ad9-b2a5-201da63e1352"
+                ],
+                "llm_fallback_used": false
+              },
+              "duplicate_check": {
+                "level": "strong",
+                "top_k": 5,
+                "reason": "semantic_signature_match",
+                "source": "hard_deterministic",
+                "decision": "EXACT_DUPLICATE",
+                "llm_model": null,
+                "rationale": "semantic_signature_match",
+                "candidates": [
+                  {
+                    "name": "Chặn CCCD",
+                    "origin": "global_default",
+                    "rule_id": "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                    "similarity": 0.9623676667074895,
+                    "stable_key": "global.pii.cccd.block",
+                    "lexical_score": 0.9210526315789473
+                  }
+                ],
+                "confidence": 1.0,
+                "llm_provider": null,
+                "similar_rules": [
+                  {
+                    "name": "Chặn CCCD",
+                    "origin": "global_default",
+                    "rule_id": "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                    "similarity": 0.9623676667074895,
+                    "stable_key": "global.pii.cccd.block",
+                    "lexical_score": 0.9210526315789473
+                  }
+                ],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [
+                  "fd69030e-dadf-4ad9-b2a5-201da63e1352"
+                ],
+                "llm_fallback_used": false
+              },
+              "draft_generation": {
+                "model": "llama-3.1-8b-instant",
+                "source": "llm",
+                "provider": "groq",
+                "intent_guard": {
+                  "applied": false,
+                  "reasons": [],
+                  "mismatch_detected": false
+                },
+                "fallback_used": false,
+                "context_retrieval": {
+                  "policy_chunks": 0,
+                  "related_rules": 5,
+                  "policy_chunk_ids": [],
+                  "related_rule_ids": [
+                    "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                    "8a63068d-88fd-4e8f-8d15-195806a430d9",
+                    "904897f3-c37a-4282-8266-76570ade7d11",
+                    "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+                    "3d40912b-4eed-470f-bf30-577c613ec93f"
+                  ],
+                  "has_policy_context": false
+                },
+                "runtime_usability": {
+                  "reasons": [],
+                  "warnings": [],
+                  "abstract_terms": [],
+                  "repair_applied": false,
+                  "runtime_usable": true
+                }
+              }
+            },
+            "created_at": "2026-03-27T00:00:11.592465+07:00"
+          }
+        ],
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      }
+    },
+    {
+      "idx": 10,
+      "prompt": "Che mã số thuế 0101234567",
+      "generate_status": 200,
+      "generate_raw": {
+        "ok": true,
+        "data": {
+          "id": "8fce10f3-e234-41be-aa74-149712944c32",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Che mã số thuế 0101234567",
+          "dedupe_key": "89af6eb22857e06ad8f111aaf2de3abb7bdbeafbbe2a838bcb6fa01f17840d6e",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.custom.pii.tax.mask",
+              "name": "Che mã số thuế",
+              "description": "Che MST (10 số hoặc 10-3)",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.8,
+                    "entity_type": "TAX_ID"
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "medium",
+              "priority": 55,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "TAX_ID",
+                "term": "0101234567",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T00:00:39.969098+07:00",
+          "created_at": "2026-03-27T00:00:25.981167+07:00",
+          "updated_at": "2026-03-27T00:00:25.981167+07:00",
+          "duplicate": {
+            "level": "strong",
+            "reason": "semantic_signature_match",
+            "similar_rules": [
+              {
+                "rule_id": "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+                "stable_key": "global.pii.tax.mask",
+                "name": "Che mã số thuế",
+                "origin": "global_default",
+                "similarity": 0.958034203605265,
+                "lexical_score": 0.9117647058823529
+              }
+            ]
+          },
+          "duplicate_check": {
+            "decision": "EXACT_DUPLICATE",
+            "confidence": 1.0,
+            "rationale": "semantic_signature_match",
+            "matched_rule_ids": [
+              "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b"
+            ],
+            "candidates": [
+              {
+                "rule_id": "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+                "stable_key": "global.pii.tax.mask",
+                "name": "Che mã số thuế",
+                "origin": "global_default",
+                "similarity": 0.958034203605265,
+                "lexical_score": 0.9117647058823529
+              }
+            ],
+            "top_k": 5,
+            "exact_threshold": 0.92,
+            "near_threshold": 0.82,
+            "source": "hard_deterministic",
+            "llm_provider": null,
+            "llm_model": null,
+            "llm_fallback_used": false
+          },
+          "explanation": {
+            "summary": "Rule 'Che mã số thuế' proposes mask in prompt scope for TAX_ID related content.",
+            "detected_intent": "protect_tax_id",
+            "derived_terms": [
+              "0101234567",
+              "tax_id",
+              "che",
+              "thue"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask. Duplicate check indicates high overlap with an existing rule."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.83,
+            "duplicate_risk": "high",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          },
+          "retrieval_context": {
+            "has_policy_context": false,
+            "policy_chunk_ids": [],
+            "related_rule_ids": [
+              "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+              "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+              "3d40912b-4eed-470f-bf30-577c613ec93f",
+              "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+              "fd69030e-dadf-4ad9-b2a5-201da63e1352"
+            ]
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "suggestion_id": "8fce10f3-e234-41be-aa74-149712944c32",
+      "detail_status": 200,
+      "detail_raw": {
+        "ok": true,
+        "data": {
+          "id": "8fce10f3-e234-41be-aa74-149712944c32",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Che mã số thuế 0101234567",
+          "dedupe_key": "89af6eb22857e06ad8f111aaf2de3abb7bdbeafbbe2a838bcb6fa01f17840d6e",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.custom.pii.tax.mask",
+              "name": "Che mã số thuế",
+              "description": "Che MST (10 số hoặc 10-3)",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.8,
+                    "entity_type": "TAX_ID"
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "medium",
+              "priority": 55,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "TAX_ID",
+                "term": "0101234567",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T00:00:39.969098+07:00",
+          "created_at": "2026-03-27T00:00:25.981167+07:00",
+          "updated_at": "2026-03-27T00:00:25.981167+07:00",
+          "duplicate": {
+            "level": "strong",
+            "reason": "semantic_signature_match",
+            "similar_rules": [
+              {
+                "rule_id": "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+                "stable_key": "global.pii.tax.mask",
+                "name": "Che mã số thuế",
+                "origin": "global_default",
+                "similarity": 0.958034203605265,
+                "lexical_score": 0.9117647058823529
+              }
+            ]
+          },
+          "explanation": {
+            "summary": "Rule 'Che mã số thuế' proposes mask in prompt scope for TAX_ID related content.",
+            "detected_intent": "protect_tax_id",
+            "derived_terms": [
+              "0101234567",
+              "tax_id",
+              "che",
+              "thue"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask. Duplicate check indicates high overlap with an existing rule."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.83,
+            "duplicate_risk": "high",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "logs_status": 200,
+      "logs_raw": {
+        "ok": true,
+        "data": [
+          {
+            "id": "f615fd3b-6aca-4aff-b449-7b7e87edbc89",
+            "suggestion_id": "8fce10f3-e234-41be-aa74-149712944c32",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.create",
+            "reason": null,
+            "before_json": null,
+            "after_json": {
+              "id": "8fce10f3-e234-41be-aa74-149712944c32",
+              "type": "rule_with_context",
+              "status": "draft",
+              "version": 1,
+              "nl_input": "Che mã số thuế 0101234567",
+              "applied_at": null,
+              "applied_by": null,
+              "company_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+              "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+              "dedupe_key": "89af6eb22857e06ad8f111aaf2de3abb7bdbeafbbe2a838bcb6fa01f17840d6e",
+              "draft_json": {
+                "rule": {
+                  "name": "Che mã số thuế",
+                  "scope": "prompt",
+                  "action": "mask",
+                  "enabled": true,
+                  "priority": 55,
+                  "rag_mode": "off",
+                  "severity": "medium",
+                  "conditions": {
+                    "any": [
+                      {
+                        "min_score": 0.8,
+                        "entity_type": "TAX_ID"
+                      }
+                    ]
+                  },
+                  "stable_key": "personal.custom.pii.tax.mask",
+                  "description": "Che MST (10 số hoặc 10-3)"
+                },
+                "context_terms": [
+                  {
+                    "lang": "vi",
+                    "term": "0101234567",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 60,
+                    "window_2": 20,
+                    "entity_type": "TAX_ID"
+                  }
+                ]
+              },
+              "expires_at": "2026-04-02T17:00:39.969098+00:00",
+              "approved_at": null,
+              "approved_by": null,
+              "rejected_at": null,
+              "rejected_by": null,
+              "reject_reason": null,
+              "approve_reason": null,
+              "applied_result_json": null
+            },
+            "created_at": "2026-03-27T00:00:25.981167+07:00"
+          },
+          {
+            "id": "7b3b343b-c3e3-420d-80ad-e5b55846ec1f",
+            "suggestion_id": "8fce10f3-e234-41be-aa74-149712944c32",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.generate.telemetry",
+            "reason": "draft_source=llm draft_provider=groq duplicate_source=hard_deterministic duplicate_provider=none",
+            "before_json": null,
+            "after_json": {
+              "duplicate": {
+                "level": "strong",
+                "top_k": 5,
+                "reason": "semantic_signature_match",
+                "source": "hard_deterministic",
+                "decision": "EXACT_DUPLICATE",
+                "llm_model": null,
+                "rationale": "semantic_signature_match",
+                "candidates": [
+                  {
+                    "name": "Che mã số thuế",
+                    "origin": "global_default",
+                    "rule_id": "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+                    "similarity": 0.958034203605265,
+                    "stable_key": "global.pii.tax.mask",
+                    "lexical_score": 0.9117647058823529
+                  }
+                ],
+                "confidence": 1.0,
+                "llm_provider": null,
+                "similar_rules": [
+                  {
+                    "name": "Che mã số thuế",
+                    "origin": "global_default",
+                    "rule_id": "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+                    "similarity": 0.958034203605265,
+                    "stable_key": "global.pii.tax.mask",
+                    "lexical_score": 0.9117647058823529
+                  }
+                ],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [
+                  "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b"
+                ],
+                "llm_fallback_used": false
+              },
+              "duplicate_check": {
+                "level": "strong",
+                "top_k": 5,
+                "reason": "semantic_signature_match",
+                "source": "hard_deterministic",
+                "decision": "EXACT_DUPLICATE",
+                "llm_model": null,
+                "rationale": "semantic_signature_match",
+                "candidates": [
+                  {
+                    "name": "Che mã số thuế",
+                    "origin": "global_default",
+                    "rule_id": "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+                    "similarity": 0.958034203605265,
+                    "stable_key": "global.pii.tax.mask",
+                    "lexical_score": 0.9117647058823529
+                  }
+                ],
+                "confidence": 1.0,
+                "llm_provider": null,
+                "similar_rules": [
+                  {
+                    "name": "Che mã số thuế",
+                    "origin": "global_default",
+                    "rule_id": "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+                    "similarity": 0.958034203605265,
+                    "stable_key": "global.pii.tax.mask",
+                    "lexical_score": 0.9117647058823529
+                  }
+                ],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [
+                  "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b"
+                ],
+                "llm_fallback_used": false
+              },
+              "draft_generation": {
+                "model": "llama-3.1-8b-instant",
+                "source": "llm",
+                "provider": "groq",
+                "intent_guard": {
+                  "applied": false,
+                  "reasons": [],
+                  "mismatch_detected": false
+                },
+                "fallback_used": false,
+                "context_retrieval": {
+                  "policy_chunks": 0,
+                  "related_rules": 5,
+                  "policy_chunk_ids": [],
+                  "related_rule_ids": [
+                    "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+                    "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+                    "3d40912b-4eed-470f-bf30-577c613ec93f",
+                    "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+                    "fd69030e-dadf-4ad9-b2a5-201da63e1352"
+                  ],
+                  "has_policy_context": false
+                },
+                "runtime_usability": {
+                  "reasons": [],
+                  "warnings": [],
+                  "abstract_terms": [],
+                  "repair_applied": false,
+                  "runtime_usable": true
+                }
+              }
+            },
+            "created_at": "2026-03-27T00:00:25.981167+07:00"
+          }
+        ],
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      }
+    },
+    {
+      "idx": 11,
+      "prompt": "Chặn số điện thoại Việt Nam",
+      "generate_status": 200,
+      "generate_raw": {
+        "ok": true,
+        "data": {
+          "id": "8849d3a7-0f77-4f3d-9007-54134e3f5abd",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Chặn số điện thoại Việt Nam",
+          "dedupe_key": "2860183c1227adeb338916c774af650ac4ad4331480210c11e1c99238af98df7",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.pii.phone.block",
+              "name": "Chặn số điện thoại",
+              "description": "Chặn số điện thoại Việt Nam",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.8,
+                    "entity_type": "PHONE"
+                  },
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "số điện thoại",
+                        "số điện thoại Việt Nam"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "action": "block",
+              "severity": "high",
+              "priority": 100,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "PHONE",
+                "term": "số điện thoại",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              },
+              {
+                "entity_type": "PHONE",
+                "term": "số điện thoại việt nam",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T00:00:55.255044+07:00",
+          "created_at": "2026-03-27T00:00:40.027059+07:00",
+          "updated_at": "2026-03-27T00:00:40.027059+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "duplicate_check": {
+            "decision": "DIFFERENT",
+            "confidence": 0.0,
+            "rationale": "no_candidates",
+            "matched_rule_ids": [],
+            "candidates": [],
+            "top_k": 5,
+            "exact_threshold": 0.92,
+            "near_threshold": 0.82,
+            "source": "hybrid_fastpath",
+            "llm_provider": null,
+            "llm_model": null,
+            "llm_fallback_used": false
+          },
+          "explanation": {
+            "summary": "Rule 'Chặn số điện thoại' proposes block in prompt scope for PHONE related content.",
+            "detected_intent": "protect_phone",
+            "derived_terms": [
+              "so dien thoai",
+              "so dien thoai viet nam",
+              "phone",
+              "context_keywords",
+              "chan",
+              "dien",
+              "thoai",
+              "viet"
+            ],
+            "action_reason": "Prompt intent indicates strict prevention, so action is set to block."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.91,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          },
+          "retrieval_context": {
+            "has_policy_context": false,
+            "policy_chunk_ids": [],
+            "related_rule_ids": [
+              "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+              "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+              "3d40912b-4eed-470f-bf30-577c613ec93f",
+              "8a63068d-88fd-4e8f-8d15-195806a430d9",
+              "904897f3-c37a-4282-8266-76570ade7d11",
+              "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b"
+            ]
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "suggestion_id": "8849d3a7-0f77-4f3d-9007-54134e3f5abd",
+      "detail_status": 200,
+      "detail_raw": {
+        "ok": true,
+        "data": {
+          "id": "8849d3a7-0f77-4f3d-9007-54134e3f5abd",
+          "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+          "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Chặn số điện thoại Việt Nam",
+          "dedupe_key": "2860183c1227adeb338916c774af650ac4ad4331480210c11e1c99238af98df7",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.pii.phone.block",
+              "name": "Chặn số điện thoại",
+              "description": "Chặn số điện thoại Việt Nam",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.8,
+                    "entity_type": "PHONE"
+                  },
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "số điện thoại",
+                        "số điện thoại Việt Nam"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "action": "block",
+              "severity": "high",
+              "priority": 100,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "PHONE",
+                "term": "số điện thoại",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              },
+              {
+                "entity_type": "PHONE",
+                "term": "số điện thoại việt nam",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T00:00:55.255044+07:00",
+          "created_at": "2026-03-27T00:00:40.027059+07:00",
+          "updated_at": "2026-03-27T00:00:40.027059+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "explanation": {
+            "summary": "Rule 'Chặn số điện thoại' proposes block in prompt scope for PHONE related content.",
+            "detected_intent": "protect_phone",
+            "derived_terms": [
+              "so dien thoai",
+              "so dien thoai viet nam",
+              "phone",
+              "context_keywords",
+              "chan",
+              "dien",
+              "thoai",
+              "viet"
+            ],
+            "action_reason": "Prompt intent indicates strict prevention, so action is set to block."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.91,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "logs_status": 200,
+      "logs_raw": {
+        "ok": true,
+        "data": [
+          {
+            "id": "8257a9f2-f953-46b2-835a-fe1a36e80a5a",
+            "suggestion_id": "8849d3a7-0f77-4f3d-9007-54134e3f5abd",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.create",
+            "reason": null,
+            "before_json": null,
+            "after_json": {
+              "id": "8849d3a7-0f77-4f3d-9007-54134e3f5abd",
+              "type": "rule_with_context",
+              "status": "draft",
+              "version": 1,
+              "nl_input": "Chặn số điện thoại Việt Nam",
+              "applied_at": null,
+              "applied_by": null,
+              "company_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+              "created_by": "acad1865-c242-430c-9b30-8fdee8696306",
+              "dedupe_key": "2860183c1227adeb338916c774af650ac4ad4331480210c11e1c99238af98df7",
+              "draft_json": {
+                "rule": {
+                  "name": "Chặn số điện thoại",
+                  "scope": "prompt",
+                  "action": "block",
+                  "enabled": true,
+                  "priority": 100,
+                  "rag_mode": "off",
+                  "severity": "high",
+                  "conditions": {
+                    "any": [
+                      {
+                        "min_score": 0.8,
+                        "entity_type": "PHONE"
+                      },
+                      {
+                        "signal": {
+                          "field": "context_keywords",
+                          "any_of": [
+                            "số điện thoại",
+                            "số điện thoại Việt Nam"
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  "stable_key": "personal.pii.phone.block",
+                  "description": "Chặn số điện thoại Việt Nam"
+                },
+                "context_terms": [
+                  {
+                    "lang": "vi",
+                    "term": "số điện thoại",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 60,
+                    "window_2": 20,
+                    "entity_type": "PHONE"
+                  },
+                  {
+                    "lang": "vi",
+                    "term": "số điện thoại việt nam",
+                    "weight": 1.0,
+                    "enabled": true,
+                    "window_1": 60,
+                    "window_2": 20,
+                    "entity_type": "PHONE"
+                  }
+                ]
+              },
+              "expires_at": "2026-04-02T17:00:55.255044+00:00",
+              "approved_at": null,
+              "approved_by": null,
+              "rejected_at": null,
+              "rejected_by": null,
+              "reject_reason": null,
+              "approve_reason": null,
+              "applied_result_json": null
+            },
+            "created_at": "2026-03-27T00:00:40.027059+07:00"
+          },
+          {
+            "id": "e79163f7-fafa-4755-98d9-3c3f4def3f79",
+            "suggestion_id": "8849d3a7-0f77-4f3d-9007-54134e3f5abd",
+            "rule_set_id": "287f0fd2-ca9f-4ade-abe4-ce6fd8c51e57",
+            "actor_user_id": "acad1865-c242-430c-9b30-8fdee8696306",
+            "action": "suggestion.generate.telemetry",
+            "reason": "draft_source=llm draft_provider=groq duplicate_source=hybrid_fastpath duplicate_provider=none",
+            "before_json": null,
+            "after_json": {
+              "duplicate": {
+                "level": "none",
+                "top_k": 5,
+                "reason": "no_candidates",
+                "source": "hybrid_fastpath",
+                "decision": "DIFFERENT",
+                "llm_model": null,
+                "rationale": "no_candidates",
+                "candidates": [],
+                "confidence": 0.0,
+                "llm_provider": null,
+                "similar_rules": [],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [],
+                "llm_fallback_used": false
+              },
+              "duplicate_check": {
+                "level": "none",
+                "top_k": 5,
+                "reason": "no_candidates",
+                "source": "hybrid_fastpath",
+                "decision": "DIFFERENT",
+                "llm_model": null,
+                "rationale": "no_candidates",
+                "candidates": [],
+                "confidence": 0.0,
+                "llm_provider": null,
+                "similar_rules": [],
+                "near_threshold": 0.82,
+                "exact_threshold": 0.92,
+                "matched_rule_ids": [],
+                "llm_fallback_used": false
+              },
+              "draft_generation": {
+                "model": "llama-3.1-8b-instant",
+                "source": "llm",
+                "provider": "groq",
+                "intent_guard": {
+                  "applied": false,
+                  "reasons": [],
+                  "mismatch_detected": false
+                },
+                "fallback_used": false,
+                "context_retrieval": {
+                  "policy_chunks": 0,
+                  "related_rules": 6,
+                  "policy_chunk_ids": [],
+                  "related_rule_ids": [
+                    "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+                    "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                    "3d40912b-4eed-470f-bf30-577c613ec93f",
+                    "8a63068d-88fd-4e8f-8d15-195806a430d9",
+                    "904897f3-c37a-4282-8266-76570ade7d11",
+                    "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b"
+                  ],
+                  "has_policy_context": false
+                },
+                "runtime_usability": {
+                  "reasons": [],
+                  "warnings": [],
+                  "abstract_terms": [],
+                  "repair_applied": false,
+                  "runtime_usable": true
+                }
+              }
+            },
+            "created_at": "2026-03-27T00:00:40.027059+07:00"
+          }
+        ],
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      }
+    }
+  ],
+  "global_rules": [
+    {
+      "id": "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+      "rule_set_id": null,
+      "stable_key": "global.pii.cccd.block",
+      "name": "Chặn CCCD",
+      "description": "Chặn khi phát hiện CCCD (12 số) với độ tin cậy cao",
+      "scope": "prompt",
+      "conditions": {
+        "any": [
+          {
+            "min_score": 0.85,
+            "entity_type": "CCCD"
+          }
+        ]
+      },
+      "conditions_version": 1,
+      "action": "block",
+      "severity": "high",
+      "priority": 100,
+      "rag_mode": "off",
+      "enabled": true,
+      "created_by": "7e53aba6-eb42-4e34-a451-91dd41739964",
+      "created_at": "2026-03-03T16:19:51.900190+07:00",
+      "updated_at": "2026-03-03T16:19:51.900190+07:00",
+      "origin": "global_default",
+      "can_edit_action": false,
+      "can_soft_delete": false
+    },
+    {
+      "id": "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b",
+      "rule_set_id": null,
+      "stable_key": "global.pii.tax.mask",
+      "name": "Che mã số thuế",
+      "description": "Che MST (10 số hoặc 10-3)",
+      "scope": "prompt",
+      "conditions": {
+        "any": [
+          {
+            "min_score": 0.8,
+            "entity_type": "TAX_ID"
+          }
+        ]
+      },
+      "conditions_version": 1,
+      "action": "mask",
+      "severity": "medium",
+      "priority": 55,
+      "rag_mode": "off",
+      "enabled": true,
+      "created_by": "7e53aba6-eb42-4e34-a451-91dd41739964",
+      "created_at": "2026-03-03T16:19:51.900190+07:00",
+      "updated_at": "2026-03-03T16:19:51.900190+07:00",
+      "origin": "global_default",
+      "can_edit_action": false,
+      "can_soft_delete": false
+    },
+    {
+      "id": "c1c1b51e-75a3-46a2-a35c-bce68e98866b",
+      "rule_set_id": null,
+      "stable_key": "global.security.rag.block",
+      "name": "Rag block",
+      "description": null,
+      "scope": "prompt",
+      "conditions": {
+        "any": [
+          {
+            "signal": {
+              "field": "rag.decision",
+              "equals": "BLOCK"
+            }
+          }
+        ]
+      },
+      "conditions_version": 1,
+      "action": "block",
+      "severity": "medium",
+      "priority": 130,
+      "rag_mode": "off",
+      "enabled": true,
+      "created_by": "7e53aba6-eb42-4e34-a451-91dd41739964",
+      "created_at": "2026-03-03T16:19:51.900190+07:00",
+      "updated_at": "2026-03-03T16:19:51.900190+07:00",
+      "origin": "global_default",
+      "can_edit_action": false,
+      "can_soft_delete": false
+    },
+    {
+      "id": "904897f3-c37a-4282-8266-76570ade7d11",
+      "rule_set_id": null,
+      "stable_key": "global.dev.api_secret.block",
+      "name": "Chặn API secret (dev)",
+      "description": "Chặn token/secret nếu persona dev",
+      "scope": "prompt",
+      "conditions": {
+        "all": [
+          {
+            "min_score": 0.85,
+            "entity_type": "API_SECRET"
+          },
+          {
+            "signal": {
+              "field": "persona",
+              "equals": "dev"
+            }
+          }
+        ]
+      },
+      "conditions_version": 1,
+      "action": "block",
+      "severity": "high",
+      "priority": 110,
+      "rag_mode": "off",
+      "enabled": true,
+      "created_by": "7e53aba6-eb42-4e34-a451-91dd41739964",
+      "created_at": "2026-03-03T16:19:51.900190+07:00",
+      "updated_at": "2026-03-03T16:19:51.900190+07:00",
+      "origin": "global_default",
+      "can_edit_action": false,
+      "can_soft_delete": false
+    },
+    {
+      "id": "8a63068d-88fd-4e8f-8d15-195806a430d9",
+      "rule_set_id": null,
+      "stable_key": "global.security.prompt_injection.block",
+      "name": "Chặn prompt injection",
+      "description": "Chặn nếu detector security đánh dấu prompt injection",
+      "scope": "prompt",
+      "conditions": {
+        "any": [
+          {
+            "signal": {
+              "field": "security.prompt_injection_block",
+              "equals": true
+            }
+          }
+        ]
+      },
+      "conditions_version": 1,
+      "action": "block",
+      "severity": "high",
+      "priority": 120,
+      "rag_mode": "off",
+      "enabled": true,
+      "created_by": "7e53aba6-eb42-4e34-a451-91dd41739964",
+      "created_at": "2026-03-03T16:19:51.900190+07:00",
+      "updated_at": "2026-03-03T16:19:51.900190+07:00",
+      "origin": "global_default",
+      "can_edit_action": false,
+      "can_soft_delete": false
+    },
+    {
+      "id": "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+      "rule_set_id": null,
+      "stable_key": "global.pii.phone.mask",
+      "name": "Che SĐT",
+      "description": "Che số điện thoại",
+      "scope": "prompt",
+      "conditions": {
+        "any": [
+          {
+            "min_score": 0.8,
+            "entity_type": "PHONE"
+          }
+        ]
+      },
+      "conditions_version": 1,
+      "action": "mask",
+      "severity": "medium",
+      "priority": 60,
+      "rag_mode": "off",
+      "enabled": true,
+      "created_by": "7e53aba6-eb42-4e34-a451-91dd41739964",
+      "created_at": "2026-03-03T16:19:51.900190+07:00",
+      "updated_at": "2026-03-03T16:19:51.900190+07:00",
+      "origin": "global_default",
+      "can_edit_action": false,
+      "can_soft_delete": false
+    },
+    {
+      "id": "3d40912b-4eed-470f-bf30-577c613ec93f",
+      "rule_set_id": null,
+      "stable_key": "global.pii.credit_card.mask",
+      "name": "Che thẻ tín dụng",
+      "description": "Che số thẻ tín dụng",
+      "scope": "prompt",
+      "conditions": {
+        "any": [
+          {
+            "min_score": 0.8,
+            "entity_type": "CREDIT_CARD"
+          }
+        ]
+      },
+      "conditions_version": 1,
+      "action": "mask",
+      "severity": "high",
+      "priority": 90,
+      "rag_mode": "off",
+      "enabled": true,
+      "created_by": "7e53aba6-eb42-4e34-a451-91dd41739964",
+      "created_at": "2026-03-03T16:19:51.900190+07:00",
+      "updated_at": "2026-03-03T16:19:51.900190+07:00",
+      "origin": "global_default",
+      "can_edit_action": false,
+      "can_soft_delete": false
+    },
+    {
+      "id": "33b5779a-f4cb-4a7a-8765-a2421e06fc1e",
+      "rule_set_id": null,
+      "stable_key": "global.security.rag.mask",
+      "name": "Rag mask",
+      "description": null,
+      "scope": "prompt",
+      "conditions": {
+        "any": [
+          {
+            "signal": {
+              "field": "rag.decision",
+              "equals": "MASK"
+            }
+          }
+        ]
+      },
+      "conditions_version": 1,
+      "action": "mask",
+      "severity": "medium",
+      "priority": 125,
+      "rag_mode": "off",
+      "enabled": true,
+      "created_by": "7e53aba6-eb42-4e34-a451-91dd41739964",
+      "created_at": "2026-03-03T16:19:51.900190+07:00",
+      "updated_at": "2026-03-03T16:19:51.900190+07:00",
+      "origin": "global_default",
+      "can_edit_action": false,
+      "can_soft_delete": false
+    },
+    {
+      "id": "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+      "rule_set_id": null,
+      "stable_key": "global.pii.email.mask",
+      "name": "Che email",
+      "description": "Che email",
+      "scope": "prompt",
+      "conditions": {
+        "any": [
+          {
+            "min_score": 0.8,
+            "entity_type": "EMAIL"
+          }
+        ]
+      },
+      "conditions_version": 1,
+      "action": "mask",
+      "severity": "low",
+      "priority": 30,
+      "rag_mode": "off",
+      "enabled": true,
+      "created_by": "7e53aba6-eb42-4e34-a451-91dd41739964",
+      "created_at": "2026-03-03T16:19:51.900190+07:00",
+      "updated_at": "2026-03-03T16:19:51.900190+07:00",
+      "origin": "global_default",
+      "can_edit_action": false,
+      "can_soft_delete": false
+    }
+  ]
+}

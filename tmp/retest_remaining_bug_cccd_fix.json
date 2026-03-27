@@ -1,0 +1,935 @@
+{
+  "meta": {
+    "time": "2026-03-27T00:18:25.631647+00:00",
+    "api_base": "http://localhost:8000/v1",
+    "email": "retest.remaining.fix.1774570705@test.com",
+    "register_status": 200,
+    "login_status": 200,
+    "create_rule_set_status": 200,
+    "rule_set_id": "1fdbbd81-0433-42d2-a231-cb81ab1df137"
+  },
+  "cases": [
+    {
+      "idx": 1,
+      "prompt": "Ẩn email cá nhân",
+      "generate_status": 200,
+      "generate_raw": {
+        "ok": true,
+        "data": {
+          "id": "caffb942-8754-43b5-9f8e-5fff89bd8233",
+          "rule_set_id": "1fdbbd81-0433-42d2-a231-cb81ab1df137",
+          "created_by": "278781ad-bce2-4034-9cf2-d1c86d8dd3d3",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Ẩn email cá nhân",
+          "dedupe_key": "8904aeff2e8ee53def894987fe4264ae35156320413616886a1f1f8de84c32e9",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.custom.pii.email.personal.mask",
+              "name": "Che email cá nhân",
+              "description": "Che email cá nhân",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.8,
+                    "entity_type": "EMAIL"
+                  },
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "email cá nhân"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "low",
+              "priority": 40,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "EMAIL",
+                "term": "email cá nhân",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T07:18:26.840622+07:00",
+          "created_at": "2026-03-27T07:18:26.073274+07:00",
+          "updated_at": "2026-03-27T07:18:26.073274+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "duplicate_check": {
+            "decision": "DIFFERENT",
+            "confidence": 0.0,
+            "rationale": "no_candidates",
+            "matched_rule_ids": [],
+            "candidates": [],
+            "top_k": 5,
+            "exact_threshold": 0.92,
+            "near_threshold": 0.82,
+            "source": "hybrid_fastpath",
+            "llm_provider": null,
+            "llm_model": null,
+            "llm_fallback_used": false
+          },
+          "explanation": {
+            "summary": "Rule 'Che email cá nhân' proposes mask in prompt scope for EMAIL related content.",
+            "detected_intent": "protect_email",
+            "derived_terms": [
+              "email ca nhan",
+              "email",
+              "context_keywords",
+              "nhan"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.83,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          },
+          "retrieval_context": {
+            "has_policy_context": false,
+            "policy_chunk_ids": [],
+            "related_rule_ids": [
+              "8a63068d-88fd-4e8f-8d15-195806a430d9",
+              "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+              "02c8d37b-c53e-4829-bb76-6a51bcd959da",
+              "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+              "3d40912b-4eed-470f-bf30-577c613ec93f",
+              "904897f3-c37a-4282-8266-76570ade7d11",
+              "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b"
+            ]
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "suggestion_id": "caffb942-8754-43b5-9f8e-5fff89bd8233",
+      "detail_status": 200,
+      "detail_raw": {
+        "ok": true,
+        "data": {
+          "id": "caffb942-8754-43b5-9f8e-5fff89bd8233",
+          "rule_set_id": "1fdbbd81-0433-42d2-a231-cb81ab1df137",
+          "created_by": "278781ad-bce2-4034-9cf2-d1c86d8dd3d3",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Ẩn email cá nhân",
+          "dedupe_key": "8904aeff2e8ee53def894987fe4264ae35156320413616886a1f1f8de84c32e9",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.custom.pii.email.personal.mask",
+              "name": "Che email cá nhân",
+              "description": "Che email cá nhân",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.8,
+                    "entity_type": "EMAIL"
+                  },
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "email cá nhân"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "low",
+              "priority": 40,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "EMAIL",
+                "term": "email cá nhân",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T07:18:26.840622+07:00",
+          "created_at": "2026-03-27T07:18:26.073274+07:00",
+          "updated_at": "2026-03-27T07:18:26.073274+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "explanation": {
+            "summary": "Rule 'Che email cá nhân' proposes mask in prompt scope for EMAIL related content.",
+            "detected_intent": "protect_email",
+            "derived_terms": [
+              "email ca nhan",
+              "email",
+              "context_keywords",
+              "nhan"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.83,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      }
+    },
+    {
+      "idx": 2,
+      "prompt": "Ẩn CCCD",
+      "generate_status": 200,
+      "generate_raw": {
+        "ok": true,
+        "data": {
+          "id": "ee70c00a-2fa0-4131-b3f3-55ab35c55f32",
+          "rule_set_id": "1fdbbd81-0433-42d2-a231-cb81ab1df137",
+          "created_by": "278781ad-bce2-4034-9cf2-d1c86d8dd3d3",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Ẩn CCCD",
+          "dedupe_key": "d23a8045a9dd64b40a3c55a6a576a72d309bd9eea091a5d70d49b58f4f7cfd39",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.custom.pii.cccd.mask",
+              "name": "Che CCCD",
+              "description": "Che thông tin CCCD theo yêu cầu từ prompt: Ẩn CCCD",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.85,
+                    "entity_type": "CCCD"
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "medium",
+              "priority": 80,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "CCCD",
+                "term": "cccd",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T07:18:27.598113+07:00",
+          "created_at": "2026-03-27T07:18:26.900680+07:00",
+          "updated_at": "2026-03-27T07:18:26.900680+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "duplicate_check": {
+            "decision": "DIFFERENT",
+            "confidence": 0.0,
+            "rationale": "no_candidates",
+            "matched_rule_ids": [],
+            "candidates": [],
+            "top_k": 5,
+            "exact_threshold": 0.92,
+            "near_threshold": 0.82,
+            "source": "hybrid_fastpath",
+            "llm_provider": null,
+            "llm_model": null,
+            "llm_fallback_used": false
+          },
+          "explanation": {
+            "summary": "Rule 'Che CCCD' proposes mask in prompt scope for CCCD related content.",
+            "detected_intent": "protect_cccd",
+            "derived_terms": [
+              "cccd"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.79,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": true,
+            "intent_mismatch_detected": true,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          },
+          "retrieval_context": {
+            "has_policy_context": false,
+            "policy_chunk_ids": [],
+            "related_rule_ids": [
+              "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+              "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+              "3d40912b-4eed-470f-bf30-577c613ec93f",
+              "8a63068d-88fd-4e8f-8d15-195806a430d9",
+              "904897f3-c37a-4282-8266-76570ade7d11"
+            ]
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "suggestion_id": "ee70c00a-2fa0-4131-b3f3-55ab35c55f32",
+      "detail_status": 200,
+      "detail_raw": {
+        "ok": true,
+        "data": {
+          "id": "ee70c00a-2fa0-4131-b3f3-55ab35c55f32",
+          "rule_set_id": "1fdbbd81-0433-42d2-a231-cb81ab1df137",
+          "created_by": "278781ad-bce2-4034-9cf2-d1c86d8dd3d3",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Ẩn CCCD",
+          "dedupe_key": "d23a8045a9dd64b40a3c55a6a576a72d309bd9eea091a5d70d49b58f4f7cfd39",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.custom.pii.cccd.mask",
+              "name": "Che CCCD",
+              "description": "Che thông tin CCCD theo yêu cầu từ prompt: Ẩn CCCD",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.85,
+                    "entity_type": "CCCD"
+                  }
+                ]
+              },
+              "action": "mask",
+              "severity": "medium",
+              "priority": 80,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "CCCD",
+                "term": "cccd",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T07:18:27.598113+07:00",
+          "created_at": "2026-03-27T07:18:26.900680+07:00",
+          "updated_at": "2026-03-27T07:18:26.900680+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "explanation": {
+            "summary": "Rule 'Che CCCD' proposes mask in prompt scope for CCCD related content.",
+            "detected_intent": "protect_cccd",
+            "derived_terms": [
+              "cccd"
+            ],
+            "action_reason": "Prompt intent focuses on redaction/protection, so action is set to mask."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.79,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": true,
+            "intent_mismatch_detected": true,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      }
+    },
+    {
+      "idx": 3,
+      "prompt": "Chặn CCCD",
+      "generate_status": 200,
+      "generate_raw": {
+        "ok": true,
+        "data": {
+          "id": "5ae9c59e-5489-490c-a4c2-cde1541f41eb",
+          "rule_set_id": "1fdbbd81-0433-42d2-a231-cb81ab1df137",
+          "created_by": "278781ad-bce2-4034-9cf2-d1c86d8dd3d3",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Chặn CCCD",
+          "dedupe_key": "dfee751275708e49031a8c48468e3b10135a8e6312ceef7638bb90b335b38938",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.custom.pii.cccd.block",
+              "name": "Chặn CCCD",
+              "description": "Chặn khi phát hiện CCCD (12 số) với độ tin cậy cao",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.85,
+                    "entity_type": "CCCD"
+                  }
+                ]
+              },
+              "action": "block",
+              "severity": "high",
+              "priority": 100,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "CCCD",
+                "term": "cccd",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              },
+              {
+                "entity_type": "CCCD",
+                "term": "ch",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              },
+              {
+                "entity_type": "CCCD",
+                "term": "n",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T07:18:28.359174+07:00",
+          "created_at": "2026-03-27T07:18:27.640612+07:00",
+          "updated_at": "2026-03-27T07:18:27.640612+07:00",
+          "duplicate": {
+            "level": "strong",
+            "reason": "semantic_signature_match",
+            "similar_rules": [
+              {
+                "rule_id": "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                "stable_key": "global.pii.cccd.block",
+                "name": "Chặn CCCD",
+                "origin": "global_default",
+                "similarity": 0.9623676667074895,
+                "lexical_score": 0.9210526315789473
+              }
+            ]
+          },
+          "duplicate_check": {
+            "decision": "EXACT_DUPLICATE",
+            "confidence": 1.0,
+            "rationale": "semantic_signature_match",
+            "matched_rule_ids": [
+              "fd69030e-dadf-4ad9-b2a5-201da63e1352"
+            ],
+            "candidates": [
+              {
+                "rule_id": "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                "stable_key": "global.pii.cccd.block",
+                "name": "Chặn CCCD",
+                "origin": "global_default",
+                "similarity": 0.9623676667074895,
+                "lexical_score": 0.9210526315789473
+              }
+            ],
+            "top_k": 5,
+            "exact_threshold": 0.92,
+            "near_threshold": 0.82,
+            "source": "hard_deterministic",
+            "llm_provider": null,
+            "llm_model": null,
+            "llm_fallback_used": false
+          },
+          "explanation": {
+            "summary": "Rule 'Chặn CCCD' proposes block in prompt scope for CCCD related content.",
+            "detected_intent": "protect_cccd",
+            "derived_terms": [
+              "cccd",
+              "ch",
+              "n",
+              "chan"
+            ],
+            "action_reason": "Prompt intent indicates strict prevention, so action is set to block. Duplicate check indicates high overlap with an existing rule."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.75,
+            "duplicate_risk": "high",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          },
+          "retrieval_context": {
+            "has_policy_context": false,
+            "policy_chunk_ids": [],
+            "related_rule_ids": [
+              "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+              "8a63068d-88fd-4e8f-8d15-195806a430d9",
+              "904897f3-c37a-4282-8266-76570ade7d11",
+              "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+              "3d40912b-4eed-470f-bf30-577c613ec93f"
+            ]
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "suggestion_id": "5ae9c59e-5489-490c-a4c2-cde1541f41eb",
+      "detail_status": 200,
+      "detail_raw": {
+        "ok": true,
+        "data": {
+          "id": "5ae9c59e-5489-490c-a4c2-cde1541f41eb",
+          "rule_set_id": "1fdbbd81-0433-42d2-a231-cb81ab1df137",
+          "created_by": "278781ad-bce2-4034-9cf2-d1c86d8dd3d3",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Chặn CCCD",
+          "dedupe_key": "dfee751275708e49031a8c48468e3b10135a8e6312ceef7638bb90b335b38938",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.custom.pii.cccd.block",
+              "name": "Chặn CCCD",
+              "description": "Chặn khi phát hiện CCCD (12 số) với độ tin cậy cao",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.85,
+                    "entity_type": "CCCD"
+                  }
+                ]
+              },
+              "action": "block",
+              "severity": "high",
+              "priority": 100,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "CCCD",
+                "term": "cccd",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              },
+              {
+                "entity_type": "CCCD",
+                "term": "ch",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              },
+              {
+                "entity_type": "CCCD",
+                "term": "n",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T07:18:28.359174+07:00",
+          "created_at": "2026-03-27T07:18:27.640612+07:00",
+          "updated_at": "2026-03-27T07:18:27.640612+07:00",
+          "duplicate": {
+            "level": "strong",
+            "reason": "semantic_signature_match",
+            "similar_rules": [
+              {
+                "rule_id": "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+                "stable_key": "global.pii.cccd.block",
+                "name": "Chặn CCCD",
+                "origin": "global_default",
+                "similarity": 0.9623676667074895,
+                "lexical_score": 0.9210526315789473
+              }
+            ]
+          },
+          "explanation": {
+            "summary": "Rule 'Chặn CCCD' proposes block in prompt scope for CCCD related content.",
+            "detected_intent": "protect_cccd",
+            "derived_terms": [
+              "cccd",
+              "ch",
+              "n",
+              "chan"
+            ],
+            "action_reason": "Prompt intent indicates strict prevention, so action is set to block. Duplicate check indicates high overlap with an existing rule."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.75,
+            "duplicate_risk": "high",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      }
+    },
+    {
+      "idx": 4,
+      "prompt": "Chặn số điện thoại Việt Nam",
+      "generate_status": 200,
+      "generate_raw": {
+        "ok": true,
+        "data": {
+          "id": "53185cca-0940-4a5e-8fb1-0f2c3f148a2a",
+          "rule_set_id": "1fdbbd81-0433-42d2-a231-cb81ab1df137",
+          "created_by": "278781ad-bce2-4034-9cf2-d1c86d8dd3d3",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Chặn số điện thoại Việt Nam",
+          "dedupe_key": "35347c2ce3206461327bf33d85ea2f9176219a0c24bd02b89c7fedbe0a59643f",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.pii.phone.block",
+              "name": "Chặn số điện thoại",
+              "description": "Chặn số điện thoại Việt Nam",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.8,
+                    "entity_type": "PHONE"
+                  },
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "số điện thoại",
+                        "số điện thoại Việt Nam"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "action": "block",
+              "severity": "high",
+              "priority": 100,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "PHONE",
+                "term": "số điện thoại",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              },
+              {
+                "entity_type": "PHONE",
+                "term": "số điện thoại việt nam",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T07:18:29.145067+07:00",
+          "created_at": "2026-03-27T07:18:28.412484+07:00",
+          "updated_at": "2026-03-27T07:18:28.412484+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "duplicate_check": {
+            "decision": "DIFFERENT",
+            "confidence": 0.0,
+            "rationale": "no_candidates",
+            "matched_rule_ids": [],
+            "candidates": [],
+            "top_k": 5,
+            "exact_threshold": 0.92,
+            "near_threshold": 0.82,
+            "source": "hybrid_fastpath",
+            "llm_provider": null,
+            "llm_model": null,
+            "llm_fallback_used": false
+          },
+          "explanation": {
+            "summary": "Rule 'Chặn số điện thoại' proposes block in prompt scope for PHONE related content.",
+            "detected_intent": "protect_phone",
+            "derived_terms": [
+              "so dien thoai",
+              "so dien thoai viet nam",
+              "phone",
+              "context_keywords",
+              "chan",
+              "dien",
+              "thoai",
+              "viet"
+            ],
+            "action_reason": "Prompt intent indicates strict prevention, so action is set to block."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.91,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          },
+          "retrieval_context": {
+            "has_policy_context": false,
+            "policy_chunk_ids": [],
+            "related_rule_ids": [
+              "55159e4d-95ee-4a63-b15f-c751db5c71c5",
+              "fd69030e-dadf-4ad9-b2a5-201da63e1352",
+              "3d40912b-4eed-470f-bf30-577c613ec93f",
+              "8a63068d-88fd-4e8f-8d15-195806a430d9",
+              "904897f3-c37a-4282-8266-76570ade7d11",
+              "ce330cc4-beeb-4d9d-bbc6-d552eb5d2a4b"
+            ]
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      },
+      "suggestion_id": "53185cca-0940-4a5e-8fb1-0f2c3f148a2a",
+      "detail_status": 200,
+      "detail_raw": {
+        "ok": true,
+        "data": {
+          "id": "53185cca-0940-4a5e-8fb1-0f2c3f148a2a",
+          "rule_set_id": "1fdbbd81-0433-42d2-a231-cb81ab1df137",
+          "created_by": "278781ad-bce2-4034-9cf2-d1c86d8dd3d3",
+          "status": "draft",
+          "type": "rule_with_context",
+          "version": 1,
+          "nl_input": "Chặn số điện thoại Việt Nam",
+          "dedupe_key": "35347c2ce3206461327bf33d85ea2f9176219a0c24bd02b89c7fedbe0a59643f",
+          "draft": {
+            "rule": {
+              "stable_key": "personal.pii.phone.block",
+              "name": "Chặn số điện thoại",
+              "description": "Chặn số điện thoại Việt Nam",
+              "scope": "prompt",
+              "conditions": {
+                "any": [
+                  {
+                    "min_score": 0.8,
+                    "entity_type": "PHONE"
+                  },
+                  {
+                    "signal": {
+                      "field": "context_keywords",
+                      "any_of": [
+                        "số điện thoại",
+                        "số điện thoại Việt Nam"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "action": "block",
+              "severity": "high",
+              "priority": 100,
+              "rag_mode": "off",
+              "enabled": true
+            },
+            "context_terms": [
+              {
+                "entity_type": "PHONE",
+                "term": "số điện thoại",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              },
+              {
+                "entity_type": "PHONE",
+                "term": "số điện thoại việt nam",
+                "lang": "vi",
+                "weight": 1.0,
+                "window_1": 60,
+                "window_2": 20,
+                "enabled": true
+              }
+            ]
+          },
+          "applied_result_json": null,
+          "expires_at": "2026-04-03T07:18:29.145067+07:00",
+          "created_at": "2026-03-27T07:18:28.412484+07:00",
+          "updated_at": "2026-03-27T07:18:28.412484+07:00",
+          "duplicate": {
+            "level": "none",
+            "reason": "no_candidates",
+            "similar_rules": []
+          },
+          "explanation": {
+            "summary": "Rule 'Chặn số điện thoại' proposes block in prompt scope for PHONE related content.",
+            "detected_intent": "protect_phone",
+            "derived_terms": [
+              "so dien thoai",
+              "so dien thoai viet nam",
+              "phone",
+              "context_keywords",
+              "chan",
+              "dien",
+              "thoai",
+              "viet"
+            ],
+            "action_reason": "Prompt intent indicates strict prevention, so action is set to block."
+          },
+          "quality_signals": {
+            "intent_confidence": 0.91,
+            "duplicate_risk": "low",
+            "conflict_risk": "unknown",
+            "generation_source": "llm",
+            "has_policy_context": false,
+            "intent_guard_applied": false,
+            "intent_mismatch_detected": false,
+            "runtime_usable": true,
+            "runtime_warnings": []
+          }
+        },
+        "error": null,
+        "meta": {
+          "request_id": null,
+          "next_cursor": null,
+          "has_more": null,
+          "total": null,
+          "limit": null
+        }
+      }
+    }
+  ]
+}
