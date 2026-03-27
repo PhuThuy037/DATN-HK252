@@ -709,6 +709,44 @@ def _evaluate_with_runtime_rules(
     return out
 
 
+def _collect_simulation_personal_rule_ids(
+    *,
+    session: Session,
+    company_id: UUID,
+    runtime_rules: list[RuleRuntime],
+    draft_rule_id: UUID,
+    draft_enabled: bool,
+) -> set[UUID]:
+    runtime_rule_ids = [r.rule_id for r in runtime_rules]
+    if not runtime_rule_ids:
+        return {draft_rule_id} if draft_enabled else set()
+
+    personal_rule_ids = set(
+        session.exec(
+            select(Rule.id)
+            .where(Rule.company_id == company_id)
+            .where(Rule.id.in_(runtime_rule_ids))
+        ).all()
+    )
+    if draft_enabled:
+        personal_rule_ids.add(draft_rule_id)
+    return personal_rule_ids
+
+
+def _apply_simulation_match_precedence(
+    *,
+    matches: list[RuleMatch],
+    personal_rule_ids: set[UUID],
+) -> list[RuleMatch]:
+    if not matches or not personal_rule_ids:
+        return matches
+
+    personal_matches = [m for m in matches if m.rule_id in personal_rule_ids]
+    if personal_matches:
+        return personal_matches
+    return matches
+
+
 def _load_suggestion_row_or_404(
     *,
     session: Session,
@@ -2315,6 +2353,55 @@ def _infer_known_pii_entity_from_draft(
     return None
 
 
+def _infer_known_pii_entity_from_prompt(prompt: str) -> str | None:
+    p = str(prompt or "")
+    if _has_any(p, ["cccd", "cmnd", "can cuoc", "căn cước"]):
+        return "CCCD"
+    if _has_any(p, ["tax", "mst", "ma so thue", "mã số thuế"]):
+        return "TAX_ID"
+    if _has_any(p, ["phone", "sdt", "so dien thoai", "số điện thoại", "hotline"]):
+        return "PHONE"
+    if _has_any(p, ["email", "mail", "e-mail", "gmail"]):
+        return "EMAIL"
+    return None
+
+
+def _canonicalize_known_pii_rule_for_duplicate_check(
+    *,
+    prompt: str,
+    rule: RuleSuggestionDraftRule,
+) -> RuleSuggestionDraftRule:
+    if rule.action not in {RuleAction.mask, RuleAction.block}:
+        return rule
+
+    inferred_from_draft = _infer_known_pii_entity_from_draft(
+        RuleSuggestionDraftPayload(rule=rule, context_terms=[])
+    )
+    entity_type = inferred_from_draft or _infer_known_pii_entity_from_prompt(prompt)
+    if not entity_type:
+        return rule
+
+    rule_name, severity, priority, min_score = _known_pii_fallback_profile(
+        entity_type=entity_type,
+        action=rule.action,
+    )
+    condition_leaf: dict[str, Any] = {"entity_type": entity_type}
+    if min_score > 0:
+        condition_leaf["min_score"] = float(min_score)
+
+    return rule.model_copy(
+        update={
+            "name": rule_name,
+            "scope": RuleScope.prompt,
+            "conditions": {"any": [condition_leaf]},
+            "severity": severity,
+            "priority": priority,
+            "rag_mode": RagMode.off,
+            "enabled": True,
+        }
+    )
+
+
 def _rewrite_stable_key_action_suffix(stable_key: str, action: RuleAction) -> str:
     key = str(stable_key or "").strip().lower()
     if not key:
@@ -3266,10 +3353,14 @@ def generate_rule_suggestion(
         actor_user_id=actor_user_id,
         prompt=normalized_prompt,
     )
+    duplicate_rule = _canonicalize_known_pii_rule_for_duplicate_check(
+        prompt=normalized_prompt,
+        rule=draft.rule,
+    )
     duplicate_check = build_duplicate_check(
         session=session,
         company_id=company_id,
-        draft_rule=draft.rule,
+        draft_rule=duplicate_rule,
     )
     key = _dedupe_key(company_id=company_id, payload=draft)
     duplicate = _duplicate_out_from_check(duplicate_check)
@@ -3464,10 +3555,14 @@ def get_rule_suggestion(
         session=session,
         suggestion_id=row.id,
     )
+    duplicate_rule = _canonicalize_known_pii_rule_for_duplicate_check(
+        prompt=out.nl_input,
+        rule=out.draft.rule,
+    )
     live_duplicate_check = build_duplicate_check(
         session=session,
         company_id=company_id,
-        draft_rule=out.draft.rule,
+        draft_rule=duplicate_rule,
     )
     live_duplicate = _duplicate_out_from_check(live_duplicate_check)
     duplicate_meta = _duplicate_meta_from_check(live_duplicate_check, live_duplicate)
@@ -3525,6 +3620,13 @@ def simulate_rule_suggestion(
         suggestion_id=row.id,
         draft_rule=draft.rule,
     )
+    personal_rule_ids = _collect_simulation_personal_rule_ids(
+        session=session,
+        company_id=company_id,
+        runtime_rules=runtime_rules,
+        draft_rule_id=row.id,
+        draft_enabled=bool(draft.rule.enabled),
+    )
     runtime_meta = _evaluate_runtime_usability(draft=draft, prompt=row.nl_input)
     runtime_warnings = _to_str_list(runtime_meta.get("warnings"))
     runtime_usable = bool(runtime_meta.get("runtime_usable", not runtime_warnings))
@@ -3568,6 +3670,10 @@ def simulate_rule_suggestion(
             runtime_rules=runtime_rules,
             entities=entities,
             signals=signals,
+        )
+        matches = _apply_simulation_match_precedence(
+            matches=matches,
+            personal_rule_ids=personal_rule_ids,
         )
         decision = _SIMULATE_RESOLVER.resolve(matches)
 
@@ -3747,10 +3853,14 @@ def confirm_rule_suggestion(
         prompt=str(row.nl_input or ""),
         draft=draft,
     )
+    duplicate_rule = _canonicalize_known_pii_rule_for_duplicate_check(
+        prompt=str(row.nl_input or ""),
+        rule=draft.rule,
+    )
     duplicate_check = build_duplicate_check(
         session=session,
         company_id=company_id,
-        draft_rule=draft.rule,
+        draft_rule=duplicate_rule,
     )
     duplicate = _duplicate_out_from_check(duplicate_check)
     if (
