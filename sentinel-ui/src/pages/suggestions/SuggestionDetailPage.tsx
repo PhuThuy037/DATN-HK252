@@ -382,6 +382,7 @@ export function SuggestionDetailPage() {
 
   const [simulateResult, setSimulateResult] = useState<RuleSuggestionSimulateOut | null>(null);
   const [simulateError, setSimulateError] = useState<string | null>(null);
+  const [hasExplicitReviewAccess, setHasExplicitReviewAccess] = useState(false);
 
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
@@ -409,6 +410,14 @@ export function SuggestionDetailPage() {
     if (isNewSuggestion) {
       initializedSuggestionIdRef.current = detailQuery.data.id;
       const storedStep = getStoredSuggestionStep(detailQuery.data.id);
+      const statusAllowsReview =
+        detailQuery.data.status === "approved" ||
+        detailQuery.data.status === "applied" ||
+        detailQuery.data.status === "rejected" ||
+        detailQuery.data.status === "expired" ||
+        detailQuery.data.status === "failed";
+      const storedStepAllowsReview =
+        storedStep === "review" || storedStep === "decision" || storedStep === "apply";
 
       const shouldStartAtGenerate =
         locationState?.initialStep === "generate" &&
@@ -419,6 +428,9 @@ export function SuggestionDetailPage() {
         shouldStartAtGenerate
           ? "generate"
           : storedStep ?? mapStatusToInitialStep(detailQuery.data.status)
+      );
+      setHasExplicitReviewAccess(
+        shouldStartAtGenerate ? false : statusAllowsReview || storedStepAllowsReview
       );
 
       if (shouldStartAtGenerate) {
@@ -487,7 +499,7 @@ export function SuggestionDetailPage() {
       unlocked.add("simulate");
     }
     if (
-      simulateResult ||
+      hasExplicitReviewAccess ||
       activeStep === "review" ||
       activeStep === "decision" ||
       activeStep === "apply" ||
@@ -522,7 +534,7 @@ export function SuggestionDetailPage() {
         return [step.key, index < activeIndex ? "done" : "available"];
       })
     ) as Record<SuggestionStepKey, SuggestionStepState>;
-  }, [activeStep, detailQuery.data?.status, draftState, simulateResult, suggestionId]);
+  }, [activeStep, detailQuery.data?.status, draftState, hasExplicitReviewAccess, suggestionId]);
 
   const highlightTerms = useMemo(
     () =>
@@ -725,11 +737,16 @@ export function SuggestionDetailPage() {
     try {
       const result = await simulateMutation.mutateAsync(payload);
       setSimulateResult(result);
-      setActiveStep("review");
+      const normalizedExpectedAction = String(expectedAction ?? "").trim().toUpperCase();
+      const hasExpectedAction = normalizedExpectedAction.length > 0;
+      const hasFailures = result.results.some((item) =>
+        hasExpectedAction ? item.predicted_action !== normalizedExpectedAction : !item.matched
+      );
+      const hasWarnings = !result.runtime_usable || result.runtime_warnings.length > 0;
       toast({
-        title: "Simulation complete",
+        title: hasFailures || hasWarnings ? "Simulation completed with issues" : "Simulation complete",
         description: `Processed ${result.sample_size} samples.`,
-        variant: "success",
+        variant: hasFailures || hasWarnings ? "default" : "success",
       });
     } catch (error) {
       const message = getSuggestionErrorMessage(error, "Failed to simulate suggestion");
@@ -744,6 +761,11 @@ export function SuggestionDetailPage() {
 
   const handleContinueToDraft = () => {
     setActiveStep("draft");
+  };
+
+  const handleContinueToReview = () => {
+    setHasExplicitReviewAccess(true);
+    setActiveStep("review");
   };
 
   useEffect(() => {
@@ -1011,7 +1033,7 @@ export function SuggestionDetailPage() {
               highlightTerms={highlightTerms}
               isSubmitting={simulateMutation.isPending}
               onBack={() => goToStep("draft")}
-              onContinue={() => goToStep("review")}
+              onContinue={handleContinueToReview}
               onSimulate={handleSimulate}
               result={simulateResult}
               status={suggestion.status}
