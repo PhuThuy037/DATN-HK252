@@ -88,6 +88,31 @@ class _FakeSession:
         return None
 
 
+def _find_entity_leaf(conditions: object, entity_type: str) -> dict[str, object] | None:
+    wanted = str(entity_type or "").strip().upper()
+    if not wanted:
+        return None
+
+    def _walk(node: object) -> dict[str, object] | None:
+        if isinstance(node, dict):
+            raw = str(node.get("entity_type") or "").strip().upper()
+            if raw == wanted:
+                return node
+            for child in node.values():
+                found = _walk(child)
+                if found is not None:
+                    return found
+            return None
+        if isinstance(node, list):
+            for item in node:
+                found = _walk(item)
+                if found is not None:
+                    return found
+        return None
+
+    return _walk(conditions)
+
+
 def test_feature3_generate_uses_retrieval_context_success(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
     company_id = uuid4()
@@ -500,6 +525,77 @@ def test_feature3_custom_secret_prompt_prioritizes_exact_term_not_generic_pii() 
     assert "zxq-unseen-9981" in terms
 
 
+def test_feature3_literal_code_prompt_detection_without_known_pii_intent() -> None:
+    assert suggestion_service._is_literal_code_prompt_without_known_pii_intent(  # type: ignore[attr-defined]
+        "Tôi muốn che mã này 1234-xxx-zzz"
+    )
+    assert suggestion_service._is_literal_code_prompt_without_known_pii_intent(  # type: ignore[attr-defined]
+        "Che mã ABC-999-XYZ"
+    )
+    assert suggestion_service._is_literal_code_prompt_without_known_pii_intent(  # type: ignore[attr-defined]
+        "Che mã THUY-XX-YY"
+    )
+    assert suggestion_service._is_literal_code_prompt_without_known_pii_intent(  # type: ignore[attr-defined]
+        "Che mã ABC-SECRET-ZZ"
+    )
+    assert suggestion_service._is_literal_code_prompt_without_known_pii_intent(  # type: ignore[attr-defined]
+        "Che mã DEV-KEY-ALPHA"
+    )
+    assert not suggestion_service._is_literal_code_prompt_without_known_pii_intent(  # type: ignore[attr-defined]
+        "Che mã số thuế 0101234567-001"
+    )
+    assert not suggestion_service._is_literal_code_prompt_without_known_pii_intent(  # type: ignore[attr-defined]
+        "Che mã please-check-this"
+    )
+
+
+def test_feature3_fallback_literal_code_prompt_generates_exact_secret_draft() -> None:
+    prompt = "Tôi muốn che mã này 1234-xxx-zzz"
+    draft = suggestion_service._fallback_generate(prompt)  # type: ignore[attr-defined]
+
+    assert draft.rule.action == RuleAction.mask
+    assert suggestion_service._contains_entity_type(  # type: ignore[attr-defined]
+        draft.rule.conditions, {"TAX_ID"}
+    ) is False
+    assert suggestion_service._condition_has_context_keyword_term(  # type: ignore[attr-defined]
+        draft.rule.conditions, "1234-xxx-zzz"
+    )
+    assert any(
+        str(term.entity_type).upper() == "INTERNAL_CODE"
+        and str(term.term).lower() == "1234-xxx-zzz"
+        for term in draft.context_terms
+    )
+
+
+@pytest.mark.parametrize(
+    ("prompt", "expected_token", "expected_action"),
+    [
+        ("Che mã THUY-XX-YY", "thuy-xx-yy", RuleAction.mask),
+        ("Mask mã THUY-XX-YY", "thuy-xx-yy", RuleAction.mask),
+        ("Che mã ABC-SECRET-ZZ", "abc-secret-zz", RuleAction.mask),
+    ],
+)
+def test_feature3_fallback_alpha_code_literals_preserve_exact_terms(
+    prompt: str,
+    expected_token: str,
+    expected_action: RuleAction,
+) -> None:
+    draft = suggestion_service._fallback_generate(prompt)  # type: ignore[attr-defined]
+
+    assert draft.rule.action == expected_action
+    assert suggestion_service._contains_entity_type(  # type: ignore[attr-defined]
+        draft.rule.conditions, {"TAX_ID"}
+    ) is False
+    assert suggestion_service._condition_has_context_keyword_term(  # type: ignore[attr-defined]
+        draft.rule.conditions, expected_token
+    )
+    assert any(
+        str(term.entity_type).upper() == "INTERNAL_CODE"
+        and str(term.term).lower() == expected_token
+        for term in draft.context_terms
+    )
+
+
 def test_feature3_payroll_external_email_prompt_not_generic_office_branch() -> None:
     prompt = "Tạo rule block gửi danh sách lương payroll ra email cá nhân như gmail"
     draft = suggestion_service._fallback_generate(prompt)  # type: ignore[attr-defined]
@@ -551,6 +647,36 @@ def test_feature3_align_guard_rewrites_bad_llm_mapping_for_custom_secret() -> No
         guarded,
         ["ALPHA-SECRET-2026"],
     )
+
+
+def test_feature3_align_guard_rewrites_bad_llm_mapping_for_literal_code_prompt() -> None:
+    prompt = "Tôi muốn che mã này 1234-xxx-zzz"
+    llm_bad = _sample_draft(stable_key="personal.custom.bad.literal.map").model_copy(
+        update={
+            "rule": _sample_draft().rule.model_copy(
+                update={"conditions": {"any": [{"entity_type": "TAX_ID"}]}}
+            )
+        }
+    )
+
+    aligned = suggestion_service._align_draft_with_prompt(  # type: ignore[attr-defined]
+        prompt,
+        llm_bad,
+    )
+    guarded, guard_meta = suggestion_service._post_generate_intent_guard(  # type: ignore[attr-defined]
+        prompt=prompt,
+        draft=aligned,
+    )
+
+    assert suggestion_service._contains_entity_type(  # type: ignore[attr-defined]
+        guarded.rule.conditions, {"TAX_ID"}
+    ) is False
+    assert suggestion_service._draft_has_exact_secret_terms(  # type: ignore[attr-defined]
+        guarded,
+        ["1234-xxx-zzz"],
+    )
+    assert guard_meta["applied"] is True
+    assert guard_meta["mismatch_detected"] is True
 
 
 def test_feature3_post_generate_intent_guard_sets_meta_and_quality_flags() -> None:
@@ -904,6 +1030,93 @@ def test_feature3_post_generate_intent_guard_noop_for_non_target_prompt() -> Non
     assert guarded.model_dump() == original.model_dump()
 
 
+@pytest.mark.parametrize(
+    ("prompt", "expected_action"),
+    [
+        ("Ẩn CCCD", RuleAction.mask),
+        ("Che CCCD", RuleAction.mask),
+        ("Mask CCCD", RuleAction.mask),
+        ("Chặn CCCD", RuleAction.block),
+        ("Block CCCD", RuleAction.block),
+    ],
+)
+def test_feature3_post_generate_intent_guard_enforces_explicit_action_keywords(
+    prompt: str,
+    expected_action: RuleAction,
+) -> None:
+    drifted_action = RuleAction.block if expected_action == RuleAction.mask else RuleAction.mask
+    base = _sample_draft(stable_key="personal.custom.intent.keyword.guard")
+    drifted = base.model_copy(
+        update={
+            "rule": base.rule.model_copy(
+                update={
+                    "action": drifted_action,
+                    "conditions": {"any": [{"entity_type": "CCCD"}]},
+                }
+            )
+        }
+    )
+
+    guarded, guard_meta = suggestion_service._post_generate_intent_guard(  # type: ignore[attr-defined]
+        prompt=prompt,
+        draft=drifted,
+    )
+
+    assert guarded.rule.action == expected_action
+    assert guard_meta["applied"] is True
+    assert guard_meta["mismatch_detected"] is True
+    assert f"action_intent_auto_repair_{expected_action.value}" in guard_meta["reasons"]
+
+
+@pytest.mark.parametrize(
+    ("prompt", "expected_action", "expected_entity"),
+    [
+        ("Che mã số thuế 0101234567", RuleAction.mask, "TAX_ID"),
+        ("Chặn số điện thoại Việt Nam", RuleAction.block, "PHONE"),
+        ("Ẩn email cá nhân", RuleAction.mask, "EMAIL"),
+    ],
+)
+def test_feature3_fallback_known_pii_prompts_keep_existing_entity_behavior(
+    prompt: str,
+    expected_action: RuleAction,
+    expected_entity: str,
+) -> None:
+    draft = suggestion_service._fallback_generate(prompt)  # type: ignore[attr-defined]
+    assert draft.rule.action == expected_action
+    assert suggestion_service._contains_entity_type(  # type: ignore[attr-defined]
+        draft.rule.conditions, {expected_entity}
+    )
+
+
+@pytest.mark.parametrize(
+    ("prompt", "expected_action", "expected_entity", "expected_min_score", "expected_severity", "expected_priority"),
+    [
+        ("Ẩn email cá nhân", RuleAction.mask, "EMAIL", 0.80, RuleSeverity.low, 30),
+        ("Mask email cá nhân", RuleAction.mask, "EMAIL", 0.80, RuleSeverity.low, 30),
+        ("Chặn số điện thoại Việt Nam", RuleAction.block, "PHONE", 0.80, RuleSeverity.high, 100),
+        ("Ẩn CCCD", RuleAction.mask, "CCCD", 0.85, RuleSeverity.medium, 80),
+        ("Chặn CCCD", RuleAction.block, "CCCD", 0.85, RuleSeverity.high, 100),
+        ("Che mã số thuế 0101234567", RuleAction.mask, "TAX_ID", 0.80, RuleSeverity.medium, 55),
+    ],
+)
+def test_feature3_fallback_known_pii_profile_aligns_with_canonical_shape(
+    prompt: str,
+    expected_action: RuleAction,
+    expected_entity: str,
+    expected_min_score: float,
+    expected_severity: RuleSeverity,
+    expected_priority: int,
+) -> None:
+    draft = suggestion_service._fallback_generate(prompt)  # type: ignore[attr-defined]
+    leaf = _find_entity_leaf(draft.rule.conditions, expected_entity)
+
+    assert draft.rule.action == expected_action
+    assert leaf is not None
+    assert pytest.approx(float(leaf.get("min_score") or 0.0), rel=0.0, abs=1e-6) == expected_min_score
+    assert draft.rule.severity == expected_severity
+    assert int(draft.rule.priority) == expected_priority
+
+
 def test_feature3_backward_compat_generate_contract_intact_for_regular_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -962,4 +1175,214 @@ def test_feature3_backward_compat_generate_contract_intact_for_regular_prompt(
     assert result.quality_signals.intent_mismatch_detected is False
     assert result.retrieval_context.has_policy_context is False
     assert result.retrieval_context.policy_chunk_ids == []
+
+
+def test_feature3_generate_reuses_existing_only_when_prompt_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    company_id = uuid4()
+    actor_user_id = uuid4()
+    prompt = "Mask customer contact details"
+    draft = _sample_draft(stable_key="personal.custom.same.prompt")
+    now = datetime.now(timezone.utc)
+
+    existed_row = SimpleNamespace(
+        id=uuid4(),
+        company_id=company_id,
+        created_by=actor_user_id,
+        status=SuggestionStatus.draft.value,
+        type="rule_with_context",
+        version=1,
+        nl_input=prompt,
+        dedupe_key="dedupe_same_prompt",
+        draft_json=draft.model_dump(mode="json"),
+        applied_result_json=None,
+        expires_at=None,
+        created_at=now,
+        updated_at=now,
+    )
+    existed_out = RuleSuggestionOut(
+        id=existed_row.id,
+        rule_set_id=company_id,
+        created_by=actor_user_id,
+        status=SuggestionStatus.draft,
+        type="rule_with_context",
+        version=1,
+        nl_input=prompt,
+        dedupe_key=existed_row.dedupe_key,
+        draft=draft,
+        applied_result_json=None,
+        expires_at=None,
+        created_at=now,
+        updated_at=now,
+    )
+
+    append_actions: list[str] = []
+
+    monkeypatch.setattr(suggestion_service, "_load_company_or_404", lambda **kwargs: None)
+    monkeypatch.setattr(suggestion_service, "_require_company_admin", lambda **kwargs: None)
+    monkeypatch.setattr(
+        suggestion_service,
+        "_generate_draft_from_prompt",
+        lambda **kwargs: (
+            draft,
+            {
+                "source": "llm",
+                "provider": "mock",
+                "model": "mock-model",
+                "fallback_used": False,
+                "context_retrieval": {
+                    "has_policy_context": False,
+                    "policy_chunk_ids": [],
+                    "related_rule_ids": [],
+                    "policy_chunks": 0,
+                    "related_rules": 0,
+                },
+                "intent_guard": {"applied": False, "mismatch_detected": False},
+            },
+        ),
+    )
+    monkeypatch.setattr(suggestion_service, "build_duplicate_check", lambda **kwargs: _duplicate_check())
+    monkeypatch.setattr(suggestion_service, "_dedupe_key", lambda **kwargs: "dedupe_same_prompt")
+    monkeypatch.setattr(suggestion_service, "_find_active_duplicate", lambda **kwargs: existed_row)
+    monkeypatch.setattr(
+        suggestion_service,
+        "_append_log",
+        lambda **kwargs: append_actions.append(str(kwargs.get("action") or "")),
+    )
+    monkeypatch.setattr(suggestion_service, "_to_out", lambda _row: existed_out)
+    monkeypatch.setattr(suggestion_service, "_snapshot_suggestion", lambda _row: {})
+    monkeypatch.setattr(
+        suggestion_service,
+        "RuleSuggestion",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("Should not create a new suggestion")),
+    )
+
+    result = suggestion_service.generate_rule_suggestion(
+        session=_FakeSession(),
+        company_id=company_id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionGenerateIn(prompt=prompt),
+    )
+
+    assert result.id == existed_out.id
+    assert result.nl_input == prompt
+    assert "suggestion.generate.duplicate_hit" in append_actions
+    assert "suggestion.generate.duplicate_skip" not in append_actions
+
+
+def test_feature3_generate_creates_new_when_dedupe_hit_has_different_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    company_id = uuid4()
+    actor_user_id = uuid4()
+    prompt_a = "Mask customer contact details"
+    prompt_b = "Mask partner contact details"
+    draft = _sample_draft(stable_key="personal.custom.same.canonical.draft")
+    now = datetime.now(timezone.utc)
+
+    existed_row = SimpleNamespace(
+        id=uuid4(),
+        company_id=company_id,
+        created_by=actor_user_id,
+        status=SuggestionStatus.draft.value,
+        type="rule_with_context",
+        version=1,
+        nl_input=prompt_a,
+        dedupe_key="dedupe_same_canonical",
+        draft_json=draft.model_dump(mode="json"),
+        applied_result_json=None,
+        expires_at=None,
+        created_at=now,
+        updated_at=now,
+    )
+    new_row_id = uuid4()
+    appended_logs: list[tuple[str, str]] = []
+
+    class _TrackingSession(_FakeSession):
+        def __init__(self) -> None:
+            self.added_rows: list[object] = []
+
+        def add(self, row: object) -> None:
+            self.added_rows.append(row)
+
+    def _to_out_from_row(row: object) -> RuleSuggestionOut:
+        obj = row
+        return RuleSuggestionOut(
+            id=UUID(str(getattr(obj, "id"))),
+            rule_set_id=company_id,
+            created_by=actor_user_id,
+            status=SuggestionStatus(str(getattr(obj, "status"))),
+            type=str(getattr(obj, "type")),
+            version=int(getattr(obj, "version")),
+            nl_input=str(getattr(obj, "nl_input")),
+            dedupe_key=str(getattr(obj, "dedupe_key")),
+            draft=RuleSuggestionDraftPayload.model_validate(getattr(obj, "draft_json")),
+            applied_result_json=None,
+            expires_at=None,
+            created_at=now,
+            updated_at=now,
+        )
+
+    monkeypatch.setattr(suggestion_service, "_load_company_or_404", lambda **kwargs: None)
+    monkeypatch.setattr(suggestion_service, "_require_company_admin", lambda **kwargs: None)
+    monkeypatch.setattr(
+        suggestion_service,
+        "_generate_draft_from_prompt",
+        lambda **kwargs: (
+            draft,
+            {
+                "source": "llm",
+                "provider": "mock",
+                "model": "mock-model",
+                "fallback_used": False,
+                "context_retrieval": {
+                    "has_policy_context": False,
+                    "policy_chunk_ids": [],
+                    "related_rule_ids": [],
+                    "policy_chunks": 0,
+                    "related_rules": 0,
+                },
+                "intent_guard": {"applied": False, "mismatch_detected": False},
+            },
+        ),
+    )
+    monkeypatch.setattr(suggestion_service, "build_duplicate_check", lambda **kwargs: _duplicate_check())
+    monkeypatch.setattr(suggestion_service, "_dedupe_key", lambda **kwargs: "dedupe_same_canonical")
+    monkeypatch.setattr(suggestion_service, "_find_active_duplicate", lambda **kwargs: existed_row)
+    monkeypatch.setattr(
+        suggestion_service,
+        "_append_log",
+        lambda **kwargs: appended_logs.append(
+            (str(kwargs.get("action") or ""), str(kwargs.get("reason") or ""))
+        ),
+    )
+    monkeypatch.setattr(suggestion_service, "_to_out", _to_out_from_row)
+    monkeypatch.setattr(suggestion_service, "_snapshot_suggestion", lambda _row: {})
+    monkeypatch.setattr(
+        suggestion_service,
+        "RuleSuggestion",
+        lambda **kwargs: SimpleNamespace(id=new_row_id, **kwargs),
+    )
+
+    session = _TrackingSession()
+    result = suggestion_service.generate_rule_suggestion(
+        session=session,
+        company_id=company_id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionGenerateIn(prompt=prompt_b),
+    )
+
+    assert result.id == new_row_id
+    assert result.nl_input == prompt_b
+    assert result.nl_input != prompt_a
+    assert any(
+        action == "suggestion.generate.duplicate_skip"
+        and reason == "dedupe_key_matched_but_prompt_mismatch"
+        for action, reason in appended_logs
+    )
+    assert any(
+        bool(getattr(row, "nl_input", "").strip() == prompt_b)
+        for row in session.added_rows
+    )
 

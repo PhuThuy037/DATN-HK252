@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from copy import deepcopy
 import re
-from typing import Any
+from typing import Any, TypeVar
 from uuid import UUID
 
+import sqlalchemy as sa
 from sqlmodel import Session, select
 
 from app.common.error_codes import ErrorCode
 from app.common.errors import AppError
-from app.common.enums import MemberRole, MemberStatus
+from app.common.enums import MemberRole, MemberStatus, RuleAction, RuleScope
 from app.company.model import Company
 from app.company_member.model import CompanyMember
 from app.decision.context_term_runtime import invalidate_context_runtime_cache
@@ -40,6 +41,12 @@ _STABLE_KEY_PATTERN = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
 _MIN_RULE_PRIORITY = -100000
 _MAX_RULE_PRIORITY = 100000
 _DELETED_RULE_PREFIX = "__deleted__."
+_SUPPORTED_COMPANY_SCOPE = RuleScope.chat
+_SUPPORTED_COMPANY_ACTIONS = {
+    RuleAction.allow,
+    RuleAction.mask,
+    RuleAction.block,
+}
 _EMBEDDING_RELEVANT_RULE_FIELDS = {
     "name",
     "description",
@@ -50,6 +57,60 @@ _EMBEDDING_RELEVANT_RULE_FIELDS = {
     "priority",
     "rag_mode",
 }
+
+_PAGINATION_MAX_LIMIT = 200
+_PAGINATION_DEFAULT_LIMIT = 20
+T = TypeVar("T")
+
+
+def _normalize_page_limit(*, limit: int | None) -> int:
+    if limit is None:
+        return _PAGINATION_DEFAULT_LIMIT
+    return max(1, min(int(limit), _PAGINATION_MAX_LIMIT))
+
+
+def _decode_offset_cursor(*, cursor: str | None, field: str = "cursor") -> int:
+    if cursor is None:
+        return 0
+    raw = str(cursor).strip()
+    if not raw:
+        return 0
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise AppError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Invalid cursor",
+            details=[{"field": field, "reason": "invalid_cursor"}],
+        ) from exc
+    if value < 0:
+        raise AppError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Invalid cursor",
+            details=[{"field": field, "reason": "invalid_cursor"}],
+        )
+    return value
+
+
+def _paginate_rows(
+    *,
+    rows: list[T],
+    limit: int,
+    cursor: str | None,
+) -> tuple[list[T], str | None, bool, int]:
+    safe_limit = _normalize_page_limit(limit=limit)
+    offset = _decode_offset_cursor(cursor=cursor)
+    total = len(rows)
+    if offset >= total:
+        return [], None, False, total
+
+    end = offset + safe_limit
+    items = rows[offset:end]
+    has_more = end < total
+    next_cursor = str(end) if has_more else None
+    return items, next_cursor, has_more, total
 
 
 def _is_rule_deleted(*, rule: Rule) -> bool:
@@ -316,6 +377,42 @@ def _validate_priority(*, value: int, field: str = "priority") -> int:
             ],
         )
     return value
+
+
+def _validate_company_scope(*, scope: RuleScope, field: str = "scope") -> RuleScope:
+    if scope != _SUPPORTED_COMPANY_SCOPE:
+        raise AppError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Unsupported scope",
+            details=[
+                {
+                    "field": field,
+                    "reason": "unsupported_scope",
+                    "extra": {"allowed": [_SUPPORTED_COMPANY_SCOPE.value]},
+                }
+            ],
+        )
+    return scope
+
+
+def _validate_company_action(*, action: RuleAction, field: str = "action") -> RuleAction:
+    if action not in _SUPPORTED_COMPANY_ACTIONS:
+        raise AppError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Unsupported action",
+            details=[
+                {
+                    "field": field,
+                    "reason": "unsupported_action",
+                    "extra": {
+                        "allowed": sorted(x.value for x in _SUPPORTED_COMPANY_ACTIONS)
+                    },
+                }
+            ],
+        )
+    return action
 
 
 def _global_stable_keys(*, session: Session) -> set[str]:
@@ -713,7 +810,7 @@ def _load_company_rule_by_stable_key(
     if len(rows) > 1:
         raise AppError.conflict(
             ErrorCode.CONFLICT,
-            "Duplicate company rules found for stable_key",
+            "Duplicate rule-set rules found for stable_key",
             field="stable_key",
         )
     return rows[0] if rows else None
@@ -887,6 +984,51 @@ def list_company_rules(
     return combined
 
 
+def list_company_rules_paginated(
+    *,
+    session: Session,
+    company_id: UUID,
+    actor_user_id: UUID,
+    limit: int,
+    cursor: str | None = None,
+    tab: str = "all",
+) -> tuple[list[CompanyRuleOut], str | None, bool, int]:
+    normalized_tab = str(tab or "all").strip().lower()
+    if normalized_tab not in {"all", "my", "global"}:
+        raise AppError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Invalid tab",
+            details=[
+                {
+                    "field": "tab",
+                    "reason": "invalid_tab",
+                    "extra": {"allowed": ["all", "my", "global"]},
+                }
+            ],
+        )
+
+    rows = list_company_rules(
+        session=session,
+        company_id=company_id,
+        actor_user_id=actor_user_id,
+    )
+    if normalized_tab == "my":
+        rows = [row for row in rows if row.origin == RuleOrigin.personal_custom]
+    elif normalized_tab == "global":
+        rows = [row for row in rows if row.origin == RuleOrigin.global_default]
+
+    rows.sort(
+        key=lambda r: (
+            r.updated_at,
+            str(r.id),
+        ),
+        reverse=True,
+    )
+
+    return _paginate_rows(rows=rows, limit=limit, cursor=cursor)
+
+
 def list_company_rule_change_logs(
     *,
     session: Session,
@@ -894,21 +1036,59 @@ def list_company_rule_change_logs(
     actor_user_id: UUID,
     limit: int,
 ) -> list[RuleChangeLogOut]:
+    rows, _, _, _ = list_company_rule_change_logs_paginated(
+        session=session,
+        company_id=company_id,
+        actor_user_id=actor_user_id,
+        limit=limit,
+        cursor=None,
+    )
+    return rows
+
+
+def list_company_rule_change_logs_paginated(
+    *,
+    session: Session,
+    company_id: UUID,
+    actor_user_id: UUID,
+    limit: int,
+    cursor: str | None = None,
+) -> tuple[list[RuleChangeLogOut], str | None, bool, int]:
     _load_company_or_404(session=session, company_id=company_id)
     _require_company_admin(
         session=session, company_id=company_id, user_id=actor_user_id
     )
 
-    safe_limit = max(1, min(int(limit), 200))
-    rows = list(
-        session.exec(
-            select(RuleChangeLog)
-            .where(RuleChangeLog.company_id == company_id)
-            .order_by(RuleChangeLog.created_at.desc())
-            .limit(safe_limit)
-        ).all()
+    safe_limit = _normalize_page_limit(limit=limit)
+    offset = _decode_offset_cursor(cursor=cursor)
+
+    stmt = (
+        select(RuleChangeLog)
+        .where(RuleChangeLog.company_id == company_id)
+        .order_by(RuleChangeLog.created_at.desc(), RuleChangeLog.id.desc())
+        .offset(offset)
+        .limit(safe_limit + 1)
     )
-    return [_to_rule_change_out(row=r) for r in rows]
+    rows = list(session.exec(stmt).all())
+    has_more = len(rows) > safe_limit
+    if has_more:
+        rows = rows[:safe_limit]
+
+    total = int(
+        session.exec(
+            select(sa.func.count())
+            .select_from(RuleChangeLog)
+            .where(RuleChangeLog.company_id == company_id)
+        ).one()
+    )
+
+    next_cursor = str(offset + safe_limit) if has_more else None
+    return (
+        [_to_rule_change_out(row=r) for r in rows],
+        next_cursor,
+        has_more,
+        total,
+    )
 
 
 def create_company_custom_rule(
@@ -929,6 +1109,8 @@ def create_company_custom_rule(
     description = (payload.description or "").strip() or None
     _validate_conditions(conditions=payload.conditions)
     priority = _validate_priority(value=int(payload.priority))
+    _validate_company_scope(scope=payload.scope)
+    _validate_company_action(action=payload.action)
 
     global_keys = _global_stable_keys(session=session)
     if stable_key in global_keys:
@@ -947,7 +1129,7 @@ def create_company_custom_rule(
     if existed:
         raise AppError.conflict(
             ErrorCode.CONFLICT,
-            "stable_key already exists in this company",
+            "stable_key already exists in this rule set",
             field="stable_key",
         )
 
@@ -1066,6 +1248,7 @@ def update_company_rule(
     if "description" in changed_fields:
         row.description = (payload.description or "").strip() or None
     if "scope" in changed_fields and payload.scope is not None:
+        _validate_company_scope(scope=payload.scope)
         row.scope = payload.scope
     conditions_changed = "conditions" in changed_fields and payload.conditions is not None
 
@@ -1090,6 +1273,7 @@ def update_company_rule(
                 "Only company custom rule can change action",
                 details=[{"field": "action", "reason": "action_change_not_allowed"}],
             )
+        _validate_company_action(action=payload.action)
         row.action = payload.action
 
     after_json = _snapshot_rule(rule=row)
@@ -1440,5 +1624,38 @@ def list_effective_rules_for_current_user(
         )
 
     return out
+
+
+def list_effective_rules_for_current_user_paginated(
+    *,
+    session: Session,
+    actor_user_id: UUID,
+    limit: int,
+    cursor: str | None = None,
+) -> tuple[list[EffectiveRuleMeOut], str | None, bool, int]:
+    rows = list_effective_rules_for_current_user(
+        session=session,
+        actor_user_id=actor_user_id,
+    )
+    updated_at_by_rule_id: dict[UUID, Any] = {}
+    if rows:
+        rule_ids = [r.rule_id for r in rows]
+        for rule_id, updated_at in session.exec(
+            select(Rule.id, Rule.updated_at).where(Rule.id.in_(rule_ids))
+        ).all():
+            updated_at_by_rule_id[rule_id] = updated_at
+
+    rows.sort(
+        key=lambda r: (
+            (
+                updated_at_by_rule_id.get(r.rule_id).isoformat()
+                if updated_at_by_rule_id.get(r.rule_id) is not None
+                else ""
+            ),
+            str(r.rule_id),
+        ),
+        reverse=True,
+    )
+    return _paginate_rows(rows=rows, limit=limit, cursor=cursor)
 
 

@@ -17,10 +17,7 @@ run ?= seed_rule
 
 # Start services (background)
 up:
-	$(COMPOSE) up -d
-
-upp:
-	cd sentinel-ui && npm run dev
+	$(COMPOSE) up -d && cd sentinel-ui && npm run dev
 
 # Rebuild image + start
 build:

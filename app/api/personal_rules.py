@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Query
@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.api.deps import SessionDep
 from app.auth.deps import CurrentPrincipal
-from app.common.schemas import ApiResponse
+from app.common.schemas import ApiResponse, Meta
 from app.company import service as company_service
 from app.decision.scan_engine_local import ScanEngineLocal
 from app.rule import service as rule_service
@@ -53,12 +53,27 @@ class RuleDebugEvaluateOut(BaseModel):
 def list_my_effective_rules(
     session: SessionDep,
     principal: CurrentPrincipal,
+    limit: int = Query(default=20, ge=1, le=200),
+    cursor: str | None = Query(default=None),
 ):
-    rows = rule_service.list_effective_rules_for_current_user(
-        session=session,
-        actor_user_id=principal.user_id,
+    rows, next_cursor, has_more, total = (
+        rule_service.list_effective_rules_for_current_user_paginated(
+            session=session,
+            actor_user_id=principal.user_id,
+            limit=limit,
+            cursor=cursor,
+        )
     )
-    return ApiResponse(ok=True, data=rows)
+    return ApiResponse(
+        ok=True,
+        data=rows,
+        meta=Meta(
+            next_cursor=next_cursor,
+            has_more=has_more,
+            total=total,
+            limit=limit,
+        ),
+    )
 
 
 @router.post(
@@ -128,13 +143,28 @@ def list_personal_rules(
     rule_set_id: UUID,
     session: SessionDep,
     principal: CurrentPrincipal,
+    limit: int = Query(default=20, ge=1, le=200),
+    cursor: str | None = Query(default=None),
+    tab: Literal["my", "global", "all"] = Query(default="all"),
 ):
-    rows = rule_service.list_company_rules(
+    rows, next_cursor, has_more, total = rule_service.list_company_rules_paginated(
         session=session,
         company_id=rule_set_id,
         actor_user_id=principal.user_id,
+        limit=limit,
+        cursor=cursor,
+        tab=tab,
     )
-    return ApiResponse(ok=True, data=rows)
+    return ApiResponse(
+        ok=True,
+        data=rows,
+        meta=Meta(
+            next_cursor=next_cursor,
+            has_more=has_more,
+            total=total,
+            limit=limit,
+        ),
+    )
 
 
 @router.get(
@@ -145,15 +175,28 @@ def list_personal_rule_change_logs(
     rule_set_id: UUID,
     session: SessionDep,
     principal: CurrentPrincipal,
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=20, ge=1, le=200),
+    cursor: str | None = Query(default=None),
 ):
-    rows = rule_service.list_company_rule_change_logs(
-        session=session,
-        company_id=rule_set_id,
-        actor_user_id=principal.user_id,
-        limit=limit,
+    rows, next_cursor, has_more, total = (
+        rule_service.list_company_rule_change_logs_paginated(
+            session=session,
+            company_id=rule_set_id,
+            actor_user_id=principal.user_id,
+            limit=limit,
+            cursor=cursor,
+        )
     )
-    return ApiResponse(ok=True, data=rows)
+    return ApiResponse(
+        ok=True,
+        data=rows,
+        meta=Meta(
+            next_cursor=next_cursor,
+            has_more=has_more,
+            total=total,
+            limit=limit,
+        ),
+    )
 
 
 @router.post(

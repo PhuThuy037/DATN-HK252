@@ -20,6 +20,10 @@ class ErrorBody(BaseModel):
 
 class Meta(BaseModel):
     request_id: Optional[str] = None
+    next_cursor: Optional[str] = None
+    has_more: Optional[bool] = None
+    total: Optional[int] = None
+    limit: Optional[int] = None
     # Bạn có thể mở rộng: pagination, version, timing, ...
 
 

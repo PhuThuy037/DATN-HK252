@@ -1351,6 +1351,37 @@ def _has_any(text: str, keys: list[str]) -> bool:
     return any(_fold_text(k) in t for k in keys if str(k or "").strip())
 
 
+def _contains_prompt_keyword(*, folded_prompt: str, keyword: str) -> bool:
+    normalized_keyword = _fold_text(keyword)
+    if not normalized_keyword:
+        return False
+    pattern = rf"(?<![a-z0-9]){re.escape(normalized_keyword)}(?![a-z0-9])"
+    return re.search(pattern, folded_prompt) is not None
+
+
+def _explicit_action_intent_from_prompt(prompt: str) -> RuleAction | None:
+    folded_prompt = _fold_text(prompt)
+    if not folded_prompt:
+        return None
+
+    hide_keywords = ("ẩn", "che", "mask")
+    block_keywords = ("chặn", "block", "cấm")
+    has_hide_intent = any(
+        _contains_prompt_keyword(folded_prompt=folded_prompt, keyword=keyword)
+        for keyword in hide_keywords
+    )
+    has_block_intent = any(
+        _contains_prompt_keyword(folded_prompt=folded_prompt, keyword=keyword)
+        for keyword in block_keywords
+    )
+
+    if has_hide_intent and (not has_block_intent):
+        return RuleAction.mask
+    if has_block_intent and (not has_hide_intent):
+        return RuleAction.block
+    return None
+
+
 def _action_hint_from_prompt(prompt: str) -> RuleAction:
     p = prompt.lower()
     if _has_any(p, ["allow", "cho phep", "cho phép"]):
@@ -1524,6 +1555,51 @@ _CODE_LIKE_TOKEN_PATTERN = re.compile(
 )
 
 
+def _is_code_like_literal_token(token: str) -> bool:
+    raw = str(token or "").strip()
+    if not raw:
+        return False
+
+    folded = _fold_text(raw)
+    if not folded:
+        return False
+
+    has_digit = bool(re.search(r"\d", folded))
+    has_alpha = bool(re.search(r"[a-z]", folded))
+    has_sep = bool(re.search(r"[-_/.:]", raw))
+    has_code_shape = bool(re.search(r"[a-z0-9]{2,}(?:[-_][a-z0-9]{1,}){1,}", folded))
+
+    if has_code_shape and has_digit:
+        return True
+    if has_digit and has_alpha:
+        return True
+    if has_digit and has_sep:
+        return True
+    if has_digit and len(folded) >= 12:
+        return True
+
+    # Support uppercase structured code literals without digits, for example:
+    # THUY-XX-YY, ABC-SECRET-ZZ, DEV-KEY-ALPHA.
+    if has_code_shape and (not has_digit) and len(folded) >= 12 and raw.upper() == raw:
+        return True
+
+    segments = [part for part in re.split(r"[-_]", raw) if part]
+    has_short_segment = any(1 < len(part) <= 3 for part in segments)
+    has_long_segment = any(len(part) >= 4 for part in segments)
+    sep_count = raw.count("-") + raw.count("_")
+    alpha_count = sum(1 for ch in raw if ch.isalpha())
+    if (
+        sep_count >= 2
+        and alpha_count >= 6
+        and raw.upper() == raw
+        and has_short_segment
+        and has_long_segment
+    ):
+        return True
+
+    return False
+
+
 def _extract_code_like_tokens(prompt: str, *, limit: int = 4) -> list[str]:
     raw = str(prompt or "")
     out: list[str] = []
@@ -1533,10 +1609,7 @@ def _extract_code_like_tokens(prompt: str, *, limit: int = 4) -> list[str]:
         if not token:
             continue
         upper = token.upper()
-        # Avoid plain natural-language fragments; keep code-ish token shapes.
-        if upper.count("-") + upper.count("_") < 1:
-            continue
-        if not any(ch.isdigit() for ch in upper) and len(upper) < 12:
+        if not _is_code_like_literal_token(token):
             continue
         if upper in seen:
             continue
@@ -1576,6 +1649,43 @@ def _is_custom_secret_prompt(prompt: str) -> bool:
         return True
     p = (prompt or "").lower()
     return _has_any(p, ["token", "secret", "noi bo", "nội bộ"])
+
+
+def _has_known_pii_intent(prompt: str) -> bool:
+    p = (prompt or "").lower()
+    if _mentions_tax_id(p):
+        return True
+    return _has_any(
+        p,
+        [
+            "cccd",
+            "cmnd",
+            "can cuoc",
+            "căn cước",
+            "phone",
+            "sdt",
+            "so dien thoai",
+            "số điện thoại",
+            "hotline",
+            "email",
+            "mail",
+            "e-mail",
+            "credit card",
+            "thẻ tín dụng",
+        ],
+    )
+
+
+def _is_literal_code_prompt_without_known_pii_intent(prompt: str) -> bool:
+    if not _extract_code_like_tokens(prompt, limit=4):
+        return False
+    return not _has_known_pii_intent(prompt)
+
+
+def _is_literal_secret_prompt(prompt: str) -> bool:
+    return _is_custom_secret_prompt(prompt) or _is_literal_code_prompt_without_known_pii_intent(
+        prompt
+    )
 
 
 def _is_payroll_prompt(prompt: str) -> bool:
@@ -1966,7 +2076,7 @@ def _apply_runtime_usability_constraint(
     repaired_reasons: list[str] = []
     guarded = draft
 
-    if warnings and _is_custom_secret_prompt(prompt):
+    if warnings and _is_literal_secret_prompt(prompt):
         tokens = _extract_code_like_tokens(prompt, limit=4)
         if tokens:
             h = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
@@ -2012,7 +2122,7 @@ def _post_generate_intent_guard(
     reasons: list[str] = []
     h = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
 
-    if _is_custom_secret_prompt(prompt):
+    if _is_literal_secret_prompt(prompt):
         tokens = _extract_code_like_tokens(prompt, limit=4)
         if tokens:
             has_generic_pii = _contains_entity_type(
@@ -2068,6 +2178,17 @@ def _post_generate_intent_guard(
         mismatch_detected = True
         applied = True
         reasons.append("removed_unprompted_code_like_terms")
+
+    explicit_action_intent = _explicit_action_intent_from_prompt(prompt)
+    if explicit_action_intent and guarded.rule.action != explicit_action_intent:
+        guarded = _realign_action_dependent_fields_after_override(
+            prompt=prompt,
+            draft=guarded,
+            final_action=explicit_action_intent,
+        )
+        mismatch_detected = True
+        applied = True
+        reasons.append(f"action_intent_auto_repair_{explicit_action_intent.value}")
 
     return guarded, {
         "applied": bool(applied),
@@ -2128,6 +2249,127 @@ def _build_persona_signal_draft(
     return RuleSuggestionDraftPayload(rule=rule, context_terms=ctx_terms)
 
 
+def _known_pii_fallback_profile(
+    *,
+    entity_type: str,
+    action: RuleAction,
+) -> tuple[str, RuleSeverity, int, float]:
+    et = str(entity_type or "").strip().upper()
+
+    if et == "EMAIL":
+        if action == RuleAction.block:
+            return "Chặn email", RuleSeverity.high, 90, 0.80
+        return "Che email", RuleSeverity.low, 30, 0.80
+
+    if et == "PHONE":
+        if action == RuleAction.block:
+            return "Chặn số điện thoại", RuleSeverity.high, 100, 0.80
+        return "Che SĐT", RuleSeverity.medium, 60, 0.80
+
+    if et == "TAX_ID":
+        if action == RuleAction.block:
+            return "Chặn mã số thuế", RuleSeverity.high, 95, 0.80
+        return "Che mã số thuế", RuleSeverity.medium, 55, 0.80
+
+    if et == "CCCD":
+        if action == RuleAction.block:
+            return "Chặn CCCD", RuleSeverity.high, 100, 0.85
+        return "Che CCCD", RuleSeverity.medium, 80, 0.85
+
+    if action == RuleAction.block:
+        return f"Chặn {et or 'PII'}", RuleSeverity.high, 90, 0.80
+    return f"Che {et or 'PII'}", RuleSeverity.medium, 70, 0.80
+
+
+def _known_pii_label(entity_type: str) -> str:
+    et = str(entity_type or "").strip().upper()
+    if et == "EMAIL":
+        return "email"
+    if et == "PHONE":
+        return "số điện thoại"
+    if et == "TAX_ID":
+        return "mã số thuế"
+    if et == "CCCD":
+        return "CCCD"
+    return et or "PII"
+
+
+def _infer_known_pii_entity_from_draft(
+    draft: RuleSuggestionDraftPayload,
+) -> str | None:
+    known = {"EMAIL", "PHONE", "TAX_ID", "CCCD"}
+    for entity_type in _extract_entity_types(draft.rule.conditions):
+        et = str(entity_type or "").strip().upper()
+        if et in known:
+            return et
+
+    stable_key = str(draft.rule.stable_key or "").strip().lower()
+    if ".email." in stable_key or stable_key.endswith(".email"):
+        return "EMAIL"
+    if ".phone." in stable_key or stable_key.endswith(".phone"):
+        return "PHONE"
+    if ".tax_id." in stable_key or ".tax." in stable_key or stable_key.endswith(".tax"):
+        return "TAX_ID"
+    if ".cccd." in stable_key or stable_key.endswith(".cccd"):
+        return "CCCD"
+    return None
+
+
+def _rewrite_stable_key_action_suffix(stable_key: str, action: RuleAction) -> str:
+    key = str(stable_key or "").strip().lower()
+    if not key:
+        return key
+    if key.endswith(".block") or key.endswith(".mask") or key.endswith(".warn"):
+        base = key.rsplit(".", 1)[0]
+        return f"{base}.{action.value}"
+    return key
+
+
+def _realign_action_dependent_fields_after_override(
+    *,
+    prompt: str,
+    draft: RuleSuggestionDraftPayload,
+    final_action: RuleAction,
+) -> RuleSuggestionDraftPayload:
+    updated_rule = draft.rule.model_copy(update={"action": final_action})
+
+    entity_type = _infer_known_pii_entity_from_draft(draft)
+    if entity_type:
+        rule_name, severity, priority, _ = _known_pii_fallback_profile(
+            entity_type=entity_type,
+            action=final_action,
+        )
+        stable_key = _rewrite_stable_key_action_suffix(
+            str(updated_rule.stable_key or ""),
+            final_action,
+        )
+        if not stable_key:
+            stable_key = f"personal.custom.pii.{entity_type.lower()}.{final_action.value}"
+        elif f".{final_action.value}" not in stable_key:
+            stable_key = f"personal.custom.pii.{entity_type.lower()}.{final_action.value}"
+
+        verb = "Chặn" if final_action == RuleAction.block else "Che"
+        label = _known_pii_label(entity_type)
+        updated_rule = updated_rule.model_copy(
+            update={
+                "stable_key": stable_key,
+                "name": rule_name,
+                "description": f"{verb} thông tin {label} theo yêu cầu từ prompt: {prompt[:180]}",
+                "severity": severity,
+                "priority": priority,
+            }
+        )
+        return draft.model_copy(update={"rule": updated_rule})
+
+    stable_key = _rewrite_stable_key_action_suffix(
+        str(updated_rule.stable_key or ""),
+        final_action,
+    )
+    if stable_key:
+        updated_rule = updated_rule.model_copy(update={"stable_key": stable_key})
+    return draft.model_copy(update={"rule": updated_rule})
+
+
 def _fallback_generate(prompt: str) -> RuleSuggestionDraftPayload:
     p = prompt.lower()
     action = _action_hint_from_prompt(prompt)
@@ -2154,7 +2396,7 @@ def _fallback_generate(prompt: str) -> RuleSuggestionDraftPayload:
         "profit",
     ]
 
-    if _is_custom_secret_prompt(prompt) and code_tokens:
+    if _is_literal_secret_prompt(prompt) and code_tokens:
         return _build_exact_secret_draft(
             prompt=prompt,
             token_terms=code_tokens,
@@ -2205,20 +2447,30 @@ def _fallback_generate(prompt: str) -> RuleSuggestionDraftPayload:
         entity_type = "TAX_ID"
     elif _has_any(p, ["phone", "sdt", "so dien thoai", "số điện thoại", "hotline"]):
         entity_type = "PHONE"
+    elif _has_any(p, ["email", "mail", "e-mail", "gmail"]):
+        entity_type = "EMAIL"
     else:
         entity_type = "TAX_ID"
+
+    rule_name, severity, priority, min_score = _known_pii_fallback_profile(
+        entity_type=entity_type,
+        action=action,
+    )
+    condition_leaf: dict[str, Any] = {"entity_type": entity_type}
+    if min_score > 0:
+        condition_leaf["min_score"] = float(min_score)
 
     stable_key = f"personal.custom.suggested.{h}"
     return RuleSuggestionDraftPayload(
         rule=RuleSuggestionDraftRule(
             stable_key=stable_key,
-            name=f"Suggested {entity_type} {action.value}",
+            name=rule_name,
             description=f"Auto-generated from prompt: {prompt[:180]}",
             scope=RuleScope.prompt,
-            conditions={"any": [{"entity_type": entity_type}]},
+            conditions={"any": [condition_leaf]},
             action=action,
-            severity=RuleSeverity.medium,
-            priority=120,
+            severity=severity,
+            priority=priority,
             rag_mode=RagMode.off,
             enabled=True,
         ),
@@ -2233,7 +2485,7 @@ def _align_draft_with_prompt(
     h = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
     code_tokens = _extract_code_like_tokens(prompt, limit=4)
 
-    if _is_custom_secret_prompt(prompt) and code_tokens:
+    if _is_literal_secret_prompt(prompt) and code_tokens:
         # Keep custom-token intent; avoid drifting into common PII entity mapping.
         if _contains_entity_type(
             draft.rule.conditions,
@@ -2299,7 +2551,7 @@ def _enforce_prompt_semantic_guard(
     h = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
     code_tokens = _extract_code_like_tokens(prompt, limit=4)
 
-    if _is_custom_secret_prompt(prompt) and code_tokens:
+    if _is_literal_secret_prompt(prompt) and code_tokens:
         if _contains_entity_type(
             draft.rule.conditions,
             {"PHONE", "CCCD", "TAX_ID", "EMAIL", "CREDIT_CARD"},
@@ -3006,12 +3258,13 @@ def generate_rule_suggestion(
     _load_company_or_404(session=session, company_id=company_id)
     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
     _validate_generate_prompt_intent(payload.prompt)
+    normalized_prompt = _normalize_non_empty(value=payload.prompt, field="prompt")
 
     draft, generation_meta = _generate_draft_from_prompt(
         session=session,
         company_id=company_id,
         actor_user_id=actor_user_id,
-        prompt=payload.prompt,
+        prompt=normalized_prompt,
     )
     duplicate_check = build_duplicate_check(
         session=session,
@@ -3027,7 +3280,11 @@ def generate_rule_suggestion(
         company_id=company_id,
         dedupe_key=key,
     )
-    if existed:
+    incoming_prompt = normalized_prompt
+    existing_prompt = str(existed.nl_input or "").strip() if existed else ""
+    should_reuse_existing = bool(existed) and (existing_prompt == incoming_prompt)
+
+    if existed and should_reuse_existing:
         _append_log(
             session=session,
             suggestion_id=existed.id,
@@ -3080,6 +3337,21 @@ def generate_rule_suggestion(
             quality_signals=quality_signals,
             retrieval_context=retrieval_context,
         )
+    if existed and (not should_reuse_existing):
+        _append_log(
+            session=session,
+            suggestion_id=existed.id,
+            company_id=company_id,
+            actor_user_id=actor_user_id,
+            action="suggestion.generate.duplicate_skip",
+            reason="dedupe_key_matched_but_prompt_mismatch",
+            before_json=None,
+            after_json={
+                "dedupe_key": key,
+                "existing_prompt": existing_prompt,
+                "incoming_prompt": incoming_prompt,
+            },
+        )
 
     row = RuleSuggestion(
         company_id=company_id,
@@ -3087,7 +3359,7 @@ def generate_rule_suggestion(
         status=SuggestionStatus.draft.value,
         type="rule_with_context",
         version=1,
-        nl_input=_normalize_non_empty(value=payload.prompt, field="prompt"),
+        nl_input=normalized_prompt,
         draft_json=_draft_to_json(draft),
         dedupe_key=key,
         expires_at=_utcnow() + timedelta(days=SUGGESTION_TTL_DAYS),
