@@ -544,8 +544,6 @@ export function SuggestionDetailPage() {
     [detailQuery.data?.draft, draftState]
   );
 
-  const expectedAction = draftState?.rule.action ?? detailQuery.data?.draft.rule.action ?? null;
-
   const goToStep = useCallback((step: SuggestionStepKey) => {
     setActiveStep(step);
   }, []);
@@ -737,16 +735,11 @@ export function SuggestionDetailPage() {
     try {
       const result = await simulateMutation.mutateAsync(payload);
       setSimulateResult(result);
-      const normalizedExpectedAction = String(expectedAction ?? "").trim().toUpperCase();
-      const hasExpectedAction = normalizedExpectedAction.length > 0;
-      const hasFailures = result.results.some((item) =>
-        hasExpectedAction ? item.predicted_action !== normalizedExpectedAction : !item.matched
-      );
       const hasWarnings = !result.runtime_usable || result.runtime_warnings.length > 0;
       toast({
-        title: hasFailures || hasWarnings ? "Simulation completed with issues" : "Simulation complete",
+        title: hasWarnings ? "Simulation complete. Review recommended" : "Simulation complete",
         description: `Processed ${result.sample_size} samples.`,
-        variant: hasFailures || hasWarnings ? "default" : "success",
+        variant: hasWarnings ? "default" : "success",
       });
     } catch (error) {
       const message = getSuggestionErrorMessage(error, "Failed to simulate suggestion");
@@ -1029,7 +1022,6 @@ export function SuggestionDetailPage() {
           {activeStep === "simulate" && (
             <SuggestionSimulateStep
               errorMessage={simulateError}
-              expectedAction={expectedAction}
               highlightTerms={highlightTerms}
               isSubmitting={simulateMutation.isPending}
               onBack={() => goToStep("draft")}

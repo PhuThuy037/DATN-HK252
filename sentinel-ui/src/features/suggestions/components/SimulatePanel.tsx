@@ -15,7 +15,6 @@ type SimulatePanelProps = {
   isSubmitting?: boolean;
   errorMessage?: string | null;
   result?: RuleSuggestionSimulateOut | null;
-  expectedAction?: string | null;
   highlightTerms?: string[];
   onSimulate: (payload: { samples: string[]; include_examples: boolean }) => Promise<void> | void;
 };
@@ -46,7 +45,6 @@ export function SimulatePanel({
   isSubmitting = false,
   errorMessage,
   result,
-  expectedAction,
   highlightTerms = [],
   onSimulate,
 }: SimulatePanelProps) {
@@ -55,7 +53,9 @@ export function SimulatePanel({
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const sampleCount = useMemo(() => parseSamples(samplesInput).length, [samplesInput]);
-  const normalizedExpectedAction = String(expectedAction ?? "").trim().toUpperCase();
+  const hasRuntimeReviewFlag = Boolean(
+    result && (!result.runtime_usable || result.runtime_warnings.length > 0)
+  );
 
   const handleSimulate = async () => {
     const samples = parseSamples(samplesInput);
@@ -77,10 +77,9 @@ export function SimulatePanel({
         actions={
           <StatusBadge label={`${sampleCount} sample${sampleCount === 1 ? "" : "s"}`} tone="muted" />
         }
-        description="Add sample inputs to validate how this draft behaves before confirmation."
+        description="Add sample inputs to preview runtime behavior before confirmation."
         title="Simulation input"
       >
-
         <Textarea
           className="min-h-[150px]"
           disabled={disabled}
@@ -88,7 +87,7 @@ export function SimulatePanel({
           placeholder="One sample per line"
           value={samplesInput}
         />
-        <FieldHelpText>Enter one test sample per line so the results are easy to compare.</FieldHelpText>
+        <FieldHelpText>Enter one sample input per line so results are easy to compare.</FieldHelpText>
 
         <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
           <input
@@ -120,31 +119,54 @@ export function SimulatePanel({
 
       {result ? (
         <AppSectionCard
-          description="Review predicted actions first, then scan the detailed sample-by-sample table."
+          description="Review what the system will do for each sample."
           title="Simulation results"
         >
-
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2">
             <div className="rounded-xl border border-border/80 bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Samples</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Samples tested
+              </p>
               <p className="mt-1 text-2xl font-semibold text-foreground">{result.sample_size}</p>
             </div>
-            <div className="rounded-xl border border-success-border bg-success-muted px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pass count</p>
-              <p className="mt-1 text-2xl font-semibold text-foreground">{result.matched_count}</p>
-            </div>
-            <div className="rounded-xl border border-border/80 bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Runtime usable</p>
+            <div
+              className={
+                result.runtime_usable
+                  ? "rounded-xl border border-success-border bg-success-muted px-4 py-3"
+                  : "rounded-xl border border-warning-border bg-warning-muted px-4 py-3"
+              }
+            >
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Runtime ready
+              </p>
               <div className="mt-2">
-                <StatusBadge status={result.runtime_usable ? "approved" : "rejected"} />
+                <StatusBadge
+                  label={result.runtime_usable ? "Ready" : "Needs review"}
+                  tone={result.runtime_usable ? "success" : "warning"}
+                />
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <StatusBadge label={`Allow ${result.action_breakdown.ALLOW}`} tone="success" />
-            <StatusBadge label={`Mask ${result.action_breakdown.MASK}`} tone="warning" />
-            <StatusBadge label={`Block ${result.action_breakdown.BLOCK}`} tone="danger" />
+          <AppAlert
+            description={
+              hasRuntimeReviewFlag
+                ? "Review recommended before continuing."
+                : "Runtime looks ready. You can continue to review."
+            }
+            title={hasRuntimeReviewFlag ? "Review recommended" : "Ready to continue"}
+            variant={hasRuntimeReviewFlag ? "warning" : "success"}
+          />
+
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Predicted action mix
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <StatusBadge label={`Allow ${result.action_breakdown.ALLOW}`} tone="success" />
+              <StatusBadge label={`Mask ${result.action_breakdown.MASK}`} tone="warning" />
+              <StatusBadge label={`Block ${result.action_breakdown.BLOCK}`} tone="danger" />
+            </div>
           </div>
 
           {result.runtime_warnings.length > 0 ? (
@@ -162,13 +184,11 @@ export function SimulatePanel({
           ) : null}
 
           <div className="overflow-x-auto rounded-xl border border-border/80">
-            <table className="w-full min-w-[720px] text-sm">
+            <table className="w-full min-w-[640px] text-sm">
               <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2">Input</th>
-                  <th className="px-3 py-2">Expected</th>
-                  <th className="px-3 py-2">Predicted action</th>
-                  <th className="px-3 py-2">Result</th>
+                  <th className="px-3 py-2">System action</th>
                 </tr>
               </thead>
               <tbody>
@@ -178,31 +198,16 @@ export function SimulatePanel({
                       <HighlightedText terms={highlightTerms} text={item.content} />
                     </td>
                     <td className="px-3 py-3">
-                      <StatusBadge
-                        label={normalizedExpectedAction || "Review"}
-                        tone={toActionTone(normalizedExpectedAction)}
-                      />
-                    </td>
-                    <td className="px-3 py-3">
-                      <StatusBadge
-                        label={item.predicted_action}
-                        tone={toActionTone(item.predicted_action)}
-                      />
-                    </td>
-                    <td className="px-3 py-3">
-                      {(() => {
-                        const passes =
-                          normalizedExpectedAction.length > 0
-                            ? item.predicted_action === normalizedExpectedAction
-                            : item.matched;
-
-                        return (
-                          <StatusBadge
-                            label={passes ? "PASS" : "FAIL"}
-                            tone={passes ? "success" : "danger"}
-                          />
-                        );
-                      })()}
+                      <p className="font-medium text-foreground">{`System will ${item.predicted_action} this input`}</p>
+                      <div className="mt-2">
+                        <StatusBadge
+                          label={item.predicted_action}
+                          tone={toActionTone(item.predicted_action)}
+                        />
+                      </div>
+                      {!item.matched ? (
+                        <p className="mt-1 text-xs text-muted-foreground">Not matched by this rule.</p>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

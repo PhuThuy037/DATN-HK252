@@ -11,7 +11,6 @@ type SuggestionSimulateStepProps = {
   isSubmitting: boolean;
   errorMessage?: string | null;
   result?: RuleSuggestionSimulateOut | null;
-  expectedAction?: string | null;
   highlightTerms?: string[];
   onSimulate: (payload: { samples: string[]; include_examples: boolean }) => Promise<void> | void;
   onBack: () => void;
@@ -23,7 +22,6 @@ export function SuggestionSimulateStep({
   isSubmitting,
   errorMessage,
   result,
-  expectedAction,
   highlightTerms,
   onSimulate,
   onBack,
@@ -34,17 +32,15 @@ export function SuggestionSimulateStep({
       actions={
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge label="Step 3 of 6" tone="muted" />
-          {expectedAction ? <StatusBadge label={`Expected ${expectedAction}`} tone="primary" /> : null}
         </div>
       }
-      description="Run sample inputs to verify how the draft behaves before moving to review."
+      description="Run sample inputs to see actual runtime behavior before moving to review."
       title="Simulate"
     >
 
       <SimulatePanel
         disabled={!canSimulate(status)}
         errorMessage={errorMessage}
-        expectedAction={expectedAction}
         highlightTerms={highlightTerms}
         isSubmitting={isSubmitting}
         onSimulate={onSimulate}
