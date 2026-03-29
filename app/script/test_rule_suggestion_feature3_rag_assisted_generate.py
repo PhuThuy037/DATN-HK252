@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.common.enums import RagMode, RuleAction, RuleScope, RuleSeverity
+from app.suggestion.literal_detector import analyze_literal_prompt
 from app.suggestion import service as suggestion_service
 from app.suggestion.schemas import (
     DuplicateDecision,
@@ -549,6 +550,40 @@ def test_feature3_literal_code_prompt_detection_without_known_pii_intent() -> No
     )
 
 
+@pytest.mark.parametrize(
+    ("prompt", "expected_hint"),
+    [
+        ("Che mã llll-aaaa", "INTERNAL_CODE"),
+        ("Che mã bcc-ccc", "INTERNAL_CODE"),
+        ("Che mã xxx-yyy", "INTERNAL_CODE"),
+        ("Che mã xxx-yyy-zzz", "INTERNAL_CODE"),
+        ("Che mã xxx-yyy-zzz-aaa", "INTERNAL_CODE"),
+        ("Che mã THUY-XX-YY", "INTERNAL_CODE"),
+        ("Che mã ABCD-123", "INTERNAL_CODE"),
+        ("Che mã module.auth.v2", "INTERNAL_CODE"),
+        ("Che mã dev_key_prod", "INTERNAL_CODE"),
+        ("Che mã token.v2", "INTERNAL_CODE"),
+        ("Che mã key#prod", "INTERNAL_CODE"),
+        ("Tôi muốn che mã này 1234-xxx-zzz", "INTERNAL_CODE"),
+        ("Che mã số thuế 0101234567", "TAX_ID"),
+        ("Ẩn email cá nhân", "EMAIL"),
+        ("Ẩn CCCD", "CCCD"),
+        ("Chặn số điện thoại Việt Nam", "PHONE"),
+        ("Che mã bccccc", "AMBIGUOUS"),
+        ("Che mã @#123", "AMBIGUOUS"),
+        ("Che mã abc$12", "AMBIGUOUS"),
+        ("Che mã id@dev", "AMBIGUOUS"),
+        ("Che mã x_y_z", "AMBIGUOUS"),
+    ],
+)
+def test_feature3_literal_detector_generalized_decision_hints(
+    prompt: str,
+    expected_hint: str,
+) -> None:
+    detected = analyze_literal_prompt(prompt, limit=8)
+    assert detected.decision_hint == expected_hint
+
+
 def test_feature3_fallback_literal_code_prompt_generates_exact_secret_draft() -> None:
     prompt = "Tôi muốn che mã này 1234-xxx-zzz"
     draft = suggestion_service._fallback_generate(prompt)  # type: ignore[attr-defined]
@@ -565,6 +600,65 @@ def test_feature3_fallback_literal_code_prompt_generates_exact_secret_draft() ->
         and str(term.term).lower() == "1234-xxx-zzz"
         for term in draft.context_terms
     )
+    assert all(str(term.entity_type).upper() != "PERSONA_OFFICE" for term in draft.context_terms)
+
+
+@pytest.mark.parametrize(
+    ("prompt", "expected_token"),
+    [
+        ("Che mã llll-aaaa", "llll-aaaa"),
+        ("Che mã bcc-ccc", "bcc-ccc"),
+        ("Che mã xxx-yyy", "xxx-yyy"),
+        ("Che mã xxx-yyy-zzz", "xxx-yyy-zzz"),
+        ("Che mã xxx-yyy-zzz-aaa", "xxx-yyy-zzz-aaa"),
+        ("Che mã THUY-XX-YY", "thuy-xx-yy"),
+        ("Che mã ABCD-123", "abcd-123"),
+        ("Che mã module.auth.v2", "module.auth.v2"),
+        ("Che mã dev_key_prod", "dev_key_prod"),
+        ("Che mã token.v2", "token.v2"),
+        ("Che mã key#prod", "key#prod"),
+        ("Tôi muốn che mã này 1234-xxx-zzz", "1234-xxx-zzz"),
+    ],
+)
+def test_feature3_fallback_generalized_literal_identifier_prompts_use_internal_code(
+    prompt: str,
+    expected_token: str,
+) -> None:
+    draft = suggestion_service._fallback_generate(prompt)  # type: ignore[attr-defined]
+    assert draft.rule.action == RuleAction.mask
+    assert suggestion_service._contains_entity_type(  # type: ignore[attr-defined]
+        draft.rule.conditions, {"PHONE", "CCCD", "TAX_ID", "EMAIL", "CREDIT_CARD"}
+    ) is False
+    assert suggestion_service._condition_has_context_keyword_term(  # type: ignore[attr-defined]
+        draft.rule.conditions, expected_token
+    )
+    assert any(
+        str(term.entity_type).upper() == "INTERNAL_CODE"
+        and str(term.term).lower() == expected_token
+        for term in draft.context_terms
+    )
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Che mã bccccc",
+        "Che mã @#123",
+        "Che mã abc$12",
+        "Che mã id@dev",
+        "Che mã x_y_z",
+    ],
+)
+def test_feature3_fallback_ambiguous_literal_prompts_do_not_default_to_tax_id(prompt: str) -> None:
+    draft = suggestion_service._fallback_generate(prompt)  # type: ignore[attr-defined]
+    assert draft.rule.action == RuleAction.mask
+    assert suggestion_service._contains_entity_type(  # type: ignore[attr-defined]
+        draft.rule.conditions, {"PHONE", "CCCD", "TAX_ID", "EMAIL", "CREDIT_CARD"}
+    ) is False
+    assert suggestion_service._has_context_keyword_signal(  # type: ignore[attr-defined]
+        draft.rule.conditions
+    )
+    assert all(str(term.entity_type).upper() != "INTERNAL_CODE" for term in draft.context_terms)
 
 
 @pytest.mark.parametrize(
@@ -594,6 +688,7 @@ def test_feature3_fallback_alpha_code_literals_preserve_exact_terms(
         and str(term.term).lower() == expected_token
         for term in draft.context_terms
     )
+    assert all(str(term.entity_type).upper() != "PERSONA_OFFICE" for term in draft.context_terms)
 
 
 def test_feature3_payroll_external_email_prompt_not_generic_office_branch() -> None:

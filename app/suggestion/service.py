@@ -36,6 +36,11 @@ from app.rag.models.context_term import ContextTerm
 from app.rule.engine import RuleEngine, RuleMatch, RuleRuntime
 from app.rule.model import Rule
 from app.rule_embedding.service import upsert_rule_embedding
+from app.suggestion.literal_detector import (
+    LiteralDetectionResult,
+    analyze_literal_prompt,
+    score_identifier_token,
+)
 from app.suggestion.models.rule_suggestion import RuleSuggestion
 from app.suggestion.models.rule_suggestion_log import RuleSuggestionLog
 from app.suggestion.duplicate_checker import build_duplicate_check
@@ -1588,74 +1593,18 @@ def _mentions_tax_id(prompt: str) -> bool:
     )
 
 
-_CODE_LIKE_TOKEN_PATTERN = re.compile(
-    r"\b[A-Za-z0-9]{2,}(?:[-_][A-Za-z0-9]{1,}){1,}\b"
-)
+def _literal_detection(prompt: str, *, limit: int = 8) -> LiteralDetectionResult:
+    safe_limit = max(1, min(int(limit), 16))
+    return analyze_literal_prompt(str(prompt or ""), limit=safe_limit)
 
 
 def _is_code_like_literal_token(token: str) -> bool:
-    raw = str(token or "").strip()
-    if not raw:
-        return False
-
-    folded = _fold_text(raw)
-    if not folded:
-        return False
-
-    has_digit = bool(re.search(r"\d", folded))
-    has_alpha = bool(re.search(r"[a-z]", folded))
-    has_sep = bool(re.search(r"[-_/.:]", raw))
-    has_code_shape = bool(re.search(r"[a-z0-9]{2,}(?:[-_][a-z0-9]{1,}){1,}", folded))
-
-    if has_code_shape and has_digit:
-        return True
-    if has_digit and has_alpha:
-        return True
-    if has_digit and has_sep:
-        return True
-    if has_digit and len(folded) >= 12:
-        return True
-
-    # Support uppercase structured code literals without digits, for example:
-    # THUY-XX-YY, ABC-SECRET-ZZ, DEV-KEY-ALPHA.
-    if has_code_shape and (not has_digit) and len(folded) >= 12 and raw.upper() == raw:
-        return True
-
-    segments = [part for part in re.split(r"[-_]", raw) if part]
-    has_short_segment = any(1 < len(part) <= 3 for part in segments)
-    has_long_segment = any(len(part) >= 4 for part in segments)
-    sep_count = raw.count("-") + raw.count("_")
-    alpha_count = sum(1 for ch in raw if ch.isalpha())
-    if (
-        sep_count >= 2
-        and alpha_count >= 6
-        and raw.upper() == raw
-        and has_short_segment
-        and has_long_segment
-    ):
-        return True
-
-    return False
+    return score_identifier_token(token) >= 0.45
 
 
 def _extract_code_like_tokens(prompt: str, *, limit: int = 4) -> list[str]:
-    raw = str(prompt or "")
-    out: list[str] = []
-    seen: set[str] = set()
-    for m in _CODE_LIKE_TOKEN_PATTERN.finditer(raw):
-        token = str(m.group(0) or "").strip()
-        if not token:
-            continue
-        upper = token.upper()
-        if not _is_code_like_literal_token(token):
-            continue
-        if upper in seen:
-            continue
-        seen.add(upper)
-        out.append(upper)
-        if len(out) >= max(1, int(limit)):
-            break
-    return out
+    detection = _literal_detection(prompt, limit=max(1, int(limit)))
+    return list(detection.candidate_tokens[: max(1, int(limit))])
 
 
 def _is_internal_secret_wording(prompt: str) -> bool:
@@ -1680,8 +1629,12 @@ def _is_internal_secret_wording(prompt: str) -> bool:
 
 
 def _is_custom_secret_prompt(prompt: str) -> bool:
-    tokens = _extract_code_like_tokens(prompt)
-    if not tokens:
+    detection = _literal_detection(prompt)
+    if detection.known_pii_type:
+        return False
+    if detection.decision_hint == "INTERNAL_CODE":
+        return True
+    if not detection.candidate_tokens:
         return False
     if _is_internal_secret_wording(prompt):
         return True
@@ -1690,40 +1643,17 @@ def _is_custom_secret_prompt(prompt: str) -> bool:
 
 
 def _has_known_pii_intent(prompt: str) -> bool:
-    p = (prompt or "").lower()
-    if _mentions_tax_id(p):
-        return True
-    return _has_any(
-        p,
-        [
-            "cccd",
-            "cmnd",
-            "can cuoc",
-            "căn cước",
-            "phone",
-            "sdt",
-            "so dien thoai",
-            "số điện thoại",
-            "hotline",
-            "email",
-            "mail",
-            "e-mail",
-            "credit card",
-            "thẻ tín dụng",
-        ],
-    )
+    return _literal_detection(prompt).known_pii_type is not None
 
 
 def _is_literal_code_prompt_without_known_pii_intent(prompt: str) -> bool:
-    if not _extract_code_like_tokens(prompt, limit=4):
-        return False
-    return not _has_known_pii_intent(prompt)
+    detection = _literal_detection(prompt, limit=8)
+    return (detection.decision_hint == "INTERNAL_CODE") and (not detection.known_pii_type)
 
 
 def _is_literal_secret_prompt(prompt: str) -> bool:
-    return _is_custom_secret_prompt(prompt) or _is_literal_code_prompt_without_known_pii_intent(
-        prompt
-    )
+    detection = _literal_detection(prompt, limit=8)
+    return detection.decision_hint == "INTERNAL_CODE"
 
 
 def _is_payroll_prompt(prompt: str) -> bool:
@@ -1807,17 +1737,6 @@ def _build_exact_secret_draft(
     )
     terms: list[RuleSuggestionDraftContextTerm] = []
     for term in normalized_terms[:4]:
-        terms.append(
-            RuleSuggestionDraftContextTerm(
-                entity_type="PERSONA_OFFICE",
-                term=term,
-                lang="vi",
-                weight=1.0,
-                window_1=80,
-                window_2=24,
-                enabled=True,
-            )
-        )
         terms.append(
             RuleSuggestionDraftContextTerm(
                 entity_type="INTERNAL_CODE",
@@ -1961,17 +1880,13 @@ def _is_code_like_term(value: str) -> bool:
     text = str(value or "").strip()
     if not text:
         return False
-    return _CODE_LIKE_TOKEN_PATTERN.search(text) is not None
+    return score_identifier_token(text) >= 0.32
 
 
 def _prompt_code_like_terms(prompt: str) -> set[str]:
     out: set[str] = set()
-    raw = str(prompt or "")
-    for m in _CODE_LIKE_TOKEN_PATTERN.finditer(raw):
-        text = _fold_text(str(m.group(0) or ""))
-        if text:
-            out.add(text)
-    for token in _extract_code_like_tokens(prompt, limit=8):
+    detection = _literal_detection(prompt, limit=12)
+    for token in detection.candidate_tokens:
         text = _fold_text(token)
         if text:
             out.add(text)
@@ -2287,6 +2202,34 @@ def _build_persona_signal_draft(
     return RuleSuggestionDraftPayload(rule=rule, context_terms=ctx_terms)
 
 
+def _build_generic_prompt_keyword_draft(
+    *,
+    prompt: str,
+    action: RuleAction,
+    stable_suffix: str,
+    keywords: list[str],
+) -> RuleSuggestionDraftPayload:
+    keyword_values = [_fold_text(k) for k in keywords if _fold_text(k)]
+    keyword_values = keyword_values[:6] or ["context"]
+    rule = RuleSuggestionDraftRule(
+        stable_key=f"personal.custom.suggested.{stable_suffix}",
+        name=f"Suggested prompt keyword {action.value}",
+        description=f"Auto-generated from prompt keyword signals: {prompt[:180]}",
+        scope=RuleScope.prompt,
+        conditions={
+            "all": [
+                {"signal": {"field": "context_keywords", "any_of": keyword_values}},
+            ]
+        },
+        action=action,
+        severity=RuleSeverity.medium if action != RuleAction.block else RuleSeverity.high,
+        priority=90 if action == RuleAction.block else 70,
+        rag_mode=RagMode.off,
+        enabled=True,
+    )
+    return RuleSuggestionDraftPayload(rule=rule, context_terms=[])
+
+
 def _known_pii_fallback_profile(
     *,
     entity_type: str,
@@ -2354,6 +2297,10 @@ def _infer_known_pii_entity_from_draft(
 
 
 def _infer_known_pii_entity_from_prompt(prompt: str) -> str | None:
+    detected = _literal_detection(prompt)
+    if detected.known_pii_type:
+        return str(detected.known_pii_type).strip().upper()
+
     p = str(prompt or "")
     if _has_any(p, ["cccd", "cmnd", "can cuoc", "căn cước"]):
         return "CCCD"
@@ -2461,7 +2408,8 @@ def _fallback_generate(prompt: str) -> RuleSuggestionDraftPayload:
     p = prompt.lower()
     action = _action_hint_from_prompt(prompt)
     h = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
-    code_tokens = _extract_code_like_tokens(prompt, limit=4)
+    literal_detection = _literal_detection(prompt, limit=8)
+    code_tokens = list(literal_detection.candidate_tokens[:4])
 
     office_hr_keys = [
         "luong",
@@ -2483,17 +2431,43 @@ def _fallback_generate(prompt: str) -> RuleSuggestionDraftPayload:
         "profit",
     ]
 
-    if _is_literal_secret_prompt(prompt) and code_tokens:
-        return _build_exact_secret_draft(
+    if _is_payroll_external_email_prompt(prompt):
+        return _build_payroll_external_email_draft(
             prompt=prompt,
-            token_terms=code_tokens,
             action=action,
             stable_suffix=h,
         )
 
-    if _is_payroll_external_email_prompt(prompt):
-        return _build_payroll_external_email_draft(
+    if literal_detection.known_pii_type:
+        entity_type = str(literal_detection.known_pii_type).strip().upper()
+        rule_name, severity, priority, min_score = _known_pii_fallback_profile(
+            entity_type=entity_type,
+            action=action,
+        )
+        condition_leaf: dict[str, Any] = {"entity_type": entity_type}
+        if min_score > 0:
+            condition_leaf["min_score"] = float(min_score)
+        stable_key = f"personal.custom.suggested.{h}"
+        return RuleSuggestionDraftPayload(
+            rule=RuleSuggestionDraftRule(
+                stable_key=stable_key,
+                name=rule_name,
+                description=f"Auto-generated from prompt: {prompt[:180]}",
+                scope=RuleScope.prompt,
+                conditions={"any": [condition_leaf]},
+                action=action,
+                severity=severity,
+                priority=priority,
+                rag_mode=RagMode.off,
+                enabled=True,
+            ),
+            context_terms=[],
+        )
+
+    if literal_detection.decision_hint == "INTERNAL_CODE" and code_tokens:
+        return _build_exact_secret_draft(
             prompt=prompt,
+            token_terms=code_tokens,
             action=action,
             stable_suffix=h,
         )
@@ -2528,40 +2502,16 @@ def _fallback_generate(prompt: str) -> RuleSuggestionDraftPayload:
             stable_suffix=h,
         )
 
-    if _has_any(p, ["cccd", "cmnd", "can cuoc", "căn cước"]):
-        entity_type = "CCCD"
-    elif _has_any(p, ["tax", "mst", "ma so thue", "mã số thuế"]):
-        entity_type = "TAX_ID"
-    elif _has_any(p, ["phone", "sdt", "so dien thoai", "số điện thoại", "hotline"]):
-        entity_type = "PHONE"
-    elif _has_any(p, ["email", "mail", "e-mail", "gmail"]):
-        entity_type = "EMAIL"
-    else:
-        entity_type = "TAX_ID"
-
-    rule_name, severity, priority, min_score = _known_pii_fallback_profile(
-        entity_type=entity_type,
+    keyword_fallback = list(code_tokens)
+    if not keyword_fallback:
+        keyword_fallback = _prompt_keywords(prompt, limit=4)
+    if not keyword_fallback and literal_detection.top_token:
+        keyword_fallback = [literal_detection.top_token]
+    return _build_generic_prompt_keyword_draft(
+        prompt=prompt,
         action=action,
-    )
-    condition_leaf: dict[str, Any] = {"entity_type": entity_type}
-    if min_score > 0:
-        condition_leaf["min_score"] = float(min_score)
-
-    stable_key = f"personal.custom.suggested.{h}"
-    return RuleSuggestionDraftPayload(
-        rule=RuleSuggestionDraftRule(
-            stable_key=stable_key,
-            name=rule_name,
-            description=f"Auto-generated from prompt: {prompt[:180]}",
-            scope=RuleScope.prompt,
-            conditions={"any": [condition_leaf]},
-            action=action,
-            severity=severity,
-            priority=priority,
-            rag_mode=RagMode.off,
-            enabled=True,
-        ),
-        context_terms=[],
+        stable_suffix=h,
+        keywords=keyword_fallback or ["context"],
     )
 
 
@@ -2919,21 +2869,7 @@ def _looks_literal_specific_term(term: str) -> bool:
         return False
     if text in _LITERAL_GENERIC_TERMS or text in _ABSTRACT_CONTEXT_KEYWORDS:
         return False
-
-    has_digit = bool(re.search(r"\d", text))
-    has_alpha = bool(re.search(r"[a-z]", text))
-    has_sep = bool(re.search(r"[-_/.:]", text))
-    has_code_shape = bool(re.search(r"[a-z0-9]{2,}(?:[-_][a-z0-9]{1,}){1,}", text))
-
-    if has_code_shape and (has_digit or len(text) >= 10):
-        return True
-    if has_digit and has_alpha:
-        return True
-    if has_digit and has_sep:
-        return True
-    if has_digit and len(text) >= 12:
-        return True
-    return False
+    return score_identifier_token(text) >= 0.45
 
 
 def is_literal_specific(draft: RuleSuggestionDraftPayload) -> bool:
@@ -3116,6 +3052,7 @@ def _generate_with_llm(
     prompt_keywords: list[str],
     policy_chunks: list[dict[str, Any]],
     rule_references: list[dict[str, Any]],
+    literal_detection: LiteralDetectionResult,
 ) -> tuple[RuleSuggestionDraftPayload, dict[str, Any]]:
     system_prompt = """
 You generate security rule drafts in strict JSON.
@@ -3151,11 +3088,14 @@ Return valid JSON only.
     keywords_json = json.dumps(prompt_keywords[:16], ensure_ascii=False)
     policy_json = json.dumps(policy_chunks[:5], ensure_ascii=False)
     references_json = json.dumps(rule_references[:8], ensure_ascii=False)
+    literal_detection_json = json.dumps(literal_detection.to_dict(), ensure_ascii=False)
     prompt_input = (
         "User request:\n"
         f"{prompt}\n\n"
         "Detected request keywords:\n"
         f"{keywords_json}\n\n"
+        "Literal identifier detection hint:\n"
+        f"{literal_detection_json}\n\n"
         "Relevant policy excerpts:\n"
         f"{policy_json}\n\n"
         "Related existing rules:\n"
@@ -3168,6 +3108,7 @@ Return valid JSON only.
         "5) Avoid generating redundant duplicate policy when related rules already cover it.\n"
         "6) If request mentions a specific internal code/token/secret that appears in the user request, prioritize exact-term protection and do not map to common PII entity types unless user explicitly asks.\n"
         "7) If request mentions payroll/salary plus personal/external email (e.g. gmail), draft conditions must reflect BOTH payroll domain and external-email risk, not generic office-only context.\n"
+        "8) Respect literal identifier detection hint: INTERNAL_CODE means prefer deterministic exact-token protection; AMBIGUOUS means avoid forcing unrelated PII mapping.\n"
     )
 
     llm_out = generate_text_sync(
@@ -3193,6 +3134,7 @@ def _generate_draft_from_prompt(
     prompt: str,
 ) -> tuple[RuleSuggestionDraftPayload, dict[str, Any]]:
     normalized_prompt = _normalize_non_empty(value=prompt, field="prompt")
+    literal_detection = _literal_detection(normalized_prompt, limit=8)
     prompt_keywords = sorted(_tokenize_for_score(normalized_prompt))[:16]
     context_retriever = SuggestionContextRetriever(
         session=session,
@@ -3224,8 +3166,10 @@ def _generate_draft_from_prompt(
             prompt_keywords=prompt_keywords,
             policy_chunks=policy_chunks,
             rule_references=rule_references,
+            literal_detection=literal_detection,
         )
         meta["context_retrieval"] = context_retrieval_meta
+        meta["literal_detection"] = literal_detection.to_dict()
     except Exception:
         draft = _fallback_generate(normalized_prompt)
         meta = {
@@ -3234,6 +3178,7 @@ def _generate_draft_from_prompt(
             "model": "none",
             "fallback_used": False,
             "context_retrieval": context_retrieval_meta,
+            "literal_detection": literal_detection.to_dict(),
         }
 
     draft = _realign_literal_specific_draft(prompt=normalized_prompt, draft=draft)
@@ -3273,6 +3218,7 @@ def _generate_draft_from_prompt(
             "model": "none",
             "fallback_used": False,
             "context_retrieval": context_retrieval_meta,
+            "literal_detection": literal_detection.to_dict(),
             "intent_guard": fb_intent_guard_meta,
             "runtime_usability": fb_runtime_usability_meta,
         }
