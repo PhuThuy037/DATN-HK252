@@ -60,6 +60,7 @@ export function SuggestionsPage() {
   const [limit, setLimit] = useState<number>(50);
   const [prompt, setPrompt] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
   const listQuery = useSuggestionList(
     ruleSetId,
@@ -81,10 +82,12 @@ export function SuggestionsPage() {
     const parsed = promptSchema.safeParse(prompt);
     if (!parsed.success) {
       setValidationError("Prompt must be between 1 and 8000 characters.");
+      setGenerateError(null);
       return;
     }
 
     setValidationError(null);
+    setGenerateError(null);
 
     try {
       const generated = await generateMutation.mutateAsync({
@@ -106,9 +109,11 @@ export function SuggestionsPage() {
         },
       });
     } catch (error) {
+      const message = getSuggestionErrorMessage(error, "Unable to generate suggestion");
+      setGenerateError(message);
       toast({
         title: "Generate failed",
-        description: getSuggestionErrorMessage(error, "Unable to generate suggestion"),
+        description: message,
         variant: "destructive",
       });
     }
@@ -151,13 +156,16 @@ export function SuggestionsPage() {
             <Label htmlFor="suggestion-prompt" required>
               Suggestion prompt
             </Label>
-          <Textarea
-            id="suggestion-prompt"
-            className="min-h-[120px]"
-            onChange={(event) => setPrompt(event.target.value)}
-            placeholder="Example: Block messages that contain live API keys, bearer tokens, or production secrets copied from internal tools."
-            value={prompt}
-          />
+            <Textarea
+              id="suggestion-prompt"
+              className="min-h-[120px]"
+              onChange={(event) => {
+                setPrompt(event.target.value);
+                setGenerateError(null);
+              }}
+              placeholder="Example: Block messages that contain live API keys, bearer tokens, or production secrets copied from internal tools."
+              value={prompt}
+            />
             <FieldHelpText>Explain the user-facing policy goal first. Keep technical details secondary.</FieldHelpText>
           </div>
           <div className="space-y-2">
@@ -171,6 +179,7 @@ export function SuggestionsPage() {
                   onClick={() => {
                     setPrompt(template.value);
                     setValidationError(null);
+                    setGenerateError(null);
                   }}
                   size="sm"
                   type="button"
@@ -181,6 +190,13 @@ export function SuggestionsPage() {
               ))}
             </div>
           </div>
+          {generateError ? (
+            <AppAlert
+              title="Cannot generate from this prompt yet"
+              description={generateError}
+              variant="error"
+            />
+          ) : null}
           {validationError ? <InlineErrorText>{validationError}</InlineErrorText> : null}
           <div className={appActionRowClassName}>
             <AppButton disabled={generateMutation.isPending} onClick={() => void handleGenerate()} type="button">
