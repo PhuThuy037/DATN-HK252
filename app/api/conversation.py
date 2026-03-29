@@ -149,7 +149,7 @@ def get_conversation_detail(
     session: SessionDep,
     access: ConversationView,
 ):
-    c = convo_service.get_conversation_or_404(
+    c = convo_service.get_active_conversation_or_404(
         session=session,
         conversation_id=conversation_id,
     )

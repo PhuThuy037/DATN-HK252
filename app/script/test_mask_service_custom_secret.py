@@ -49,3 +49,17 @@ def test_mask_service_does_not_mask_non_code_like_extra_terms() -> None:
     )
 
     assert masked == text
+
+
+def test_mask_service_does_not_remask_inside_existing_placeholders() -> None:
+    service = MaskService()
+    text = "CCCD cua toi la [CCCD]"
+
+    masked = service.mask(
+        text,
+        entities=[],
+        force_terms=["cccd"],
+    )
+
+    assert "[[INTERNAL_CODE]]" not in masked
+    assert "[CCCD]" in masked

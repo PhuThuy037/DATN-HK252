@@ -649,7 +649,8 @@ def build_duplicate_check(
     rows = list(
         session.exec(
             select(Rule).where(
-                (Rule.company_id.is_(None)) | (Rule.company_id == company_id)
+                ((Rule.company_id.is_(None)) | (Rule.company_id == company_id))
+                & (Rule.is_deleted.is_(False))
             )
         ).all()
     )

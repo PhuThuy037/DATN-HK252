@@ -6,6 +6,7 @@ import re
 
 MASKABLE_TYPES = {"PHONE", "EMAIL", "TAX_ID", "CREDIT_CARD", "CCCD"}
 _CODE_LIKE_TERM_RE = re.compile(r"[A-Za-z0-9]{2,}(?:[-_][A-Za-z0-9]{1,}){1,}")
+_MASK_PLACEHOLDER_RE = re.compile(r"\[[A-Z0-9_]+\]")
 
 
 @dataclass(slots=True)
@@ -18,8 +19,19 @@ class Span:
 
 
 class MaskService:
-    def _mask_exact_terms(self, text: str, exact_terms: list[str]) -> str:
+    def _replace_exact_terms_in_plain_segment(
+        self,
+        *,
+        text: str,
+        ordered_terms: list[str],
+    ) -> str:
         out = text
+        for term in ordered_terms:
+            pattern = re.compile(re.escape(term), flags=re.IGNORECASE)
+            out = pattern.sub("[INTERNAL_CODE]", out)
+        return out
+
+    def _mask_exact_terms(self, text: str, exact_terms: list[str]) -> str:
         # Mask longer terms first to avoid partial replacement collisions.
         ordered = sorted(
             {
@@ -30,10 +42,33 @@ class MaskService:
             key=len,
             reverse=True,
         )
-        for term in ordered:
-            pattern = re.compile(re.escape(term), flags=re.IGNORECASE)
-            out = pattern.sub("[INTERNAL_CODE]", out)
-        return out
+        if not ordered:
+            return text
+
+        # Avoid remasking inside existing placeholders like [CCCD] -> [[INTERNAL_CODE]].
+        parts: list[str] = []
+        cursor = 0
+        for match in _MASK_PLACEHOLDER_RE.finditer(text):
+            start, end = match.span()
+            if start > cursor:
+                parts.append(
+                    self._replace_exact_terms_in_plain_segment(
+                        text=text[cursor:start],
+                        ordered_terms=ordered,
+                    )
+                )
+            parts.append(match.group(0))
+            cursor = end
+
+        if cursor < len(text):
+            parts.append(
+                self._replace_exact_terms_in_plain_segment(
+                    text=text[cursor:],
+                    ordered_terms=ordered,
+                )
+            )
+
+        return "".join(parts)
 
     def mask(
         self,

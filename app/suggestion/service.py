@@ -29,6 +29,9 @@ from app.decision.context_term_runtime import (
 )
 from app.decision.decision_resolver import DecisionResolver
 from app.decision.detectors.local_regex_detector import LocalRegexDetector
+from app.decision.detectors.spoken_number_detector import SpokenNumberDetector
+from app.decision.entity_type_normalizer import EntityTypeNormalizer
+from app.decision.entity_merger import EntityMerger, MergeConfig
 from app.llm import generate_text_sync
 from app.permissions.core import forbid, not_found
 from app.permissions.loaders.conversation import load_company_member_active_or_403
@@ -40,6 +43,14 @@ from app.suggestion.literal_detector import (
     LiteralDetectionResult,
     analyze_literal_prompt,
     score_identifier_token,
+)
+from app.suggestion.runtime_usability import (
+    ABSTRACT_CONTEXT_KEYWORDS,
+    collect_context_keyword_terms as collect_runtime_context_keyword_terms,
+    evaluate_runtime_usability as evaluate_draft_runtime_usability,
+    has_context_keyword_signal as has_runtime_context_keyword_signal,
+    is_code_like_term as runtime_is_code_like_term,
+    prompt_code_like_terms as runtime_prompt_code_like_terms,
 )
 from app.suggestion.models.rule_suggestion import RuleSuggestion
 from app.suggestion.models.rule_suggestion_log import RuleSuggestionLog
@@ -78,21 +89,17 @@ _SUGGESTION_POLICY_EMBED_MODEL = "mxbai-embed-large"
 _SUGGESTION_POLICY_EMBED_DIM = 1024
 
 _SIMULATE_DETECTOR = LocalRegexDetector()
+_SIMULATE_SPOKEN_DETECTOR = SpokenNumberDetector()
+_SIMULATE_ENTITY_TYPE_NORMALIZER = EntityTypeNormalizer()
+_SIMULATE_ENTITY_MERGER = EntityMerger(
+    MergeConfig(
+        overlap_threshold=0.80,
+        prefer_source_order=("local_regex", "spoken_norm", "presidio"),
+    )
+)
 _SIMULATE_CONTEXT_SCORER = ContextScorer("app/config/context_base.yaml")
 _SIMULATE_RULE_ENGINE = RuleEngine()
 _SIMULATE_RESOLVER = DecisionResolver()
-
-_ABSTRACT_CONTEXT_KEYWORDS = {
-    "exact",
-    "token",
-    "secret",
-    "internal",
-    "internal code",
-    "custom secret",
-    "proprietary",
-    "identifier",
-    "code",
-}
 
 
 def _utcnow() -> datetime:
@@ -646,6 +653,26 @@ def _merge_simulation_context_keywords(
     return out
 
 
+def _detect_simulation_entities(
+    *,
+    text: str,
+    regex_hints: dict[str, list[Any]] | None = None,
+) -> list[Any]:
+    regex_entities = _SIMULATE_DETECTOR.scan(
+        text,
+        context_hints_by_entity=regex_hints,
+    )
+    spoken_entities = _SIMULATE_SPOKEN_DETECTOR.scan(text)
+    combined = list(regex_entities) + list(spoken_entities)
+
+    for entity in combined:
+        entity.type = _SIMULATE_ENTITY_TYPE_NORMALIZER.normalize(
+            str(getattr(entity, "type", "") or "")
+        )
+
+    return _SIMULATE_ENTITY_MERGER.merge(combined)
+
+
 def _compile_transient_runtime_rule(
     *,
     suggestion_id: UUID,
@@ -768,6 +795,12 @@ _INSIGHT_STOP_WORDS = {
     "va",
     "voi",
     "cho",
+    "che",
+    "an",
+    "mask",
+    "block",
+    "allow",
+    "chan",
     "mot",
     "nhung",
     "cac",
@@ -784,6 +817,8 @@ _INSIGHT_STOP_WORDS = {
     "and",
     "rule",
     "rules",
+    "ma",
+    "m",
 }
 
 
@@ -1826,71 +1861,19 @@ def _condition_has_context_keyword_term(conditions: Any, term: str) -> bool:
 
 
 def _collect_context_keyword_terms(conditions: Any) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-
-    def _push(value: Any) -> None:
-        text = _fold_text(str(value or ""))
-        if not text or text in seen:
-            return
-        seen.add(text)
-        out.append(text)
-
-    def _walk(node: Any) -> None:
-        if isinstance(node, dict):
-            signal = node.get("signal")
-            if isinstance(signal, dict):
-                field_name = _fold_text(str(signal.get("field") or ""))
-                if field_name == "context_keywords":
-                    any_of = signal.get("any_of")
-                    if isinstance(any_of, list):
-                        for item in any_of:
-                            _push(item)
-                    in_values = signal.get("in")
-                    if isinstance(in_values, list):
-                        for item in in_values:
-                            _push(item)
-                    _push(signal.get("equals"))
-                    _push(signal.get("contains"))
-            for child in node.values():
-                _walk(child)
-            return
-        if isinstance(node, list):
-            for child in node:
-                _walk(child)
-
-    _walk(conditions)
-    return out
+    return collect_runtime_context_keyword_terms(conditions)
 
 
 def _has_context_keyword_signal(conditions: Any) -> bool:
-    if isinstance(conditions, dict):
-        signal = conditions.get("signal")
-        if isinstance(signal, dict):
-            field_name = _fold_text(str(signal.get("field") or ""))
-            if field_name == "context_keywords":
-                return True
-        return any(_has_context_keyword_signal(v) for v in conditions.values())
-    if isinstance(conditions, list):
-        return any(_has_context_keyword_signal(x) for x in conditions)
-    return False
+    return has_runtime_context_keyword_signal(conditions)
 
 
 def _is_code_like_term(value: str) -> bool:
-    text = str(value or "").strip()
-    if not text:
-        return False
-    return score_identifier_token(text) >= 0.32
+    return runtime_is_code_like_term(value)
 
 
 def _prompt_code_like_terms(prompt: str) -> set[str]:
-    out: set[str] = set()
-    detection = _literal_detection(prompt, limit=12)
-    for token in detection.candidate_tokens:
-        text = _fold_text(token)
-        if text:
-            out.add(text)
-    return out
+    return runtime_prompt_code_like_terms(prompt)
 
 
 def _strip_unprompted_code_like_terms(
@@ -1969,53 +1952,15 @@ def _evaluate_runtime_usability(
     draft: RuleSuggestionDraftPayload,
     prompt: str | None = None,
 ) -> dict[str, Any]:
-    warnings: list[str] = []
-    keyword_terms = _collect_context_keyword_terms(draft.rule.conditions)
-    has_keyword_signal = _has_context_keyword_signal(draft.rule.conditions)
-    if has_keyword_signal and not keyword_terms:
-        warnings.append("context_keywords_signal_without_runtime_terms")
-    if not keyword_terms and not warnings:
-        return {"runtime_usable": True, "warnings": warnings, "abstract_terms": []}
-
-    abstract_terms = [
-        term for term in keyword_terms if term in _ABSTRACT_CONTEXT_KEYWORDS
-    ]
-    concrete_terms = [
-        term for term in keyword_terms if term not in _ABSTRACT_CONTEXT_KEYWORDS
-    ]
-    code_terms = {
-        _fold_text(term)
-        for term in (
-            keyword_terms + [str(t.term or "") for t in draft.context_terms]
-        )
-        if _is_code_like_term(str(term or ""))
-    }
-    prompt_code_terms = _prompt_code_like_terms(prompt or "")
     allow_unprompted_code_terms = prompt is None or _is_custom_secret_prompt(prompt or "")
-    if (not allow_unprompted_code_terms) and code_terms:
-        unexpected = sorted(code_terms - prompt_code_terms)
-        if unexpected:
-            warnings.append("unexpected_code_like_term_not_in_prompt")
-        grounded_code_terms = sorted(code_terms & prompt_code_terms)
-        has_code_anchor = bool(grounded_code_terms)
-    else:
-        has_code_anchor = bool(code_terms)
-
-    if abstract_terms and (not concrete_terms) and (not has_code_anchor):
-        warnings.append("abstract_context_keywords_not_runtime_usable")
-
-    if ("exact" in abstract_terms) and (not has_code_anchor):
-        warnings.append("context_keyword_exact_without_runtime_anchor")
-
-    if ("token" in abstract_terms) and (not has_code_anchor):
-        warnings.append("context_keyword_token_without_runtime_anchor")
-
-    warnings = _to_str_list(warnings)
-    return {
-        "runtime_usable": not warnings,
-        "warnings": warnings,
-        "abstract_terms": _to_str_list(abstract_terms),
-    }
+    meta = evaluate_draft_runtime_usability(
+        draft=draft,
+        prompt=prompt,
+        allow_unprompted_code_terms=allow_unprompted_code_terms,
+    )
+    meta["warnings"] = _to_str_list(meta.get("warnings"))
+    meta["abstract_terms"] = _to_str_list(meta.get("abstract_terms"))
+    return meta
 
 
 def _apply_runtime_usability_constraint(
@@ -2074,6 +2019,21 @@ def _post_generate_intent_guard(
     mismatch_detected = False
     reasons: list[str] = []
     h = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
+    literal_detection = _literal_detection(prompt, limit=8)
+
+    if (
+        literal_detection.intent_literal
+        and (not literal_detection.known_pii_type)
+        and (not literal_detection.candidate_tokens)
+    ):
+        guarded = _build_literal_refinement_draft(
+            prompt=prompt,
+            action=guarded.rule.action,
+            stable_suffix=h,
+        )
+        mismatch_detected = True
+        applied = True
+        reasons.append("literal_not_supported_requires_refine")
 
     if _is_literal_secret_prompt(prompt):
         tokens = _extract_code_like_tokens(prompt, limit=4)
@@ -2230,6 +2190,34 @@ def _build_generic_prompt_keyword_draft(
     return RuleSuggestionDraftPayload(rule=rule, context_terms=[])
 
 
+def _build_literal_refinement_draft(
+    *,
+    prompt: str,
+    action: RuleAction,
+    stable_suffix: str,
+) -> RuleSuggestionDraftPayload:
+    rule = RuleSuggestionDraftRule(
+        stable_key=f"personal.custom.suggested.{stable_suffix}",
+        name="Literal token requires refinement",
+        description=(
+            "Literal token in prompt is ambiguous or unsupported for deterministic runtime "
+            f"matching: {prompt[:180]}"
+        ),
+        scope=RuleScope.prompt,
+        conditions={
+            "all": [
+                {"signal": {"field": "context_keywords", "any_of": ["literal refine required"]}},
+            ]
+        },
+        action=action,
+        severity=RuleSeverity.low,
+        priority=40,
+        rag_mode=RagMode.off,
+        enabled=True,
+    )
+    return RuleSuggestionDraftPayload(rule=rule, context_terms=[])
+
+
 def _known_pii_fallback_profile(
     *,
     entity_type: str,
@@ -2347,6 +2335,120 @@ def _canonicalize_known_pii_rule_for_duplicate_check(
             "enabled": True,
         }
     )
+
+
+def _canonicalize_known_pii_context_terms(
+    *,
+    entity_type: str,
+    context_terms: list[RuleSuggestionDraftContextTerm],
+) -> list[RuleSuggestionDraftContextTerm]:
+    et = str(entity_type or "").strip().upper()
+    if et not in _KNOWN_PII_RUNTIME_ENTITIES:
+        return list(context_terms or [])
+
+    allowlist = {
+        _fold_text(value)
+        for value in _KNOWN_PII_CONTEXT_TERM_ALLOWLIST.get(et, set())
+        if _fold_text(value)
+    }
+    out: list[RuleSuggestionDraftContextTerm] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    for term in list(context_terms or []):
+        term_entity = str(getattr(term, "entity_type", "") or "").strip().upper()
+        if term_entity != et:
+            continue
+        text = _fold_text(str(getattr(term, "term", "") or ""))
+        if len(text) < 3:
+            continue
+        if allowlist and text not in allowlist:
+            continue
+        lang = _normalize_lang(str(getattr(term, "lang", "") or "vi"))
+        key = (et, text, lang)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(
+            RuleSuggestionDraftContextTerm(
+                entity_type=et,
+                term=text,
+                lang=lang,
+                weight=float(getattr(term, "weight", 1.0) or 1.0),
+                window_1=int(getattr(term, "window_1", 60) or 60),
+                window_2=int(getattr(term, "window_2", 20) or 20),
+                enabled=bool(getattr(term, "enabled", True)),
+            )
+        )
+        if len(out) >= 4:
+            break
+
+    if out:
+        return out
+
+    default_term = _KNOWN_PII_DEFAULT_CONTEXT_TERM.get(et)
+    if not default_term:
+        return []
+    return [
+        RuleSuggestionDraftContextTerm(
+            entity_type=et,
+            term=default_term,
+            lang="vi",
+            weight=1.0,
+            window_1=60,
+            window_2=20,
+            enabled=True,
+        )
+    ]
+
+
+def _canonicalize_known_pii_draft_for_runtime(
+    *,
+    prompt: str,
+    draft: RuleSuggestionDraftPayload,
+) -> tuple[RuleSuggestionDraftPayload, dict[str, Any]]:
+    if draft.rule.action not in {RuleAction.mask, RuleAction.block}:
+        return draft, {"applied": False, "entity_type": None}
+
+    inferred_from_draft = _infer_known_pii_entity_from_draft(draft)
+    inferred_from_prompt = _infer_known_pii_entity_from_prompt(prompt)
+    entity_type = inferred_from_draft or inferred_from_prompt
+    if entity_type not in _KNOWN_PII_RUNTIME_ENTITIES:
+        return draft, {"applied": False, "entity_type": None}
+
+    # Only prompt-derived canonicalization for known-PII focused asks.
+    # Avoid collapsing mixed semantic prompts (e.g. payroll + external email) into pure PII rules.
+    if (not inferred_from_draft) and inferred_from_prompt:
+        if _extract_persona_hint(draft.rule.conditions):
+            return draft, {"applied": False, "entity_type": None}
+        keyword_terms = {
+            _fold_text(value)
+            for value in _collect_context_keyword_terms(draft.rule.conditions)
+            if _fold_text(value)
+        }
+        allowlist = {
+            _fold_text(value)
+            for value in _KNOWN_PII_CONTEXT_TERM_ALLOWLIST.get(entity_type, set())
+            if _fold_text(value)
+        }
+        if keyword_terms and any(term not in allowlist for term in keyword_terms):
+            return draft, {"applied": False, "entity_type": None}
+
+    canonical_rule = _canonicalize_known_pii_rule_for_duplicate_check(
+        prompt=prompt,
+        rule=draft.rule,
+    )
+    canonical_terms = _canonicalize_known_pii_context_terms(
+        entity_type=entity_type,
+        context_terms=list(draft.context_terms or []),
+    )
+    canonical_draft = draft.model_copy(
+        update={
+            "rule": canonical_rule,
+            "context_terms": canonical_terms,
+        }
+    )
+    applied = canonical_draft.model_dump() != draft.model_dump()
+    return canonical_draft, {"applied": applied, "entity_type": entity_type}
 
 
 def _rewrite_stable_key_action_suffix(stable_key: str, action: RuleAction) -> str:
@@ -2468,6 +2570,17 @@ def _fallback_generate(prompt: str) -> RuleSuggestionDraftPayload:
         return _build_exact_secret_draft(
             prompt=prompt,
             token_terms=code_tokens,
+            action=action,
+            stable_suffix=h,
+        )
+
+    if (
+        literal_detection.intent_literal
+        and (not literal_detection.known_pii_type)
+        and (not code_tokens)
+    ):
+        return _build_literal_refinement_draft(
+            prompt=prompt,
             action=action,
             stable_suffix=h,
         )
@@ -2636,8 +2749,9 @@ def _enforce_prompt_semantic_guard(
 
 
 def _tokenize_for_score(text: str) -> set[str]:
-    parts = re.split(r"[^a-zA-Z0-9_]+", (text or "").lower())
-    return {p for p in parts if p}
+    folded = _fold_text(text or "")
+    parts = re.split(r"[^a-zA-Z0-9_]+", folded)
+    return {p for p in parts if len(p) >= 2}
 
 
 def _jaccard_score(a: set[str], b: set[str]) -> float:
@@ -2841,6 +2955,20 @@ _FINGERPRINT_PII_ENTITY_TYPES = {
     "CREDIT_CARD",
 }
 
+_KNOWN_PII_RUNTIME_ENTITIES = {"PHONE", "EMAIL", "CCCD", "TAX_ID"}
+_KNOWN_PII_CONTEXT_TERM_ALLOWLIST = {
+    "PHONE": {"phone", "sdt", "so dien thoai", "dien thoai", "hotline"},
+    "EMAIL": {"email", "mail", "e-mail", "gmail", "email ca nhan", "personal email"},
+    "CCCD": {"cccd", "cmnd", "can cuoc", "can cuoc cong dan"},
+    "TAX_ID": {"mst", "ma so thue", "tax id", "tax code", "tin", "taxpayer id"},
+}
+_KNOWN_PII_DEFAULT_CONTEXT_TERM = {
+    "PHONE": "so dien thoai",
+    "EMAIL": "email",
+    "CCCD": "cccd",
+    "TAX_ID": "ma so thue",
+}
+
 
 def _slug_segment(value: str) -> str:
     text = _fold_text(value)
@@ -2867,7 +2995,7 @@ def _looks_literal_specific_term(term: str) -> bool:
     text = _fold_text(term)
     if not text:
         return False
-    if text in _LITERAL_GENERIC_TERMS or text in _ABSTRACT_CONTEXT_KEYWORDS:
+    if text in _LITERAL_GENERIC_TERMS or text in ABSTRACT_CONTEXT_KEYWORDS:
         return False
     return score_identifier_token(text) >= 0.45
 
@@ -3135,7 +3263,7 @@ def _generate_draft_from_prompt(
 ) -> tuple[RuleSuggestionDraftPayload, dict[str, Any]]:
     normalized_prompt = _normalize_non_empty(value=prompt, field="prompt")
     literal_detection = _literal_detection(normalized_prompt, limit=8)
-    prompt_keywords = sorted(_tokenize_for_score(normalized_prompt))[:16]
+    prompt_keywords = _prompt_keywords(normalized_prompt, limit=16)
     context_retriever = SuggestionContextRetriever(
         session=session,
         company_id=company_id,
@@ -3595,9 +3723,9 @@ def simulate_rule_suggestion(
         if not text:
             continue
 
-        entities = _SIMULATE_DETECTOR.scan(
-            text,
-            context_hints_by_entity=overrides.regex_hints,
+        entities = _detect_simulation_entities(
+            text=text,
+            regex_hints=overrides.regex_hints,
         )
         ctx = _SIMULATE_CONTEXT_SCORER.score(
             text,
@@ -3799,6 +3927,34 @@ def confirm_rule_suggestion(
         prompt=str(row.nl_input or ""),
         draft=draft,
     )
+    draft, _ = _canonicalize_known_pii_draft_for_runtime(
+        prompt=str(row.nl_input or ""),
+        draft=draft,
+    )
+    runtime_meta = _evaluate_runtime_usability(
+        draft=draft,
+        prompt=str(row.nl_input or ""),
+    )
+    runtime_warnings = _to_str_list(runtime_meta.get("warnings"))
+    runtime_usable = bool(runtime_meta.get("runtime_usable", not runtime_warnings))
+    if runtime_warnings:
+        runtime_usable = False
+    if not runtime_usable:
+        raise AppError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Suggestion draft is not runtime-usable yet; refine before confirming",
+            details=[
+                {
+                    "field": "draft.rule.conditions",
+                    "reason": "runtime_not_usable",
+                    "extra": {
+                        "runtime_warnings": runtime_warnings,
+                    },
+                }
+            ],
+        )
+
     duplicate_rule = _canonicalize_known_pii_rule_for_duplicate_check(
         prompt=str(row.nl_input or ""),
         rule=draft.rule,
@@ -4072,6 +4228,38 @@ def apply_rule_suggestion(
         )
 
     draft = _normalize_draft(RuleSuggestionDraftPayload.model_validate(row.draft_json))
+    draft = _realign_literal_specific_draft(
+        prompt=str(row.nl_input or ""),
+        draft=draft,
+    )
+    draft, _ = _canonicalize_known_pii_draft_for_runtime(
+        prompt=str(row.nl_input or ""),
+        draft=draft,
+    )
+    runtime_meta = _evaluate_runtime_usability(
+        draft=draft,
+        prompt=str(row.nl_input or ""),
+    )
+    runtime_warnings = _to_str_list(runtime_meta.get("warnings"))
+    runtime_usable = bool(runtime_meta.get("runtime_usable", not runtime_warnings))
+    if runtime_warnings:
+        runtime_usable = False
+    if not runtime_usable:
+        raise AppError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Suggestion draft is not runtime-usable yet; cannot apply",
+            details=[
+                {
+                    "field": "draft.rule.conditions",
+                    "reason": "runtime_not_usable",
+                    "extra": {
+                        "runtime_warnings": runtime_warnings,
+                    },
+                }
+            ],
+        )
+
     before_json = _snapshot_suggestion(row)
 
     try:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from datetime import datetime
 from uuid import UUID
 
@@ -31,12 +32,34 @@ from app.messages.model import Message
 from app.permissions.core import not_found
 from app.permissions.loaders.conversation import load_rule_set_owner_active_or_403
 from app.rule.model import Rule
+from app.suggestion.literal_detector import score_identifier_token
 
 _chat = ChatService()
 _scan = ScanEngineLocal(context_yaml_path="app/config/context_base.yaml")
 _mask_service = MaskService()
 _settings = get_settings()
 _CODE_LIKE_TERM_RE = re.compile(r"[A-Za-z0-9]{2,}(?:[-_][A-Za-z0-9]{1,}){1,}")
+_LITERAL_SEPARATORS = "-_./:#@$"
+_KNOWN_PII_FORCE_TERM_BLOCKLIST = {
+    "cccd",
+    "cmnd",
+    "can cuoc",
+    "can cuoc cong dan",
+    "email",
+    "mail",
+    "e-mail",
+    "phone",
+    "sdt",
+    "so dien thoai",
+    "dien thoai",
+    "hotline",
+    "mst",
+    "ma so thue",
+    "tax id",
+    "tax code",
+    "taxpayer id",
+    "tin",
+}
 
 
 def _sha256_hex(text: str) -> str:
@@ -86,6 +109,35 @@ def _extract_code_like_mask_terms(scan_payload: dict) -> list[str]:
         seen.add(lowered)
         out.append(term)
     return out
+
+
+def _fold_text(value: str) -> str:
+    raw = str(value or "").lower().replace("\u0111", "d")
+    normalized = unicodedata.normalize("NFKD", raw)
+    no_marks = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", no_marks).strip()
+
+
+def _should_force_mask_term(term: str) -> bool:
+    raw = str(term or "").strip()
+    if not raw or len(raw) < 4:
+        return False
+    folded = _fold_text(raw)
+    if not folded:
+        return False
+    if folded in _KNOWN_PII_FORCE_TERM_BLOCKLIST:
+        return False
+    if re.fullmatch(r"\[[A-Z0-9_]+\]", raw):
+        return False
+
+    score = score_identifier_token(raw)
+    if score >= 0.45:
+        return True
+
+    has_separator = any(ch in _LITERAL_SEPARATORS for ch in raw)
+    if has_separator and score >= 0.32:
+        return True
+    return False
 
 
 def _extract_context_keyword_terms_from_conditions(node: object) -> set[str]:
@@ -144,11 +196,14 @@ def _extract_forced_mask_terms_from_matches(
 
     for conditions in rows:
         for term in _extract_context_keyword_terms_from_conditions(conditions):
-            lowered = str(term).strip().lower()
-            if not lowered or lowered in seen:
+            text = str(term).strip()
+            folded = _fold_text(text)
+            if not folded or folded in seen:
                 continue
-            seen.add(lowered)
-            out.append(str(term).strip())
+            if not _should_force_mask_term(text):
+                continue
+            seen.add(folded)
+            out.append(text)
             if len(out) >= safe_limit:
                 return out
     return out
@@ -280,6 +335,12 @@ async def append_user_message_async(
                 field="conversation_id",
                 reason="not_rule_set_owner",
             )
+    if not _is_active_conversation(c):
+        raise not_found(
+            "Conversation not found",
+            field="conversation_id",
+            reason="conversation_archived",
+        )
 
     # STEP 1: user message
     c.last_sequence_number = (c.last_sequence_number or 0) + 1
@@ -461,6 +522,7 @@ def list_messages_page(
     limit: int,
     before_seq: int | None = None,
 ) -> tuple[list[Message], bool, int | None, int | None, int | None]:
+    get_active_conversation_or_404(session=session, conversation_id=conversation_id)
     stmt = select(Message).where(Message.conversation_id == conversation_id)
     if before_seq is not None:
         stmt = stmt.where(Message.sequence_number < before_seq)
@@ -530,6 +592,26 @@ def get_conversation_or_404(*, session: Session, conversation_id: UUID) -> Conve
     return row
 
 
+def _is_active_conversation(row: Conversation) -> bool:
+    status = row.status.value if hasattr(row.status, "value") else str(row.status)
+    return status == ConversationStatus.active.value
+
+
+def get_active_conversation_or_404(
+    *,
+    session: Session,
+    conversation_id: UUID,
+) -> Conversation:
+    row = get_conversation_or_404(session=session, conversation_id=conversation_id)
+    if not _is_active_conversation(row):
+        raise not_found(
+            "Conversation not found",
+            field="conversation_id",
+            reason="conversation_archived",
+        )
+    return row
+
+
 def get_last_message_summary(
     *, session: Session, conversation_id: UUID
 ) -> tuple[datetime | None, str | None]:
@@ -552,6 +634,7 @@ def get_message_for_conversation_or_404(
     conversation_id: UUID,
     message_id: UUID,
 ) -> Message:
+    get_active_conversation_or_404(session=session, conversation_id=conversation_id)
     row = session.get(Message, message_id)
     if row is None or row.conversation_id != conversation_id:
         raise not_found("Message not found", field="message_id")

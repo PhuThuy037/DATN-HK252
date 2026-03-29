@@ -1212,6 +1212,90 @@ def test_feature3_fallback_known_pii_profile_aligns_with_canonical_shape(
     assert int(draft.rule.priority) == expected_priority
 
 
+def test_feature3_known_pii_runtime_canonicalization_repairs_keyword_drift() -> None:
+    prompt = "Che CCCD"
+    drifted = RuleSuggestionDraftPayload(
+        rule=RuleSuggestionDraftRule(
+            stable_key="personal.custom.bad.cccd.keyword",
+            name="Bad drifted CCCD",
+            description="drifted to keyword-only rule",
+            scope=RuleScope.prompt,
+            conditions={
+                "all": [
+                    {"signal": {"field": "context_keywords", "any_of": ["cccd"]}},
+                ]
+            },
+            action=RuleAction.mask,
+            severity=RuleSeverity.medium,
+            priority=70,
+            rag_mode=RagMode.off,
+            enabled=True,
+        ),
+        context_terms=[
+            RuleSuggestionDraftContextTerm(
+                entity_type="INTERNAL_CODE",
+                term="cccd",
+                lang="vi",
+                weight=1.0,
+                window_1=60,
+                window_2=20,
+                enabled=True,
+            )
+        ],
+    )
+
+    canonical, meta = suggestion_service._canonicalize_known_pii_draft_for_runtime(  # type: ignore[attr-defined]
+        prompt=prompt,
+        draft=drifted,
+    )
+
+    assert meta["applied"] is True
+    assert meta["entity_type"] == "CCCD"
+    assert suggestion_service._contains_entity_type(  # type: ignore[attr-defined]
+        canonical.rule.conditions,
+        {"CCCD"},
+    )
+    assert suggestion_service._has_context_keyword_signal(  # type: ignore[attr-defined]
+        canonical.rule.conditions
+    ) is False
+    assert all(
+        str(term.entity_type).upper() == "CCCD"
+        for term in list(canonical.context_terms or [])
+    )
+
+
+def test_feature3_known_pii_runtime_canonicalization_keeps_mixed_semantic_prompt() -> None:
+    prompt = "Tạo rule block gửi payroll ra email cá nhân"
+    mixed = RuleSuggestionDraftPayload(
+        rule=RuleSuggestionDraftRule(
+            stable_key="personal.custom.payroll.external.email",
+            name="Protect payroll to external email",
+            description="mixed semantic prompt",
+            scope=RuleScope.prompt,
+            conditions={
+                "all": [
+                    {"signal": {"field": "context_keywords", "any_of": ["payroll"]}},
+                    {"signal": {"field": "context_keywords", "any_of": ["gmail"]}},
+                ]
+            },
+            action=RuleAction.block,
+            severity=RuleSeverity.high,
+            priority=155,
+            rag_mode=RagMode.off,
+            enabled=True,
+        ),
+        context_terms=[],
+    )
+
+    canonical, meta = suggestion_service._canonicalize_known_pii_draft_for_runtime(  # type: ignore[attr-defined]
+        prompt=prompt,
+        draft=mixed,
+    )
+
+    assert meta["applied"] is False
+    assert canonical.model_dump() == mixed.model_dump()
+
+
 def test_feature3_backward_compat_generate_contract_intact_for_regular_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
