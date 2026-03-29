@@ -1437,6 +1437,88 @@ def _contains_prompt_keyword(*, folded_prompt: str, keyword: str) -> bool:
     return re.search(pattern, folded_prompt) is not None
 
 
+_MULTI_INTENT_ACTION_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "mask": ("an", "che", "mask", "hide"),
+    "block": ("chan", "block", "cam", "forbid"),
+}
+_MULTI_INTENT_PII_CATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "EMAIL": ("email", "gmail", "e-mail", "mail"),
+    "PHONE": ("phone", "sdt", "so dien thoai", "hotline"),
+    "CCCD": ("cccd", "cmnd", "can cuoc"),
+    "TAX_ID": ("tax id", "tax code", "mst", "ma so thue", "tin"),
+}
+_MULTI_INTENT_CLAUSE_SPLIT_PATTERN = re.compile(
+    r"(?:,|;|/|\bva\b|\band\b|\bhoac\b|\bor\b|\broi\b|\bsau do\b|\bdong thoi\b|\bcung luc\b)"
+)
+
+
+def _count_prompt_keyword_occurrences(*, folded_prompt: str, keyword: str) -> int:
+    normalized_keyword = _fold_text(keyword)
+    if not normalized_keyword:
+        return 0
+    pattern = rf"(?<![a-z0-9]){re.escape(normalized_keyword)}(?![a-z0-9])"
+    return len(re.findall(pattern, folded_prompt))
+
+
+def _action_intent_hits_from_prompt(*, folded_prompt: str) -> dict[str, int]:
+    hits: dict[str, int] = {}
+    for action_key, keywords in _MULTI_INTENT_ACTION_KEYWORDS.items():
+        count = sum(
+            _count_prompt_keyword_occurrences(folded_prompt=folded_prompt, keyword=keyword)
+            for keyword in keywords
+        )
+        if count > 0:
+            hits[action_key] = count
+    return hits
+
+
+def _count_pii_category_mentions(*, folded_prompt: str) -> int:
+    categories = 0
+    for keywords in _MULTI_INTENT_PII_CATEGORY_KEYWORDS.values():
+        if any(
+            _contains_prompt_keyword(folded_prompt=folded_prompt, keyword=keyword)
+            for keyword in keywords
+        ):
+            categories += 1
+    return categories
+
+
+def _looks_multi_intent_prompt(prompt: str) -> bool:
+    folded_prompt = _fold_text(prompt)
+    if not folded_prompt:
+        return False
+
+    action_hits = _action_intent_hits_from_prompt(folded_prompt=folded_prompt)
+    if len(action_hits) >= 2:
+        return True
+
+    clauses = [
+        clause.strip()
+        for clause in _MULTI_INTENT_CLAUSE_SPLIT_PATTERN.split(folded_prompt)
+        if clause.strip()
+    ]
+    if len(clauses) < 2:
+        return False
+
+    total_action_mentions = sum(action_hits.values())
+    if total_action_mentions <= 0:
+        return False
+
+    literal_detection = _literal_detection(prompt, limit=8)
+    literal_token_count = len(literal_detection.candidate_tokens)
+    pii_category_mentions = _count_pii_category_mentions(folded_prompt=folded_prompt)
+
+    if total_action_mentions >= 2:
+        return True
+    if literal_token_count >= 2:
+        return True
+    if pii_category_mentions >= 2:
+        return True
+    if literal_detection.known_pii_type and literal_token_count >= 1:
+        return True
+    return False
+
+
 def _explicit_action_intent_from_prompt(prompt: str) -> RuleAction | None:
     folded_prompt = _fold_text(prompt)
     if not folded_prompt:
@@ -1538,6 +1620,13 @@ def _looks_like_rule_request_prompt(prompt: str) -> bool:
 
 
 def _validate_generate_prompt_intent(prompt: str) -> None:
+    if _looks_multi_intent_prompt(prompt):
+        raise AppError(
+            422,
+            ErrorCode.VALIDATION_ERROR,
+            "Currently, each request supports creating only one rule from one prompt. Please split this into separate prompts.",
+            details=[{"field": "prompt", "reason": "multi_intent_prompt_not_supported"}],
+        )
     if _looks_like_rule_request_prompt(prompt):
         return
     raise AppError(
