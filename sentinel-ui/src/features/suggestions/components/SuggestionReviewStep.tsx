@@ -143,7 +143,7 @@ export function SuggestionReviewStep({
         <AppButton onClick={onBack} type="button" variant="secondary">
           Back
         </AppButton>
-        <AppButton onClick={onContinue} type="button">
+        <AppButton disabled={!runtimeUsable} onClick={onContinue} type="button">
           Continue to Confirm
         </AppButton>
       </div>

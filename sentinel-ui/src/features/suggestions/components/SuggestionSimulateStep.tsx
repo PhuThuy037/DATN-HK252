@@ -51,7 +51,11 @@ export function SuggestionSimulateStep({
         <AppButton onClick={onBack} type="button" variant="secondary">
           Back
         </AppButton>
-        <AppButton disabled={!result} onClick={onContinue} type="button">
+        <AppButton
+          disabled={!result || !result.runtime_usable}
+          onClick={onContinue}
+          type="button"
+        >
           Continue to Review
         </AppButton>
       </div>

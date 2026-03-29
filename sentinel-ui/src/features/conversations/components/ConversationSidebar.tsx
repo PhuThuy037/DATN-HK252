@@ -7,6 +7,7 @@ import {
   WandSparkles,
   SlidersHorizontal,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   extractAuthErrorMessage,
@@ -46,6 +47,7 @@ export function ConversationSidebar({
   onConversationSelect,
 }: ConversationSidebarProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const location = useLocation();
   const user = useAuthStore((state) => state.user);
   const refreshToken = useAuthStore((state) => state.refreshToken);
@@ -197,7 +199,7 @@ export function ConversationSidebar({
       });
 
       if (activeConversationId === conversationPendingDelete.id) {
-        navigate("/app/chat");
+        navigate("/app/chat", { replace: true });
         onConversationSelect?.();
       }
 
@@ -221,6 +223,7 @@ export function ConversationSidebar({
     } catch {
       // Always clear local auth even when API logout fails.
     } finally {
+      queryClient.clear();
       clearAuth();
       clearCurrentRuleSet();
       setRuleSetResolved(false);

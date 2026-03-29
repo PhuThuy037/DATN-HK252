@@ -17,7 +17,7 @@ export function resolveDuplicateUiState({
   decision,
   level,
   candidatesCount = 0,
-  topSimilarity,
+  topSimilarity: _topSimilarity,
 }: ResolveDuplicateUiStateInput): DuplicateUiState {
   const normalizedDecision = normalizeDecision(decision);
 
@@ -37,10 +37,6 @@ export function resolveDuplicateUiState({
     return "NO_DUPLICATE";
   }
 
-  if (typeof topSimilarity === "number" && !Number.isNaN(topSimilarity) && topSimilarity >= 0.99) {
-    return "EXACT_DUPLICATE";
-  }
-
   if (level === "strong" && candidatesCount > 0) {
     return "NEAR_DUPLICATE";
   }
@@ -51,4 +47,3 @@ export function resolveDuplicateUiState({
 
   return "NO_DUPLICATE";
 }
-

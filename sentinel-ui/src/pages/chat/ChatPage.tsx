@@ -22,6 +22,25 @@ type FailedMessageItem = {
   retrying: boolean;
 };
 
+function getHttpStatusFromError(error: unknown): number | null {
+  if (typeof error !== "object" || error === null) {
+    return null;
+  }
+
+  const directStatus = (error as { status?: unknown }).status;
+  if (typeof directStatus === "number" && Number.isFinite(directStatus)) {
+    return directStatus;
+  }
+
+  const response = (error as { response?: { status?: unknown } }).response;
+  const responseStatus = response?.status;
+  if (typeof responseStatus === "number" && Number.isFinite(responseStatus)) {
+    return responseStatus;
+  }
+
+  return null;
+}
+
 export function ChatPage() {
   const navigate = useNavigate();
   const { conversationId } = useParams();
@@ -76,16 +95,51 @@ export function ChatPage() {
     }));
     return [...messages, ...pendingAsMessages];
   }, [failedMessages, messages]);
+  const conversationErrorStatus = getHttpStatusFromError(conversationQuery.error);
 
   useEffect(() => {
-    if (conversationId || conversationsQuery.isLoading) {
+    if (conversationId) {
+      return;
+    }
+    if (
+      conversationsQuery.isLoading ||
+      conversationsQuery.isFetching ||
+      !conversationsQuery.isFetched
+    ) {
+      return;
+    }
+    if (conversationsQuery.isError) {
       return;
     }
 
     if (conversations.length > 0) {
       navigate(`/app/chat/${conversations[0].id}`, { replace: true });
     }
-  }, [conversationId, conversations, conversationsQuery.isLoading, navigate]);
+  }, [
+    conversationId,
+    conversations,
+    conversationsQuery.isError,
+    conversationsQuery.isFetched,
+    conversationsQuery.isFetching,
+    conversationsQuery.isLoading,
+    navigate,
+  ]);
+
+  useEffect(() => {
+    if (!conversationId || !conversationQuery.isError) {
+      return;
+    }
+    if (conversationErrorStatus === 403 || conversationErrorStatus === 404) {
+      clearSelectedMessageId();
+      navigate("/app/chat", { replace: true });
+    }
+  }, [
+    clearSelectedMessageId,
+    conversationErrorStatus,
+    conversationId,
+    conversationQuery.isError,
+    navigate,
+  ]);
 
   const handleSendMessage = useCallback(
     async (content: string) => {
@@ -223,6 +277,18 @@ export function ChatPage() {
   }
 
   if (conversationQuery.isError) {
+    if (conversationErrorStatus === 403 || conversationErrorStatus === 404) {
+      return (
+        <section className="flex h-full items-center justify-center p-6">
+          <div className="w-full max-w-xl">
+            <AppLoadingState
+              description="Conversation is unavailable. Returning to the conversation list."
+              title="Refreshing chat workspace"
+            />
+          </div>
+        </section>
+      );
+    }
     return (
       <section className="flex h-full items-center justify-center p-6">
         <div className="w-full max-w-xl">

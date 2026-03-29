@@ -188,6 +188,25 @@ function getRuleDetailErrorMessage(error: unknown) {
   return "Failed to load rule detail";
 }
 
+function getHttpStatusFromError(error: unknown): number | null {
+  if (typeof error !== "object" || error === null) {
+    return null;
+  }
+
+  const directStatus = (error as { status?: unknown }).status;
+  if (typeof directStatus === "number" && Number.isFinite(directStatus)) {
+    return directStatus;
+  }
+
+  const response = (error as { response?: { status?: unknown } }).response;
+  const responseStatus = response?.status;
+  if (typeof responseStatus === "number" && Number.isFinite(responseStatus)) {
+    return responseStatus;
+  }
+
+  return null;
+}
+
 function asDuplicateCandidates(value: unknown): SuggestionDuplicateCandidate[] {
   if (!Array.isArray(value)) {
     return [];
@@ -276,36 +295,6 @@ function extractDuplicateInsight(
     candidates: [],
   };
 
-  if (
-    locationState?.generationInsights?.suggestionId === suggestion.id &&
-    locationState.generationInsights.duplicate
-  ) {
-    const fromLocationDuplicate = extractDuplicateFromUnknown(
-      locationState.generationInsights.duplicate
-    );
-    if (fromLocationDuplicate) {
-      return {
-        ...base,
-        ...fromLocationDuplicate,
-      };
-    }
-  }
-
-  if (
-    locationState?.generationInsights?.suggestionId === suggestion.id &&
-    locationState.generationInsights.duplicate_check
-  ) {
-    const fromLocationLegacy = extractDuplicateFromUnknown(
-      locationState.generationInsights.duplicate_check
-    );
-    if (fromLocationLegacy) {
-      return {
-        ...base,
-        ...fromLocationLegacy,
-      };
-    }
-  }
-
   const fromSuggestion = extractDuplicateFromUnknown(suggestion.duplicate);
   if (fromSuggestion) {
     return {
@@ -350,7 +339,63 @@ function extractDuplicateInsight(
     }
   }
 
+  if (
+    locationState?.generationInsights?.suggestionId === suggestion.id &&
+    locationState.generationInsights.duplicate
+  ) {
+    const fromLocationDuplicate = extractDuplicateFromUnknown(
+      locationState.generationInsights.duplicate
+    );
+    if (fromLocationDuplicate) {
+      return {
+        ...base,
+        ...fromLocationDuplicate,
+      };
+    }
+  }
+
+  if (
+    locationState?.generationInsights?.suggestionId === suggestion.id &&
+    locationState.generationInsights.duplicate_check
+  ) {
+    const fromLocationLegacy = extractDuplicateFromUnknown(
+      locationState.generationInsights.duplicate_check
+    );
+    if (fromLocationLegacy) {
+      return {
+        ...base,
+        ...fromLocationLegacy,
+      };
+    }
+  }
+
   return base;
+}
+
+function removeStaleDuplicateCandidates(
+  insight: DuplicateInsight | null,
+  staleRuleIds: Set<string>
+): DuplicateInsight | null {
+  if (!insight || staleRuleIds.size === 0) {
+    return insight;
+  }
+
+  const sourceCandidates = insight.similarRules ?? insight.candidates ?? [];
+  const filtered = sourceCandidates.filter((candidate) => !staleRuleIds.has(candidate.rule_id));
+  if (filtered.length === sourceCandidates.length) {
+    return insight;
+  }
+
+  const hasRemaining = filtered.length > 0;
+  return {
+    ...insight,
+    level: hasRemaining ? insight.level : "none",
+    duplicateRisk: hasRemaining ? insight.duplicateRisk : "DIFFERENT",
+    reason: hasRemaining ? insight.reason : "stale_candidates_removed",
+    rationale: hasRemaining ? insight.rationale : "stale_candidates_removed",
+    similarRules: filtered,
+    candidates: filtered,
+  };
 }
 
 export function SuggestionDetailPage() {
@@ -395,6 +440,7 @@ export function SuggestionDetailPage() {
   const [ruleInspectorError, setRuleInspectorError] = useState<string | null>(null);
   const [isRuleInspectorLoading, setIsRuleInspectorLoading] = useState(false);
   const [rejectReasonInput, setRejectReasonInput] = useState("");
+  const [staleDuplicateRuleIds, setStaleDuplicateRuleIds] = useState<string[]>([]);
   const initializedSuggestionIdRef = useRef<string | null>(null);
   const ruleInspectorRequestIdRef = useRef(0);
   const workflowContentRef = useRef<HTMLDivElement | null>(null);
@@ -409,6 +455,7 @@ export function SuggestionDetailPage() {
     const isNewSuggestion = initializedSuggestionIdRef.current !== detailQuery.data.id;
     if (isNewSuggestion) {
       initializedSuggestionIdRef.current = detailQuery.data.id;
+      setStaleDuplicateRuleIds([]);
       const storedStep = getStoredSuggestionStep(detailQuery.data.id);
       const statusAllowsReview =
         detailQuery.data.status === "approved" ||
@@ -470,9 +517,9 @@ export function SuggestionDetailPage() {
     if (!detailQuery.data) {
       return null;
     }
-
-    return extractDuplicateInsight(detailQuery.data, logsQuery.data, locationState);
-  }, [detailQuery.data, locationState, logsQuery.data]);
+    const extracted = extractDuplicateInsight(detailQuery.data, logsQuery.data, locationState);
+    return removeStaleDuplicateCandidates(extracted, new Set(staleDuplicateRuleIds));
+  }, [detailQuery.data, locationState, logsQuery.data, staleDuplicateRuleIds]);
 
   const duplicateState = useMemo(
     () =>
@@ -813,6 +860,16 @@ export function SuggestionDetailPage() {
     setActiveStep(detailQuery.data?.status === "approved" || detailQuery.data?.status === "applied" ? "review" : "draft");
   }, [activeStep, detailQuery.data?.status, stepStates]);
 
+  const markDuplicateCandidateStale = useCallback((ruleId: string) => {
+    const normalized = String(ruleId ?? "").trim();
+    if (!normalized) {
+      return;
+    }
+    setStaleDuplicateRuleIds((previous) =>
+      previous.includes(normalized) ? previous : [...previous, normalized]
+    );
+  }, []);
+
   const loadRuleDetailByCandidate = async (candidate: SuggestionDuplicateCandidate) => {
     const requestId = ruleInspectorRequestIdRef.current + 1;
     ruleInspectorRequestIdRef.current = requestId;
@@ -828,6 +885,26 @@ export function SuggestionDetailPage() {
       setSelectedRuleDetail(ruleDetail);
     } catch (error) {
       if (ruleInspectorRequestIdRef.current !== requestId) {
+        return;
+      }
+      const status = getHttpStatusFromError(error);
+      if (status === 404) {
+        markDuplicateCandidateStale(candidate.rule_id);
+        setSelectedDuplicateCandidate((previous) =>
+          previous?.rule_id === candidate.rule_id ? null : previous
+        );
+        setIsRuleInspectorOpen(false);
+        setStaleBanner(
+          "One duplicate candidate was removed because the rule no longer exists."
+        );
+        toast({
+          title: "Duplicate candidate removed",
+          description: "That similar rule was deleted. The duplicate list has been refreshed.",
+          variant: "default",
+        });
+        setRuleInspectorError(
+          "This duplicate rule no longer exists and was removed from the current view."
+        );
         return;
       }
       setRuleInspectorError(getRuleDetailErrorMessage(error));
