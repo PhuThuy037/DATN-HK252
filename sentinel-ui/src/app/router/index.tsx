@@ -4,10 +4,14 @@ import { LoginPage } from "@/pages/login/LoginPage";
 import { RegisterPage } from "@/pages/register/RegisterPage";
 import { OnboardingRuleSetPage } from "@/pages/onboarding/OnboardingRuleSetPage";
 import { ChatPage } from "@/pages/chat/ChatPage";
+import { AdminConversationsPage } from "@/pages/admin/AdminConversationsPage";
+import { AdminConversationDetailPage } from "@/pages/admin/AdminConversationDetailPage";
+import { AdminBlockMaskLogsPage } from "@/pages/admin/AdminBlockMaskLogsPage";
 import { SystemPromptSettingsPage } from "@/features/settings/SystemPromptSettingsPage";
 import { RulesPage } from "@/pages/settings/RulesPage";
 import { SuggestionDetailPage } from "@/pages/suggestions/SuggestionDetailPage";
 import { SuggestionsPage } from "@/pages/suggestions/SuggestionsPage";
+import { AdminRoute } from "@/features/auth/components/AdminRoute";
 import { GuestRoute } from "@/features/auth/components/GuestRoute";
 import { ProtectedRoute } from "@/features/auth/components/ProtectedRoute";
 import { RuleSetAppRoute } from "@/features/rules/components/RuleSetAppRoute";
@@ -38,9 +42,11 @@ export const appRouter = createBrowserRouter([
     path: "/onboarding/rule-set",
     element: (
       <ProtectedRoute>
-        <RuleSetOnboardingRoute>
-          <OnboardingRuleSetPage />
-        </RuleSetOnboardingRoute>
+        <AdminRoute>
+          <RuleSetOnboardingRoute>
+            <OnboardingRuleSetPage />
+          </RuleSetOnboardingRoute>
+        </AdminRoute>
       </ProtectedRoute>
     ),
   },
@@ -48,9 +54,7 @@ export const appRouter = createBrowserRouter([
     path: "/app",
     element: (
       <ProtectedRoute>
-        <RuleSetAppRoute>
-          <AppLayout />
-        </RuleSetAppRoute>
+        <AppLayout />
       </ProtectedRoute>
     ),
     children: [
@@ -68,19 +72,67 @@ export const appRouter = createBrowserRouter([
       },
       {
         path: "settings/system-prompt",
-        element: <SystemPromptSettingsPage />,
+        element: (
+          <AdminRoute>
+            <RuleSetAppRoute>
+              <SystemPromptSettingsPage />
+            </RuleSetAppRoute>
+          </AdminRoute>
+        ),
       },
       {
         path: "settings/rules",
-        element: <RulesPage />,
+        element: (
+          <AdminRoute>
+            <RuleSetAppRoute>
+              <RulesPage />
+            </RuleSetAppRoute>
+          </AdminRoute>
+        ),
       },
       {
         path: "suggestions",
-        element: <SuggestionsPage />,
+        element: (
+          <AdminRoute>
+            <RuleSetAppRoute>
+              <SuggestionsPage />
+            </RuleSetAppRoute>
+          </AdminRoute>
+        ),
       },
       {
         path: "suggestions/:suggestionId",
-        element: <SuggestionDetailPage />,
+        element: (
+          <AdminRoute>
+            <RuleSetAppRoute>
+              <SuggestionDetailPage />
+            </RuleSetAppRoute>
+          </AdminRoute>
+        ),
+      },
+      {
+        path: "admin/conversations",
+        element: (
+          <AdminRoute>
+            <AdminConversationsPage />
+          </AdminRoute>
+        ),
+      },
+      {
+        path: "admin/conversations/:conversationId",
+        element: (
+          <AdminRoute>
+            <AdminConversationDetailPage />
+          </AdminRoute>
+        ),
+      },
+      {
+        path: "admin/logs/block-mask",
+        element: (
+          <AdminRoute>
+            <AdminBlockMaskLogsPage />
+          </AdminRoute>
+        ),
       },
       {
         path: "*",

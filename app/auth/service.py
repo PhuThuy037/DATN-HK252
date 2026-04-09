@@ -19,7 +19,7 @@ from app.common.error_codes import ErrorCode
 from app.common.errors import AppError
 from app.core.config import get_settings
 from app.auth.model import User, RefreshToken  # chỉnh import path theo project mày
-from app.common.enums import UserStatus
+from app.common.enums import SystemRole, UserStatus
 from app.auth.jwt import create_access_token  # file jwt mày đưa
 
 
@@ -43,6 +43,7 @@ class AuthService:
             hashed_password=hash_password(payload.password),
             name=payload.name,
             status=UserStatus.active,
+            role=SystemRole.user,
         )
 
         session.add(user)

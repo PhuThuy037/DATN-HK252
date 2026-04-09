@@ -16,6 +16,7 @@ export type AuthUser = {
   email: string;
   name: string;
   status: string;
+  role: "admin" | "user";
 };
 
 export type LoginRequest = {

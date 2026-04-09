@@ -12,6 +12,7 @@ import sqlalchemy as sa
 from sqlmodel import Session, select
 
 from app.chat.service import ChatService
+from app.company import service as company_service
 from app.common.error_codes import ErrorCode
 from app.common.errors import AppError
 from app.common.enums import (
@@ -21,7 +22,9 @@ from app.common.enums import (
     RuleAction,
     RuleScope,
     ScanStatus,
+    SystemRole,
 )
+from app.auth.model import User
 from app.company.model import Company
 from app.conversation.model import Conversation
 from app.core.config import get_settings
@@ -77,6 +80,13 @@ def _safe_message_content(message: Message) -> tuple[str | None, bool]:
     if is_masked:
         return None, False
     return message.content, False
+
+
+def _admin_message_content(message: Message) -> tuple[str | None, bool]:
+    is_blocked = message.final_action == RuleAction.block
+    if is_blocked:
+        return message.content, True
+    return _safe_message_content(message)
 
 
 def _truncate_preview(text: str | None, *, max_length: int = 180) -> str | None:
@@ -222,6 +232,72 @@ def _resolve_system_prompt(
     return default_prompt or None
 
 
+def _resolve_default_rule_set_id(*, session: Session) -> UUID:
+    settings = get_settings()
+    admin_email = str(settings.default_ruleset_admin_email or "").strip().lower()
+    if not admin_email:
+        raise AppError(
+            500,
+            ErrorCode.INTERNAL_ERROR,
+            "Default rule source is not configured",
+            details=[
+                {
+                    "field": "DEFAULT_RULESET_ADMIN_EMAIL",
+                    "reason": "missing_config",
+                }
+            ],
+        )
+
+    admin_user = session.exec(
+        select(User).where(sa.func.lower(User.email) == admin_email)
+    ).first()
+    if admin_user is None:
+        raise AppError(
+            500,
+            ErrorCode.INTERNAL_ERROR,
+            "Default rule source admin was not found",
+            details=[
+                {
+                    "field": "DEFAULT_RULESET_ADMIN_EMAIL",
+                    "reason": "user_not_found",
+                    "extra": {"email": admin_email},
+                }
+            ],
+        )
+
+    if admin_user.role != SystemRole.admin:
+        raise AppError(
+            500,
+            ErrorCode.INTERNAL_ERROR,
+            "Default rule source account must be a system admin",
+            details=[
+                {
+                    "field": "DEFAULT_RULESET_ADMIN_EMAIL",
+                    "reason": "user_not_admin",
+                    "extra": {"email": admin_email, "user_id": str(admin_user.id)},
+                }
+            ],
+        )
+
+    rows = company_service.list_my_companies(session=session, user_id=admin_user.id)
+    if not rows:
+        raise AppError(
+            500,
+            ErrorCode.INTERNAL_ERROR,
+            "Default rule source admin does not have an active rule set",
+            details=[
+                {
+                    "field": "DEFAULT_RULESET_ADMIN_EMAIL",
+                    "reason": "active_rule_set_missing",
+                    "extra": {"email": admin_email, "user_id": str(admin_user.id)},
+                }
+            ],
+        )
+
+    company, _ = rows[0]
+    return company.id
+
+
 def create_personal_conversation(
     *,
     session: Session,
@@ -230,9 +306,10 @@ def create_personal_conversation(
     model_name: str | None = None,
     temperature: float | None = None,
 ) -> Conversation:
+    default_rule_set_id = _resolve_default_rule_set_id(session=session)
     c = Conversation(
         user_id=user_id,
-        company_id=None,
+        company_id=default_rule_set_id,
         title=title,
         model_name=model_name,
         temperature=temperature,
@@ -315,26 +392,12 @@ async def append_user_message_async(
     if not c:
         raise not_found("Conversation not found", field="conversation_id")
 
-    if c.company_id is None and c.user_id != user_id:
+    if c.user_id != user_id:
         raise not_found(
             "Conversation not found",
             field="conversation_id",
             reason="not_owner",
         )
-
-    if c.company_id is not None:
-        try:
-            load_rule_set_owner_active_or_403(
-                session=session,
-                rule_set_id=c.company_id,
-                user_id=user_id,
-            )
-        except AppError:
-            raise not_found(
-                "Conversation not found",
-                field="conversation_id",
-                reason="not_rule_set_owner",
-            )
     if not _is_active_conversation(c):
         raise not_found(
             "Conversation not found",
@@ -386,7 +449,7 @@ async def append_user_message_async(
         role=MessageRole.user,
         sequence_number=user_seq,
         input_type=input_type,
-        content=None if user_blocked else content,
+        content=content,
         content_hash=_sha256_hex(content),
         content_masked=user_masked,
         scan_status=ScanStatus.done,
@@ -465,7 +528,7 @@ async def append_user_message_async(
         role=MessageRole.assistant,
         sequence_number=asst_seq,
         input_type=MessageInputType.tool_result,
-        content=None if asst_blocked else assistant_text,
+        content=assistant_text,
         content_hash=_sha256_hex(assistant_text),
         content_masked=asst_masked,
         scan_status=ScanStatus.done,
@@ -628,6 +691,22 @@ def get_last_message_summary(
     return row.created_at, _truncate_preview(safe_content)
 
 
+def get_admin_last_message_summary(
+    *, session: Session, conversation_id: UUID
+) -> tuple[datetime | None, str | None]:
+    row = session.exec(
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.sequence_number.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None, None
+
+    raw_or_safe_content, _ = _admin_message_content(row)
+    return row.created_at, _truncate_preview(raw_or_safe_content)
+
+
 def get_message_for_conversation_or_404(
     *,
     session: Session,
@@ -684,11 +763,68 @@ def build_safe_message_detail(*, message: Message) -> dict:
         "sequence_number": message.sequence_number,
         "input_type": message.input_type,
         "content": safe_content,
+        "content_hash": message.content_hash,
         "content_masked": message.content_masked,
         "scan_status": (
             message.scan_status.value
             if hasattr(message.scan_status, "value")
             else str(message.scan_status)
+        ),
+        "pre_rag_action": (
+            message.pre_rag_action.value
+            if hasattr(message.pre_rag_action, "value")
+            else (
+                str(message.pre_rag_action)
+                if message.pre_rag_action is not None
+                else None
+            )
+        ),
+        "final_action": (
+            message.final_action.value
+            if hasattr(message.final_action, "value")
+            else (
+                str(message.final_action)
+                if message.final_action is not None
+                else None
+            )
+        ),
+        "risk_score": message.risk_score,
+        "ambiguous": bool(message.ambiguous),
+        "matched_rule_ids": message.matched_rule_ids,
+        "matched_rules": _extract_message_matched_rules(message),
+        "entities_json": message.entities_json,
+        "rag_evidence_json": message.rag_evidence_json,
+        "latency_ms": message.latency_ms,
+        "blocked": is_blocked,
+        "blocked_reason": getattr(message, "blocked_reason", None),
+        "created_at": message.created_at,
+    }
+
+
+def build_admin_message_detail(*, message: Message) -> dict:
+    admin_content, is_blocked = _admin_message_content(message)
+    return {
+        "id": message.id,
+        "conversation_id": message.conversation_id,
+        "role": message.role,
+        "sequence_number": message.sequence_number,
+        "input_type": message.input_type,
+        "content": admin_content,
+        "content_hash": message.content_hash,
+        "content_masked": message.content_masked,
+        "scan_status": (
+            message.scan_status.value
+            if hasattr(message.scan_status, "value")
+            else str(message.scan_status)
+        ),
+        "pre_rag_action": (
+            message.pre_rag_action.value
+            if hasattr(message.pre_rag_action, "value")
+            else (
+                str(message.pre_rag_action)
+                if message.pre_rag_action is not None
+                else None
+            )
         ),
         "final_action": (
             message.final_action.value

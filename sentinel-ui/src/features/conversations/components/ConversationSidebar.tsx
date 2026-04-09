@@ -6,6 +6,8 @@ import {
   MessagesSquare,
   WandSparkles,
   SlidersHorizontal,
+  Shield,
+  ShieldAlert,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -50,6 +52,7 @@ export function ConversationSidebar({
   const queryClient = useQueryClient();
   const location = useLocation();
   const user = useAuthStore((state) => state.user);
+  const isAdmin = user?.role === "admin";
   const refreshToken = useAuthStore((state) => state.refreshToken);
   const clearAuth = useAuthStore((state) => state.clearAuth);
   const currentRuleSet = useRuleSetStore((state) => state.currentRuleSet);
@@ -110,6 +113,8 @@ export function ConversationSidebar({
   );
   const isSuggestionsRoute = location.pathname.startsWith("/app/suggestions");
   const isChatRoute = location.pathname.startsWith("/app/chat");
+  const isAdminConversationsRoute = location.pathname.startsWith("/app/admin/conversations");
+  const isAdminBlockMaskRoute = location.pathname.startsWith("/app/admin/logs/block-mask");
 
   const startRenameConversation = (item: ConversationListItemType) => {
     setRenamingConversation(item);
@@ -285,45 +290,75 @@ export function ConversationSidebar({
             <MessagesSquare className="h-4 w-4" />
             Chat
           </AppButton>
-          <AppButton
-            className={navButtonClassName}
-            onClick={() => {
-              navigate("/app/settings/rules");
-              onConversationSelect?.();
-            }}
-            size="sm"
-            type="button"
-            variant={isRulesRoute ? "primary" : "secondary"}
-          >
-            <Scale className="h-4 w-4" />
-            Rules
-          </AppButton>
-          <AppButton
-            className={navButtonClassName}
-            onClick={() => {
-              navigate("/app/settings/system-prompt");
-              onConversationSelect?.();
-            }}
-            size="sm"
-            type="button"
-            variant={isSystemPromptRoute ? "primary" : "secondary"}
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-            System Prompt
-          </AppButton>
-          <AppButton
-            className={navButtonClassName}
-            onClick={() => {
-              navigate("/app/suggestions");
-              onConversationSelect?.();
-            }}
-            size="sm"
-            type="button"
-            variant={isSuggestionsRoute ? "primary" : "secondary"}
-          >
-            <WandSparkles className="h-4 w-4" />
-            Suggestions
-          </AppButton>
+          {isAdmin ? (
+            <>
+              <AppButton
+                className={navButtonClassName}
+                onClick={() => {
+                  navigate("/app/admin/conversations");
+                  onConversationSelect?.();
+                }}
+                size="sm"
+                type="button"
+                variant={isAdminConversationsRoute ? "primary" : "secondary"}
+              >
+                <Shield className="h-4 w-4" />
+                Monitor Conversations
+              </AppButton>
+              <AppButton
+                className={navButtonClassName}
+                onClick={() => {
+                  navigate("/app/admin/logs/block-mask");
+                  onConversationSelect?.();
+                }}
+                size="sm"
+                type="button"
+                variant={isAdminBlockMaskRoute ? "primary" : "secondary"}
+              >
+                <ShieldAlert className="h-4 w-4" />
+                Block/Mask Logs
+              </AppButton>
+              <AppButton
+                className={navButtonClassName}
+                onClick={() => {
+                  navigate("/app/settings/rules");
+                  onConversationSelect?.();
+                }}
+                size="sm"
+                type="button"
+                variant={isRulesRoute ? "primary" : "secondary"}
+              >
+                <Scale className="h-4 w-4" />
+                Rules
+              </AppButton>
+              <AppButton
+                className={navButtonClassName}
+                onClick={() => {
+                  navigate("/app/settings/system-prompt");
+                  onConversationSelect?.();
+                }}
+                size="sm"
+                type="button"
+                variant={isSystemPromptRoute ? "primary" : "secondary"}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                System Prompt
+              </AppButton>
+              <AppButton
+                className={navButtonClassName}
+                onClick={() => {
+                  navigate("/app/suggestions");
+                  onConversationSelect?.();
+                }}
+                size="sm"
+                type="button"
+                variant={isSuggestionsRoute ? "primary" : "secondary"}
+              >
+                <WandSparkles className="h-4 w-4" />
+                Suggestions
+              </AppButton>
+            </>
+          ) : null}
         </div>
 
         <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border/70 bg-background shadow-app-sm">

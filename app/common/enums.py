@@ -5,6 +5,11 @@ class UserStatus(str, Enum):
     blocked = "blocked"
 
 
+class SystemRole(str, Enum):
+    admin = "admin"
+    user = "user"
+
+
 class CompanyStatus(str, Enum):
     active = "active"
     inactive = "inactive"

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import Depends
 
-from app.auth.deps import CurrentPrincipal
+from app.auth.deps import CurrentUser
 from app.api.deps import SessionDep
 from app.permissions.guards.conversation_guard import (
     ConversationGuard,
@@ -17,31 +17,40 @@ _guard = ConversationGuard()
 
 def require_conversation_view(
     conversation_id: UUID,
-    principal: CurrentPrincipal,
+    current_user: CurrentUser,
     session: SessionDep,
 ) -> ConversationAccess:
     return _guard.require_view(
-        session=session, conversation_id=conversation_id, user_id=principal.user_id
+        session=session,
+        conversation_id=conversation_id,
+        user_id=current_user.id,
+        system_role=current_user.role,
     )
 
 
 def require_conversation_update(
     conversation_id: UUID,
-    principal: CurrentPrincipal,
+    current_user: CurrentUser,
     session: SessionDep,
 ) -> ConversationAccess:
     return _guard.require_update(
-        session=session, conversation_id=conversation_id, user_id=principal.user_id
+        session=session,
+        conversation_id=conversation_id,
+        user_id=current_user.id,
+        system_role=current_user.role,
     )
 
 
 def require_conversation_delete(
     conversation_id: UUID,
-    principal: CurrentPrincipal,
+    current_user: CurrentUser,
     session: SessionDep,
 ) -> ConversationAccess:
     return _guard.require_delete(
-        session=session, conversation_id=conversation_id, user_id=principal.user_id
+        session=session,
+        conversation_id=conversation_id,
+        user_id=current_user.id,
+        system_role=current_user.role,
     )
 
 

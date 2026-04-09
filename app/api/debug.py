@@ -2,22 +2,25 @@ from dataclasses import asdict
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.api.deps import SessionDep
-from app.auth.deps import CurrentPrincipal
-from app.common.enums import MemberRole
+from app.auth.deps import require_admin
+from app.company.model import Company
 from app.decision.context_scorer import ContextScorer
 from app.decision.context_term_runtime import load_context_runtime_overrides
 from app.decision.decision_resolver import DecisionResolver
 from app.decision.detectors.local_regex_detector import LocalRegexDetector
-from app.permissions.core import forbid
-from app.permissions.loaders.conversation import load_company_member_active_or_403
+from app.permissions.core import not_found
 from app.rule.engine import RuleEngine
 
 
-router = APIRouter(prefix="/v1/debug", tags=["Debug"])
+router = APIRouter(
+    prefix="/v1/debug",
+    tags=["Debug"],
+    dependencies=[Depends(require_admin)],
+)
 
 detector = LocalRegexDetector()
 context_scorer = ContextScorer("app/config/context_base.yaml")
@@ -60,19 +63,10 @@ class FullScanResponse(BaseModel):
 def debug_full_scan(
     req: FullScanRequest,
     session: SessionDep,
-    principal: CurrentPrincipal,
 ):
-    member = load_company_member_active_or_403(
-        session=session,
-        company_id=req.rule_set_id,
-        user_id=principal.user_id,
-    )
-    if member.role != MemberRole.company_admin:
-        raise forbid(
-            "Rule set owner required for debug full-scan",
-            field="rule_set_id",
-            reason="not_rule_set_owner",
-        )
+    company = session.get(Company, req.rule_set_id)
+    if company is None:
+        raise not_found("Rule set not found", field="rule_set_id")
 
     overrides = load_context_runtime_overrides(
         session=session,

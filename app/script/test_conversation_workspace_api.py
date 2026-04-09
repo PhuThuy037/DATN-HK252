@@ -216,7 +216,19 @@ def main() -> None:
                 f"{wrong_owner.status_code}\n{wrong_owner.text}"
             )
 
-        print("[9/11] patch conversation title success")
+        print("[9/12] non-owner cannot send message into owner conversation")
+        wrong_sender = client.post(
+            f"{V1}/conversations/{conv_a_id}/messages",
+            json={"content": "toi khong phai owner", "input_type": "user_input"},
+            headers=auth_headers(other_token),
+        )
+        if wrong_sender.status_code not in (403, 404):
+            fail(
+                "non-owner send message should be forbidden/not-found: "
+                f"{wrong_sender.status_code}\n{wrong_sender.text}"
+            )
+
+        print("[10/12] patch conversation title success")
         patched = client.patch(
             f"{V1}/conversations/{conv_b_id}",
             json={"title": "Conversation B Renamed"},
@@ -228,7 +240,7 @@ def main() -> None:
         if str(patched_data.get("title") or "") != "Conversation B Renamed":
             fail(f"patch title did not apply: {patched.json()}")
 
-        print("[10/11] delete conversation (soft delete) success")
+        print("[11/12] delete conversation (soft delete) success")
         deleted = client.delete(
             f"{V1}/conversations/{conv_b_id}",
             headers=auth_headers(owner_token),
@@ -239,7 +251,7 @@ def main() -> None:
         if str(deleted_data.get("status") or "") != "archived":
             fail(f"soft delete must archive conversation: {deleted.json()}")
 
-        print("[11/11] active filter excludes archived, archived filter returns archived")
+        print("[12/12] active filter excludes archived, archived filter returns archived")
         active_after_delete = list_conversations(client, owner_token, params={"status": "active"})
         active_items = list(((active_after_delete.get("data") or {}).get("items") or []))
         active_ids = {str(x.get("id") or "") for x in active_items}

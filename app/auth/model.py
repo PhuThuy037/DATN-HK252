@@ -5,7 +5,7 @@ import sqlalchemy as sa
 from sqlmodel import Field, Relationship, SQLModel
 
 from app.common.bases import TimestampMixin
-from app.common.enums import UserStatus
+from app.common.enums import SystemRole, UserStatus
 from datetime import datetime
 
 
@@ -26,6 +26,18 @@ class User(TimestampMixin, SQLModel, table=True):
             ),
             nullable=False,
             server_default=UserStatus.active.value,
+        ),
+    )
+    role: SystemRole = Field(
+        default=SystemRole.user,
+        sa_column=sa.Column(
+            sa.Enum(
+                SystemRole,
+                name="system_role",
+                native_enum=True,
+            ),
+            nullable=False,
+            server_default=SystemRole.user.value,
         ),
     )
 

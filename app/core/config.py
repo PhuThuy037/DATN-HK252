@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     database_url: str
     redis_url: str | None = None
+    default_ruleset_admin_email: str | None = None
     policy_ingest_queue_name: str = "policy_ingest_jobs"
     rule_duplicate_top_k: int = 5
     rule_duplicate_exact_threshold: float = 0.92

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.common.enums import UserStatus
+from app.common.enums import SystemRole, UserStatus
 
 
 # =======================
@@ -16,6 +16,7 @@ class UserPublic(BaseModel):
     email: EmailStr
     name: Optional[str] = None
     status: UserStatus
+    role: SystemRole
 
     model_config = {"from_attributes": True}
 

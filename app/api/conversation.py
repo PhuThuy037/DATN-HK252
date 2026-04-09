@@ -203,7 +203,7 @@ async def send_message(
     payload: MessageCreateIn,
     session: SessionDep,
     principal: CurrentPrincipal,
-    access: ConversationView,
+    access: ConversationUpdate,
 ):
     msg, assistant_message_id = await convo_service.append_user_message_async(
         session=session,
@@ -212,7 +212,9 @@ async def send_message(
         content=payload.content,
         input_type=payload.input_type,
     )
-    out = SendMessageOut.model_validate(msg).model_copy(
+    out = SendMessageOut.model_validate(
+        convo_service.build_safe_message_detail(message=msg)
+    ).model_copy(
         update={"assistant_message_id": assistant_message_id}
     )
 

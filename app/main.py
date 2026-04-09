@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import app.db.all_models
 from app.api.auth import router as auth_router
+from app.api.admin_monitoring import router as admin_monitoring_router
 from app.api.conversation import router as conversation_router
 from app.api.debug import router as debug_router
 from app.api.personal_rules import router as personal_rules_router
@@ -62,6 +63,7 @@ app.add_exception_handler(HTTPException, http_exception_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.include_router(auth_router)
+app.include_router(admin_monitoring_router)
 app.include_router(rule_sets_router)
 app.include_router(personal_rules_router)
 app.include_router(rule_settings_router)

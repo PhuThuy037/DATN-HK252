@@ -11,6 +11,7 @@ from app.api.deps import SessionDep
 from app.auth import service as auth_service
 from app.auth.jwt import decode_access_token
 from app.auth.model import User
+from app.common.enums import SystemRole
 from app.common.errors import AppError
 from app.core.config import get_settings
 
@@ -58,3 +59,12 @@ def get_current_user(
 
 CurrentPrincipal = Annotated[Principal, Depends(get_current_principal)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def require_admin(current_user: CurrentUser) -> User:
+    if current_user.role != SystemRole.admin:
+        raise AppError.forbidden("Admin access required")
+    return current_user
+
+
+AdminUser = Annotated[User, Depends(require_admin)]
