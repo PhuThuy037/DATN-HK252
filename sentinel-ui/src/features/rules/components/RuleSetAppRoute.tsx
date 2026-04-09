@@ -1,4 +1,5 @@
 import { ReactNode, useEffect } from "react";
+import { useAuthStore } from "@/features/auth/store/authStore";
 import { Navigate } from "react-router-dom";
 import { useMyRuleSets } from "@/features/rules/hooks/useMyRuleSets";
 import { useRuleSetStore } from "@/features/rules/store/ruleSetStore";
@@ -10,13 +11,25 @@ type RuleSetAppRouteProps = {
 };
 
 export function RuleSetAppRoute({ children }: RuleSetAppRouteProps) {
+  const user = useAuthStore((state) => state.user);
+  const isAdmin = user?.role === "admin";
   const setCurrentRuleSet = useRuleSetStore((state) => state.setCurrentRuleSet);
   const clearCurrentRuleSet = useRuleSetStore((state) => state.clearCurrentRuleSet);
   const setRuleSetResolved = useRuleSetStore((state) => state.setRuleSetResolved);
 
-  const myRuleSetsQuery = useMyRuleSets();
+  const myRuleSetsQuery = useMyRuleSets({ enabled: isAdmin });
 
   useEffect(() => {
+    if (!isAdmin) {
+      clearCurrentRuleSet();
+      setRuleSetResolved(true);
+    }
+  }, [clearCurrentRuleSet, isAdmin, setRuleSetResolved]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      return;
+    }
     if (myRuleSetsQuery.isSuccess) {
       const firstRuleSet = myRuleSetsQuery.data[0] ?? null;
       if (firstRuleSet) {
@@ -33,10 +46,17 @@ export function RuleSetAppRoute({ children }: RuleSetAppRouteProps) {
   ]);
 
   useEffect(() => {
+    if (!isAdmin) {
+      return;
+    }
     if (myRuleSetsQuery.isError) {
       setRuleSetResolved(true);
     }
-  }, [myRuleSetsQuery.isError, setRuleSetResolved]);
+  }, [isAdmin, myRuleSetsQuery.isError, setRuleSetResolved]);
+
+  if (!isAdmin) {
+    return <>{children}</>;
+  }
 
   if (!myRuleSetsQuery.isFetchedAfterMount && !myRuleSetsQuery.isError) {
     return (

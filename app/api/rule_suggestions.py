@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import SessionDep
-from app.auth.deps import CurrentPrincipal
+from app.auth.deps import CurrentPrincipal, require_admin
 from app.common.schemas import ApiResponse
 from app.suggestion import service as suggestion_service
 from app.suggestion.schemas import (
@@ -24,7 +24,11 @@ from app.suggestion.schemas import (
     SuggestionStatus,
 )
 
-router = APIRouter(prefix="/v1", tags=["rule-set-suggestions"])
+router = APIRouter(
+    prefix="/v1",
+    tags=["rule-set-suggestions"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 @router.post(

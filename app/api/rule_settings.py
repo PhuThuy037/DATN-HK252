@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.api.deps import SessionDep
-from app.auth.deps import CurrentPrincipal
+from app.auth.deps import CurrentPrincipal, require_admin
 from app.common.schemas import ApiResponse
 from app.company import service as company_service
 from app.company.schemas import (
@@ -13,7 +13,11 @@ from app.company.schemas import (
     RuleSetSystemPromptUpdateIn,
 )
 
-router = APIRouter(prefix="/v1", tags=["rule-settings"])
+router = APIRouter(
+    prefix="/v1",
+    tags=["rule-settings"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 @router.get(

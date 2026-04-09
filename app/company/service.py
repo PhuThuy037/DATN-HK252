@@ -4,7 +4,8 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
-from app.common.enums import MemberRole, MemberStatus
+from app.auth import service as auth_service
+from app.common.enums import MemberRole, MemberStatus, SystemRole
 from app.common.error_codes import ErrorCode
 from app.common.errors import AppError
 from app.company.model import Company
@@ -30,7 +31,17 @@ def _load_active_membership(*, session: Session, user_id: UUID) -> CompanyMember
     ).first()
 
 
-def _require_rule_set_owner(*, session: Session, company_id: UUID, user_id: UUID) -> CompanyMember:
+def _is_system_admin(*, session: Session, user_id: UUID) -> bool:
+    user = auth_service.get_user_by_id(session=session, user_id=user_id)
+    return user.role == SystemRole.admin
+
+
+def _require_rule_set_owner(
+    *, session: Session, company_id: UUID, user_id: UUID
+) -> CompanyMember | None:
+    if _is_system_admin(session=session, user_id=user_id):
+        return None
+
     member = load_company_member_active_or_403(
         session=session,
         company_id=company_id,
@@ -111,7 +122,8 @@ def get_company_for_member(
         company_id=company_id,
         user_id=user_id,
     )
-    return company, member.role
+    role = member.role if member is not None else MemberRole.company_admin
+    return company, role
 
 
 def add_member_by_email(

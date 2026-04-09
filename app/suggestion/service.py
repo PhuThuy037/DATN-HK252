@@ -11,12 +11,14 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
+from app.auth import service as auth_service
 from app.common.enums import (
     MemberRole,
     RagMode,
     RuleAction,
     RuleScope,
     RuleSeverity,
+    SystemRole,
 )
 from app.common.error_codes import ErrorCode
 from app.common.errors import AppError
@@ -137,7 +139,14 @@ def _load_company_or_404(*, session: Session, company_id: UUID) -> Company:
     return company
 
 
+def _is_system_admin(*, session: Session, user_id: UUID) -> bool:
+    user = auth_service.get_user_by_id(session=session, user_id=user_id)
+    return user.role == SystemRole.admin
+
+
 def _require_company_admin(*, session: Session, company_id: UUID, user_id: UUID) -> None:
+    if _is_system_admin(session=session, user_id=user_id):
+        return
     member = load_company_member_active_or_403(
         session=session,
         company_id=company_id,

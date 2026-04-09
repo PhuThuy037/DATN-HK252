@@ -8,9 +8,10 @@ from uuid import UUID
 import sqlalchemy as sa
 from sqlmodel import Session, select
 
+from app.auth import service as auth_service
 from app.common.error_codes import ErrorCode
 from app.common.errors import AppError
-from app.common.enums import MemberRole, MemberStatus, RuleAction, RuleScope
+from app.common.enums import MemberRole, MemberStatus, RuleAction, RuleScope, SystemRole
 from app.company.model import Company
 from app.company_member.model import CompanyMember
 from app.decision.context_term_runtime import invalidate_context_runtime_cache
@@ -126,9 +127,16 @@ def _load_company_or_404(*, session: Session, company_id: UUID) -> Company:
     return company
 
 
+def _is_system_admin(*, session: Session, user_id: UUID) -> bool:
+    user = auth_service.get_user_by_id(session=session, user_id=user_id)
+    return user.role == SystemRole.admin
+
+
 def _require_company_member(
     *, session: Session, company_id: UUID, user_id: UUID
-) -> CompanyMember:
+) -> CompanyMember | None:
+    if _is_system_admin(session=session, user_id=user_id):
+        return None
     return load_company_member_active_or_403(
         session=session,
         company_id=company_id,
@@ -139,6 +147,8 @@ def _require_company_member(
 def _require_company_admin(
     *, session: Session, company_id: UUID, user_id: UUID
 ) -> None:
+    if _is_system_admin(session=session, user_id=user_id):
+        return
     member = _require_company_member(
         session=session,
         company_id=company_id,
@@ -153,6 +163,8 @@ def _require_company_admin(
 
 
 def _has_active_company_membership(*, session: Session, user_id: UUID) -> bool:
+    if _is_system_admin(session=session, user_id=user_id):
+        return True
     row = _load_active_company_membership(session=session, user_id=user_id)
     return row is not None
 
@@ -545,6 +557,8 @@ def _to_rule_context_term_out(*, row: ContextTerm) -> RuleContextTermOut:
 
 
 def _has_any_active_company_membership(*, session: Session, user_id: UUID) -> bool:
+    if _is_system_admin(session=session, user_id=user_id):
+        return True
     row = session.exec(
         select(CompanyMember.id)
         .where(CompanyMember.user_id == user_id)

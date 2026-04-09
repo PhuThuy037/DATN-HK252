@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import SessionDep
-from app.auth.deps import CurrentPrincipal
+from app.auth.deps import CurrentPrincipal, require_admin
 from app.common.schemas import ApiResponse
 from app.policy import service as policy_service
 from app.policy.schemas import (
@@ -16,7 +16,11 @@ from app.policy.schemas import (
     PolicyIngestJobOut,
 )
 
-router = APIRouter(prefix="/v1", tags=["rule-set-policy"])
+router = APIRouter(
+    prefix="/v1",
+    tags=["rule-set-policy"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 @router.get(

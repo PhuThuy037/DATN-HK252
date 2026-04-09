@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from app.api.deps import SessionDep
-from app.auth.deps import CurrentPrincipal
+from app.auth.deps import CurrentPrincipal, require_admin
 from app.common.schemas import ApiResponse, Meta
 from app.company import service as company_service
 from app.decision.scan_engine_local import ScanEngineLocal
@@ -24,7 +24,11 @@ from app.rule.schemas import (
     RuleSetRuleUpdateIn,
 )
 
-router = APIRouter(prefix="/v1", tags=["personal-rules"])
+router = APIRouter(
+    prefix="/v1",
+    tags=["personal-rules"],
+    dependencies=[Depends(require_admin)],
+)
 _scan_engine = ScanEngineLocal(context_yaml_path="app/config/context_base.yaml")
 
 

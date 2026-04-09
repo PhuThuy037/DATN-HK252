@@ -15,6 +15,7 @@ from app.common.enums import (
     RuleAction,
     RuleScope,
     RuleSeverity,
+    SystemRole,
     UserStatus,
 )
 from app.company.model import Company
@@ -83,6 +84,7 @@ def _ensure_active_user(session: Session) -> User:
         hashed_password="not-used",
         name="Seed Rag",
         status=UserStatus.active,
+        role=SystemRole.user,
     )
     session.add(row)
     session.flush()

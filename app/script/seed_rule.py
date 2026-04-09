@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 from app.db.engine import engine
 from app.auth.passwords import hash_password
 from app.auth.model import User
-from app.common.enums import UserStatus
+from app.common.enums import SystemRole, UserStatus
 from app.rule.seed import RuleSeeder
 import app.db.all_models  # noqa: F401
 
@@ -36,6 +36,7 @@ def _create_seed_user(session: Session) -> User:
         hashed_password=hash_password(SEED_USER_PASSWORD),
         name=SEED_USER_NAME,
         status=UserStatus.active,
+        role=SystemRole.admin,
     )
     session.add(u)
     session.commit()
