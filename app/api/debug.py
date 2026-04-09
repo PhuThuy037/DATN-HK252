@@ -1,4 +1,3 @@
-from dataclasses import asdict
 from typing import Any
 from uuid import UUID
 
@@ -8,12 +7,9 @@ from pydantic import BaseModel
 from app.api.deps import SessionDep
 from app.auth.deps import require_admin
 from app.company.model import Company
-from app.decision.context_scorer import ContextScorer
-from app.decision.context_term_runtime import load_context_runtime_overrides
-from app.decision.decision_resolver import DecisionResolver
-from app.decision.detectors.local_regex_detector import LocalRegexDetector
+from app.decision.scan_engine_local import ScanEngineLocal
+from app.decision.serializers import entity_to_dict, rulematch_to_dict
 from app.permissions.core import not_found
-from app.rule.engine import RuleEngine
 
 
 router = APIRouter(
@@ -22,10 +18,7 @@ router = APIRouter(
     dependencies=[Depends(require_admin)],
 )
 
-detector = LocalRegexDetector()
-context_scorer = ContextScorer("app/config/context_base.yaml")
-rule_engine = RuleEngine()
-resolver = DecisionResolver()
+scan_engine = ScanEngineLocal(context_yaml_path="app/config/context_base.yaml")
 
 
 class FullScanRequest(BaseModel):
@@ -60,7 +53,7 @@ class FullScanResponse(BaseModel):
 
 
 @router.post("/full-scan", response_model=FullScanResponse)
-def debug_full_scan(
+async def debug_full_scan(
     req: FullScanRequest,
     session: SessionDep,
 ):
@@ -68,48 +61,26 @@ def debug_full_scan(
     if company is None:
         raise not_found("Rule set not found", field="rule_set_id")
 
-    overrides = load_context_runtime_overrides(
+    scan_out = await scan_engine.scan(
         session=session,
+        text=req.text,
         company_id=req.rule_set_id,
+        user_id=None,
     )
-
-    # 1) Detect entities
-    entities = detector.scan(
-        req.text,
-        context_hints_by_entity=overrides.regex_hints,
-    )
-
-    # 2) Context signals
-    ctx = context_scorer.score(
-        req.text,
-        persona_keywords_override=overrides.persona_keywords,
-    )
-    signals = context_scorer.to_signals_dict(ctx)
-
-    # 3) Rule matching
-    matches = rule_engine.evaluate(
-        session=session,
-        company_id=req.rule_set_id,
-        entities=entities,
-        signals=signals,
-    )
-
-    # 4) Resolve decision
-    decision = resolver.resolve(matches)
 
     return {
         "ok": True,
-        "entities": [asdict(e) for e in entities],
-        "signals": signals,
+        "entities": [entity_to_dict(e) for e in scan_out["entities"]],
+        "signals": dict(scan_out["signals"]),
         "matched_rules": [
             {
-                "rule_id": m.rule_id,
-                "stable_key": m.stable_key,
-                "name": m.name,
-                "action": m.action.value,
-                "priority": m.priority,
+                "rule_id": row["rule_id"],
+                "stable_key": row["stable_key"],
+                "name": row["name"],
+                "action": row["action"],
+                "priority": row["priority"],
             }
-            for m in decision.matched
+            for row in [rulematch_to_dict(m) for m in scan_out["matches"]]
         ],
-        "final_action": decision.final_action.value,
+        "final_action": scan_out["final_action"].value,
     }

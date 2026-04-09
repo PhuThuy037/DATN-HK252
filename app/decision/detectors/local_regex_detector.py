@@ -48,6 +48,8 @@ class LocalRegexDetector:
         re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
         re.compile(r"\bghp_[A-Za-z0-9]{36,}\b"),
         re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"),
+        re.compile(r"\bsk_(?:live|test)_[A-Za-z0-9]{10,}\b"),
+        re.compile(r"\bsk-(?:proj|live|test|svcacct)-[A-Za-z0-9_-]{10,}\b"),
     ]
 
     # Keep ASCII-safe defaults; DB-backed context_terms is preferred in runtime.

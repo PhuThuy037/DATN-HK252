@@ -8,6 +8,7 @@ MASK_ENTITY_KEYS = {
     "global.pii.email.mask",
     "global.pii.tax.mask",
     "global.pii.credit_card.mask",
+    "global.pii.address.mask",
 }
 RAG_MASK_KEY = "global.security.rag.mask"
 

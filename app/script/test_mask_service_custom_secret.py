@@ -63,3 +63,53 @@ def test_mask_service_does_not_remask_inside_existing_placeholders() -> None:
 
     assert "[[INTERNAL_CODE]]" not in masked
     assert "[CCCD]" in masked
+
+
+def test_mask_service_masks_address_entities() -> None:
+    service = MaskService()
+    text = "Dia chi cua toi la 268 Ly Thuong Kiet, phuong 14, quan 10, TP.HCM"
+    start = text.index("268 Ly Thuong Kiet")
+    end = len(text)
+    entity = SimpleNamespace(
+        type="ADDRESS",
+        start=start,
+        end=end,
+        score=0.91,
+        source="vn_address",
+    )
+
+    masked = service.mask(text, entities=[entity], extra_terms=None)
+
+    assert masked == "Dia chi cua toi la [ADDRESS]"
+
+
+def test_mask_service_prefers_api_secret_over_nested_phone() -> None:
+    service = MaskService()
+    text = "Key la sk_live_51abcXYZ09876543210"
+    secret_start = text.index("sk_live_51abcXYZ09876543210")
+    secret_end = len(text)
+    phone_start = text.index("09876543210")
+    phone_end = phone_start + len("09876543210")
+
+    masked = service.mask(
+        text,
+        entities=[
+            SimpleNamespace(
+                type="PHONE",
+                start=phone_start,
+                end=phone_end,
+                score=0.90,
+                source="local_regex",
+            ),
+            SimpleNamespace(
+                type="API_SECRET",
+                start=secret_start,
+                end=secret_end,
+                score=0.98,
+                source="local_regex",
+            ),
+        ],
+        extra_terms=None,
+    )
+
+    assert masked == "Key la [API_SECRET]"

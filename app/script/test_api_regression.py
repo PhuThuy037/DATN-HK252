@@ -135,6 +135,61 @@ def main() -> None:
                 "expect_action": "allow",
                 "expect_ambiguous": True,
             },
+            {
+                "name": "dev_secret_live_block",
+                "content": "Ban xem giup minh loi nay, minh dang dung key nay: sk_live_abcxyz123456 nhung goi API bi fail",
+                "expect_ok": False,
+                "expect_action": "block",
+            },
+            {
+                "name": "obfuscated_email_input_mask",
+                "content": "Ban sua lai cau nay: mail cua minh la thuy dev demo a cong gmail cham com cho dung format",
+                "expect_ok": True,
+                "expect_action": "mask",
+                "expect_mask_contains": "[EMAIL]",
+            },
+            {
+                "name": "structured_address_mask",
+                "content": "Ban chuan hoa giup minh dia chi nay: 268 Ly Thuong Kiet, phuong 14, quan 10, TP.HCM",
+                "expect_ok": True,
+                "expect_action": "mask",
+                "expect_mask_contains": "[ADDRESS]",
+            },
+            {
+                "name": "api_secret_overlap_a",
+                "content": "Ban giup minh debug loi API nay voi, minh dang goi endpoint nhung bi 401. Day la key test minh dung: sk_live_51abcXYZ9876543210",
+                "expect_ok": False,
+                "expect_action": "block",
+                "expect_not_mask_contains": "[PHONE]",
+            },
+            {
+                "name": "api_secret_overlap_b",
+                "content": "Ban giup minh debug backend nhe, minh dang goi API bang key sk_live_1234567890ABCDEabcde nhung bi 403.",
+                "expect_ok": False,
+                "expect_action": "block",
+                "expect_not_mask_contains": "[PHONE]",
+            },
+            {
+                "name": "api_secret_overlap_c",
+                "content": "Ban xem giup log nay, service em goi endpoint bang sk-test-ZYXWVUT1234567890 nhung response timeout.",
+                "expect_ok": False,
+                "expect_action": "block",
+                "expect_not_mask_contains": "[PHONE]",
+            },
+            {
+                "name": "api_secret_overlap_d",
+                "content": "Ban phan tich loi curl nay giup minh: minh goi API bang key ghp_abcdefghijklmnopqrstuvwxyz1234567890 server tra 401.",
+                "expect_ok": False,
+                "expect_action": "block",
+                "expect_not_mask_contains": "[PHONE]",
+            },
+            {
+                "name": "api_secret_overlap_e",
+                "content": "Ban xem giup minh chuoi nay la gi: sk_live_51abcXYZ9876543210",
+                "expect_ok": True,
+                "expect_action": "allow",
+                "expect_not_mask_contains": "[PHONE]",
+            },
         ]
 
         failed = 0
@@ -175,6 +230,12 @@ def main() -> None:
                     if not masked or tc["expect_mask_contains"] not in masked:
                         raise AssertionError(
                             f"mask missing {tc['expect_mask_contains']!r}\n  masked={masked!r}"
+                        )
+
+                if "expect_not_mask_contains" in tc and masked:
+                    if tc["expect_not_mask_contains"] in masked:
+                        raise AssertionError(
+                            f"mask unexpectedly contains {tc['expect_not_mask_contains']!r}\n  masked={masked!r}"
                         )
 
                 if "expect_ambiguous" in tc:

@@ -50,6 +50,17 @@ rules:
         - entity_type: "EMAIL"
           min_score: 0.80
 
+  - key: "global.pii.address.mask"
+    name: "Che dia chi"
+    description: "Che dia chi co cau truc"
+    action: "mask"
+    severity: "medium"
+    priority: 45
+    conditions:
+      any:
+        - entity_type: "ADDRESS"
+          min_score: 0.85
+
   - key: "global.security.prompt_injection.block"
     name: "Chặn prompt injection"
     description: "Chặn nếu detector security đánh dấu prompt injection"

@@ -14,9 +14,11 @@ from app.decision.context_scorer import ContextScorer
 from app.decision.context_term_runtime import load_context_runtime_overrides
 from app.decision.decision_resolver import DecisionResolver
 from app.decision.detectors.local_regex_detector import LocalRegexDetector
+from app.decision.detectors.obfuscated_email_detector import ObfuscatedEmailDetector
 from app.decision.detectors.presidio_detector import PresidioDetector
 from app.decision.detectors.security_injection_detector import SecurityInjectionDetector
 from app.decision.detectors.spoken_number_detector import SpokenNumberDetector
+from app.decision.detectors.vn_address_detector import VietnameseAddressDetector
 from app.decision.entity_merger import EntityMerger, MergeConfig
 from app.decision.entity_type_normalizer import EntityTypeNormalizer
 from app.decision.rule_layering import compact_matches
@@ -28,13 +30,15 @@ class ScanEngineLocal:
     _RAG_BLOCK_KEY = "global.security.rag.block"
     _RAG_MASK_KEY = "global.security.rag.mask"
     _RAG_KEY_PREFIX = "global.security.rag."
-    _SIMPLE_PII_TYPES = {"PHONE", "EMAIL", "TAX_ID", "CCCD", "CREDIT_CARD"}
+    _SIMPLE_PII_TYPES = {"PHONE", "EMAIL", "TAX_ID", "CCCD", "CREDIT_CARD", "ADDRESS"}
 
     def __init__(self, *, context_yaml_path: str):
         self.local = LocalRegexDetector()
         self.presidio = PresidioDetector()
         self.security = SecurityInjectionDetector()
         self.spoken = SpokenNumberDetector()
+        self.obfuscated_email = ObfuscatedEmailDetector()
+        self.address = VietnameseAddressDetector()
 
         self.context = ContextScorer(context_yaml_path)
         self.rule_engine = RuleEngine()
@@ -267,6 +271,16 @@ class ScanEngineLocal:
         timing_ms_by_stage["detect_spoken"] = int((time.perf_counter() - ts) * 1000)
 
         ts = time.perf_counter()
+        obfuscated_email_entities = self.obfuscated_email.scan(text)
+        timing_ms_by_stage["detect_obfuscated_email"] = int(
+            (time.perf_counter() - ts) * 1000
+        )
+
+        ts = time.perf_counter()
+        address_entities = self.address.scan(text)
+        timing_ms_by_stage["detect_address"] = int((time.perf_counter() - ts) * 1000)
+
+        ts = time.perf_counter()
         sec = self.security.scan(text)
         timing_ms_by_stage["detect_security"] = int((time.perf_counter() - ts) * 1000)
 
@@ -274,7 +288,7 @@ class ScanEngineLocal:
         if self._should_run_presidio(
             text=text,
             sec_decision=str(sec.decision),
-            regex_entities=regex_entities,
+            regex_entities=regex_entities + obfuscated_email_entities + address_entities,
             spoken_entities=spoken_entities,
         ):
             presidio_entities = self.presidio.scan(text)
@@ -283,16 +297,21 @@ class ScanEngineLocal:
         timing_ms_by_stage["detect_presidio"] = int((time.perf_counter() - ts) * 1000)
 
         ts = time.perf_counter()
-        for e in regex_entities + spoken_entities + presidio_entities:
+        all_entities = (
+            regex_entities
+            + spoken_entities
+            + obfuscated_email_entities
+            + address_entities
+            + presidio_entities
+        )
+        for e in all_entities:
             e.type = self.type_norm.normalize(getattr(e, "type", ""))
         timing_ms_by_stage["normalize_entities"] = int(
             (time.perf_counter() - ts) * 1000
         )
 
         ts = time.perf_counter()
-        entities = self.merger.merge(
-            regex_entities + spoken_entities + presidio_entities
-        )
+        entities = self.merger.merge(all_entities)
         timing_ms_by_stage["merge_entities"] = int((time.perf_counter() - ts) * 1000)
 
         ts = time.perf_counter()

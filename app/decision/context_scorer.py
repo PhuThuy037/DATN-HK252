@@ -61,7 +61,15 @@ class ContextScorer:
             for persona, kws in persona_keywords_override.items():
                 normalized = [str(kw).lower() for kw in (kws or []) if str(kw).strip()]
                 if normalized:
-                    active_keywords[persona] = normalized
+                    merged = active_keywords.get(persona, []) + normalized
+                    deduped: list[str] = []
+                    seen: set[str] = set()
+                    for keyword in merged:
+                        if keyword in seen:
+                            continue
+                        seen.add(keyword)
+                        deduped.append(keyword)
+                    active_keywords[persona] = deduped
 
         best_persona: Optional[str] = None
         best_hits: list[str] = []

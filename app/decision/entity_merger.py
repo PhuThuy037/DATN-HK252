@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, List, Optional
 
+from app.decision.entity_priority import entity_precedence_key
+
 
 def _score(e) -> float:
     return float(getattr(e, "score", 0.0) or 0.0)
@@ -17,7 +19,6 @@ def _end(e) -> int:
 
 
 def _etype(e) -> str:
-    # entity_type hoặc type
     return str(getattr(e, "entity_type", None) or getattr(e, "type", "") or "")
 
 
@@ -26,7 +27,6 @@ def _source(e) -> str:
 
 
 def _overlap_ratio(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
-    # IoU-lite: overlap / min(lenA, lenB)
     inter = max(0, min(a_end, b_end) - max(a_start, b_start))
     if inter <= 0:
         return 0.0
@@ -43,9 +43,7 @@ class MergeConfig:
 
 class EntityMerger:
     """
-    Merge entities từ nhiều detector (Local + Presidio) để:
-      - không duplicate (cùng type + overlap cao)
-      - giữ best candidate (score cao hơn, hoặc ưu tiên source)
+    Merge entities from multiple detectors and resolve strong overlaps.
     """
 
     def __init__(self, config: Optional[MergeConfig] = None):
@@ -56,38 +54,51 @@ class EntityMerger:
         if not items:
             return []
 
-        # sort theo start asc, end desc, score desc
         items.sort(key=lambda e: (_start(e), -_end(e), -_score(e)))
 
         merged: list = []
-        for e in items:
+        for entity in items:
             if not merged:
-                merged.append(e)
+                merged.append(entity)
                 continue
 
             last = merged[-1]
+            same_type = _etype(entity) == _etype(last) and _etype(entity) != ""
+            ratio = _overlap_ratio(
+                _start(entity),
+                _end(entity),
+                _start(last),
+                _end(last),
+            )
 
-            same_type = _etype(e) == _etype(last) and _etype(e) != ""
-            ratio = _overlap_ratio(_start(e), _end(e), _start(last), _end(last))
+            if ratio >= self.cfg.overlap_threshold:
+                merged[-1] = self._resolve_overlap(entity, last, same_type=same_type)
+                continue
 
-            if same_type and ratio >= self.cfg.overlap_threshold:
-                # chọn winner
-                e_score = _score(e)
-                last_score = _score(last)
-
-                if e_score > last_score:
-                    merged[-1] = e
-                elif e_score == last_score:
-                    # tie-breaker theo source preference
-                    merged[-1] = self._prefer(e, last)
-                # else giữ last
-            else:
-                merged.append(e)
+            merged.append(entity)
 
         return merged
 
+    def _resolve_overlap(self, a, b, *, same_type: bool):
+        if same_type:
+            score_a = _score(a)
+            score_b = _score(b)
+            if score_a > score_b:
+                return a
+            if score_b > score_a:
+                return b
+            return self._prefer(a, b)
+
+        key_a = entity_precedence_key(a)
+        key_b = entity_precedence_key(b)
+        if key_a > key_b:
+            return a
+        if key_b > key_a:
+            return b
+        return self._prefer(a, b)
+
     def _prefer(self, a, b):
-        order = {s: i for i, s in enumerate(self.cfg.prefer_source_order)}
-        ra = order.get(_source(a), 999)
-        rb = order.get(_source(b), 999)
-        return a if ra < rb else b
+        order = {source: index for index, source in enumerate(self.cfg.prefer_source_order)}
+        rank_a = order.get(_source(a), 999)
+        rank_b = order.get(_source(b), 999)
+        return a if rank_a < rank_b else b

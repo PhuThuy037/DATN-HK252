@@ -22,6 +22,7 @@ class EntityTypeNormalizer:
         "EMAIL": "EMAIL",
         "TAX_ID": "TAX_ID",
         "API_SECRET": "API_SECRET",
+        "ADDRESS": "ADDRESS",
     }
 
     def normalize(self, raw_type: str) -> str:
