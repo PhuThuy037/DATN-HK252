@@ -113,6 +113,81 @@ def main() -> None:
     created_rule = created_rule_body.get("data") or {}
     assert created_rule.get("rule_set_id") == first_id, ("rule_rule_set_id", created_rule)
     assert "company_id" not in created_rule, ("rule_no_company_id", created_rule)
+    assert created_rule.get("match_mode") == "strict_keyword", (
+        "rule_default_match_mode",
+        created_rule,
+    )
+
+    created_rule_id = str(created_rule.get("id") or "").strip()
+    assert created_rule_id, ("missing_rule_id", created_rule)
+
+    code, detail_body = request_json("GET", f"/rules/{created_rule_id}", token=owner_token)
+    assert code == 200, ("rule_detail", code, detail_body)
+    detail = detail_body.get("data") or {}
+    assert detail.get("match_mode") == "strict_keyword", ("detail_match_mode", detail)
+
+    code, explicit_rule_body = request_json(
+        "POST",
+        f"/rule-sets/{first_id}/rules",
+        {
+            "stable_key": f"rule_set.smoke.semantic.{now}",
+            "name": "Semantic-ready Rule",
+            "conditions": {"entity_type": "EMAIL"},
+            "action": "mask",
+            "severity": "medium",
+            "priority": 2,
+            "match_mode": "keyword_plus_semantic",
+            "rag_mode": "off",
+            "enabled": True,
+        },
+        owner_token,
+    )
+    assert code == 200, ("create_rule_explicit_match_mode", code, explicit_rule_body)
+    explicit_rule = explicit_rule_body.get("data") or {}
+    assert explicit_rule.get("match_mode") == "keyword_plus_semantic", (
+        "explicit_match_mode",
+        explicit_rule,
+    )
+
+    code, updated_rule_body = request_json(
+        "PATCH",
+        f"/rule-sets/{first_id}/rules/{created_rule_id}",
+        {"match_mode": "keyword_plus_semantic"},
+        owner_token,
+    )
+    assert code == 200, ("update_rule_match_mode", code, updated_rule_body)
+    updated_rule = updated_rule_body.get("data") or {}
+    assert updated_rule.get("match_mode") == "keyword_plus_semantic", (
+        "updated_match_mode",
+        updated_rule,
+    )
+
+    code, listed_rules_body = request_json(
+        "GET",
+        f"/rule-sets/{first_id}/rules",
+        token=owner_token,
+    )
+    assert code == 200, ("list_rules_after_match_mode_update", code, listed_rules_body)
+    listed_rules = listed_rules_body.get("data") or []
+    listed_row = next(
+        (row for row in listed_rules if str(row.get("id") or "") == created_rule_id),
+        None,
+    )
+    assert listed_row is not None, ("listed_rule_exists", listed_rules)
+    assert listed_row.get("match_mode") == "keyword_plus_semantic", (
+        "listed_match_mode",
+        listed_row,
+    )
+    explicit_listed_row = next(
+        (row for row in listed_rules if str(row.get("id") or "") == str(explicit_rule.get("id") or "")),
+        None,
+    )
+    assert explicit_listed_row is not None, ("listed_explicit_rule_exists", listed_rules)
+    assert explicit_listed_row.get("match_mode") == "keyword_plus_semantic", (
+        "listed_explicit_match_mode",
+        explicit_listed_row,
+    )
+
     # other user forbidden
     code, _ = request_json("GET", f"/rule-sets/{first_id}/rules", token=other_token)
     assert code == 403, ("other_forbidden", code)
