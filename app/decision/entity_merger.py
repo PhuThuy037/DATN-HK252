@@ -26,6 +26,18 @@ def _source(e) -> str:
     return str(getattr(e, "source", "") or "")
 
 
+def _metadata(e) -> dict:
+    data = getattr(e, "metadata", None)
+    return data if isinstance(data, dict) else {}
+
+
+def _context_level(e) -> int:
+    try:
+        return int(_metadata(e).get("context_level", 0) or 0)
+    except Exception:
+        return 0
+
+
 def _overlap_ratio(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
     inter = max(0, min(a_end, b_end) - max(a_start, b_start))
     if inter <= 0:
@@ -89,6 +101,12 @@ class EntityMerger:
                 return b
             return self._prefer(a, b)
 
+        ambiguous_pair = {_etype(a), _etype(b)}
+        if ambiguous_pair == {"PHONE", "TAX_ID"}:
+            resolved = self._resolve_phone_tax_overlap(a, b)
+            if resolved is not None:
+                return resolved
+
         key_a = entity_precedence_key(a)
         key_b = entity_precedence_key(b)
         if key_a > key_b:
@@ -96,6 +114,22 @@ class EntityMerger:
         if key_b > key_a:
             return b
         return self._prefer(a, b)
+
+    def _resolve_phone_tax_overlap(self, a, b):
+        score_a = _score(a)
+        score_b = _score(b)
+        if score_a > score_b:
+            return a
+        if score_b > score_a:
+            return b
+
+        context_a = _context_level(a)
+        context_b = _context_level(b)
+        if context_a > context_b:
+            return a
+        if context_b > context_a:
+            return b
+        return None
 
     def _prefer(self, a, b):
         order = {source: index for index, source in enumerate(self.cfg.prefer_source_order)}

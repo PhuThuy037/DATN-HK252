@@ -21,7 +21,11 @@ from app.rag.models.context_term import ContextTerm
 from app.rule.company_rule_override import CompanyRuleOverride
 from app.rule.engine import RuleEngine
 from app.rule.model import Rule
-from app.rule_embedding.service import upsert_rule_embedding
+from app.rule.rule_context_term_link import RuleContextTermLink
+from app.rule_embedding.service import (
+    load_linked_context_terms_by_rule_id,
+    upsert_rule_embedding,
+)
 from app.rule.schemas import (
     CompanyRuleCreateOut,
     CompanyRuleCreateIn,
@@ -48,6 +52,8 @@ _SUPPORTED_COMPANY_ACTIONS = {
     RuleAction.mask,
     RuleAction.block,
 }
+_RULE_CONTEXT_TERM_SOURCE_MANUAL = "manual"
+_RULE_CONTEXT_TERM_SOURCE_AUTO = "auto"
 _EMBEDDING_RELEVANT_RULE_FIELDS = {
     "name",
     "description",
@@ -56,6 +62,7 @@ _EMBEDDING_RELEVANT_RULE_FIELDS = {
     "action",
     "severity",
     "priority",
+    "match_mode",
     "rag_mode",
 }
 
@@ -459,6 +466,7 @@ def _to_rule_out(
         action=rule.action,
         severity=rule.severity,
         priority=rule.priority,
+        match_mode=rule.match_mode,
         rag_mode=rule.rag_mode,
         enabled=rule.enabled,
         created_by=rule.created_by,
@@ -487,6 +495,7 @@ def _to_global_rule_out_with_enabled(
         action=rule.action,
         severity=rule.severity,
         priority=rule.priority,
+        match_mode=rule.match_mode,
         rag_mode=rule.rag_mode,
         enabled=bool(enabled),
         created_by=rule.created_by,
@@ -518,6 +527,7 @@ def _to_personal_rule_out(
         action=rule.action,
         severity=rule.severity,
         priority=rule.priority,
+        match_mode=rule.match_mode,
         rag_mode=rule.rag_mode,
         enabled=effective_enabled,
         default_enabled=bool(rule.enabled),
@@ -640,6 +650,78 @@ def _build_auto_context_terms_from_conditions(
     ]
 
 
+def _context_term_identity_from_input(
+    row: RuleContextTermIn,
+) -> tuple[str, str, str]:
+    return (
+        str(row.entity_type or "").strip().upper(),
+        str(row.term or "").strip().lower(),
+        str(row.lang or "").strip().lower(),
+    )
+
+
+def _context_term_identity_from_model(
+    row: ContextTerm,
+) -> tuple[str, str, str]:
+    return (
+        str(row.entity_type or "").strip().upper(),
+        str(row.term or "").strip().lower(),
+        str(row.lang or "").strip().lower(),
+    )
+
+
+def _exclude_context_terms_by_identity(
+    *,
+    context_terms: list[RuleContextTermIn],
+    excluded_keys: set[tuple[str, str, str]],
+) -> list[RuleContextTermIn]:
+    if not context_terms or not excluded_keys:
+        return list(context_terms or [])
+
+    out: list[RuleContextTermIn] = []
+    for row in context_terms:
+        if _context_term_identity_from_input(row) in excluded_keys:
+            continue
+        out.append(row)
+    return out
+
+
+def _list_linked_context_terms_for_rule(
+    *,
+    session: Session,
+    rule_id: UUID,
+    source: str | None = None,
+    limit: int = 200,
+) -> list[ContextTerm]:
+    rows = load_linked_context_terms_by_rule_id(
+        session=session,
+        rule_ids=[rule_id],
+    ).get(rule_id, [])
+    if source is None:
+        return rows[: max(1, int(limit))]
+
+    normalized_source = str(source or "").strip().lower()
+    filtered_rows = list(
+        session.exec(
+            select(RuleContextTermLink, ContextTerm)
+            .join(ContextTerm, ContextTerm.id == RuleContextTermLink.context_term_id)
+            .where(RuleContextTermLink.rule_id == rule_id)
+            .where(RuleContextTermLink.source == normalized_source)
+            .where(ContextTerm.enabled.is_(True))
+            .order_by(RuleContextTermLink.created_at.desc(), ContextTerm.created_at.desc())
+            .limit(max(1, int(limit)))
+        ).all()
+    )
+    out: list[ContextTerm] = []
+    seen: set[UUID] = set()
+    for _link_row, context_term in filtered_rows:
+        if context_term.id in seen:
+            continue
+        seen.add(context_term.id)
+        out.append(context_term)
+    return out
+
+
 def _list_context_terms_for_rule(
     *,
     session: Session,
@@ -648,24 +730,11 @@ def _list_context_terms_for_rule(
 ) -> list[RuleContextTermOut]:
     if rule.company_id is None:
         return []
-
-    entity_types = _extract_entity_types_from_conditions(rule.conditions)
-    keywords = _extract_context_keyword_terms_from_conditions(rule.conditions)
-    if not entity_types and not keywords:
-        return []
-
-    stmt = (
-        select(ContextTerm)
-        .where(ContextTerm.company_id == rule.company_id)
-        .order_by(ContextTerm.created_at.desc())
-        .limit(max(1, int(limit)))
+    rows = _list_linked_context_terms_for_rule(
+        session=session,
+        rule_id=rule.id,
+        limit=limit,
     )
-    if entity_types:
-        stmt = stmt.where(ContextTerm.entity_type.in_(sorted(entity_types)))
-    if keywords:
-        stmt = stmt.where(ContextTerm.term.in_(sorted(keywords)))
-
-    rows = list(session.exec(stmt).all())
     return [_to_rule_context_term_out(row=r) for r in rows]
 
 
@@ -682,10 +751,36 @@ def _snapshot_rule(*, rule: Rule) -> dict[str, Any]:
         "action": rule.action.value,
         "severity": rule.severity.value,
         "priority": int(rule.priority),
+        "match_mode": rule.match_mode.value,
         "rag_mode": rule.rag_mode.value,
         "enabled": bool(rule.enabled),
         "is_deleted": bool(getattr(rule, "is_deleted", False)),
     }
+
+
+def _snapshot_rule_with_linked_context_terms(
+    *,
+    session: Session,
+    rule: Rule,
+) -> dict[str, Any]:
+    snapshot = _snapshot_rule(rule=rule)
+    snapshot["context_terms"] = [
+        {
+            "id": str(row.id),
+            "entity_type": str(row.entity_type),
+            "term": str(row.term),
+            "lang": str(row.lang),
+            "weight": float(row.weight),
+            "window_1": int(row.window_1),
+            "window_2": int(row.window_2),
+            "enabled": bool(row.enabled),
+        }
+        for row in _list_linked_context_terms_for_rule(
+            session=session,
+            rule_id=rule.id,
+        )
+    ]
+    return snapshot
 
 
 def _snapshot_company_override(*, company_id: UUID, stable_key: str, enabled: bool) -> dict[str, Any]:
@@ -811,6 +906,39 @@ def _upsert_company_context_terms(
     return out_ids
 
 
+def _sync_rule_context_term_links(
+    *,
+    session: Session,
+    rule_id: UUID,
+    context_term_ids: list[UUID],
+    source: str,
+) -> None:
+    normalized_source = str(source or "").strip().lower()
+    target_ids = {UUID(str(x)) for x in list(context_term_ids or []) if str(x)}
+
+    existing_rows = list(
+        session.exec(
+            select(RuleContextTermLink)
+            .where(RuleContextTermLink.rule_id == rule_id)
+            .where(RuleContextTermLink.source == normalized_source)
+        ).all()
+    )
+    existing_ids = {row.context_term_id for row in existing_rows}
+
+    for row in existing_rows:
+        if row.context_term_id not in target_ids:
+            session.delete(row)
+
+    for context_term_id in sorted(target_ids - existing_ids, key=str):
+        session.add(
+            RuleContextTermLink(
+                rule_id=rule_id,
+                context_term_id=context_term_id,
+                source=normalized_source,
+            )
+        )
+
+
 def _load_company_rule_by_stable_key(
     *, session: Session, company_id: UUID, stable_key: str
 ) -> Rule | None:
@@ -911,6 +1039,7 @@ def get_rule_detail(
         action=row.action,
         severity=row.severity,
         priority=int(row.priority),
+        match_mode=row.match_mode,
         rag_mode=row.rag_mode,
         enabled=bool(row.enabled),
         context_terms=context_terms,
@@ -1147,11 +1276,21 @@ def create_company_custom_rule(
             field="stable_key",
         )
 
+    manual_context_terms = _normalize_context_terms(
+        context_terms=list(context_terms or [])
+    )
+    manual_context_term_keys = {
+        _context_term_identity_from_input(row) for row in manual_context_terms
+    }
     auto_context_terms = _build_auto_context_terms_from_conditions(
         conditions=payload.conditions
     )
-    normalized_context_terms = _normalize_context_terms(
-        context_terms=[*(context_terms or []), *auto_context_terms]
+    normalized_auto_context_terms = _normalize_context_terms(
+        context_terms=auto_context_terms
+    )
+    normalized_auto_context_terms = _exclude_context_terms_by_identity(
+        context_terms=normalized_auto_context_terms,
+        excluded_keys=manual_context_term_keys,
     )
 
     row = Rule(
@@ -1165,6 +1304,7 @@ def create_company_custom_rule(
         action=payload.action,
         severity=payload.severity,
         priority=priority,
+        match_mode=payload.match_mode,
         rag_mode=payload.rag_mode,
         enabled=bool(payload.enabled),
         is_deleted=False,
@@ -1174,10 +1314,30 @@ def create_company_custom_rule(
     session.flush()
     upsert_rule_embedding(session=session, rule=row)
 
-    context_term_ids = _upsert_company_context_terms(
+    manual_context_term_ids = _upsert_company_context_terms(
         session=session,
         company_id=company_id,
-        context_terms=normalized_context_terms,
+        context_terms=manual_context_terms,
+    )
+    auto_context_term_ids = _upsert_company_context_terms(
+        session=session,
+        company_id=company_id,
+        context_terms=normalized_auto_context_terms,
+    )
+    _sync_rule_context_term_links(
+        session=session,
+        rule_id=row.id,
+        context_term_ids=manual_context_term_ids,
+        source=_RULE_CONTEXT_TERM_SOURCE_MANUAL,
+    )
+    _sync_rule_context_term_links(
+        session=session,
+        rule_id=row.id,
+        context_term_ids=auto_context_term_ids,
+        source=_RULE_CONTEXT_TERM_SOURCE_AUTO,
+    )
+    context_term_ids = list(
+        dict.fromkeys([*manual_context_term_ids, *auto_context_term_ids])
     )
     _append_rule_change_log(
         session=session,
@@ -1195,11 +1355,15 @@ def create_company_custom_rule(
             "action",
             "severity",
             "priority",
+            "match_mode",
             "rag_mode",
             "enabled",
         ],
         before_json=None,
-        after_json=_snapshot_rule(rule=row),
+        after_json=_snapshot_rule_with_linked_context_terms(
+            session=session,
+            rule=row,
+        ),
     )
     session.commit()
     session.refresh(row)
@@ -1219,6 +1383,7 @@ def update_company_rule(
     rule_id: UUID,
     actor_user_id: UUID,
     payload: CompanyRuleUpdateIn,
+    context_terms: list[RuleContextTermIn] | None = None,
 ) -> CompanyRuleOut:
     _load_company_or_404(session=session, company_id=company_id)
     _require_company_admin(
@@ -1234,11 +1399,15 @@ def update_company_rule(
     global_keys = _global_stable_keys(session=session)
     origin = _classify_origin(rule=row, global_keys=global_keys)
     changed_fields = set(payload.model_fields_set)
+    manual_context_terms_provided = context_terms is not None
 
-    if not changed_fields:
+    if not changed_fields and not manual_context_terms_provided:
         return _to_rule_out(rule=row, origin=origin)
 
-    before_json = _snapshot_rule(rule=row)
+    before_json = _snapshot_rule_with_linked_context_terms(
+        session=session,
+        rule=row,
+    )
 
     if origin == RuleOrigin.personal_override:
         allowed_fields = {"enabled"}
@@ -1274,6 +1443,8 @@ def update_company_rule(
         row.severity = payload.severity
     if "priority" in changed_fields and payload.priority is not None:
         row.priority = _validate_priority(value=int(payload.priority))
+    if "match_mode" in changed_fields and payload.match_mode is not None:
+        row.match_mode = payload.match_mode
     if "rag_mode" in changed_fields and payload.rag_mode is not None:
         row.rag_mode = payload.rag_mode
     if "enabled" in changed_fields and payload.enabled is not None:
@@ -1290,25 +1461,75 @@ def update_company_rule(
         _validate_company_action(action=payload.action)
         row.action = payload.action
 
-    after_json = _snapshot_rule(rule=row)
+    manual_context_term_ids: list[UUID] = []
+    manual_context_terms_normalized = (
+        _normalize_context_terms(context_terms=context_terms)
+        if manual_context_terms_provided
+        else None
+    )
+    if manual_context_terms_provided:
+        manual_context_term_keys = {
+            _context_term_identity_from_input(term)
+            for term in list(manual_context_terms_normalized or [])
+        }
+    else:
+        existing_manual_terms = _list_linked_context_terms_for_rule(
+            session=session,
+            rule_id=row.id,
+            source=_RULE_CONTEXT_TERM_SOURCE_MANUAL,
+        )
+        manual_context_term_keys = {
+            _context_term_identity_from_model(term) for term in existing_manual_terms
+        }
 
     auto_context_terms: list[RuleContextTermIn] = []
-    if conditions_changed:
+    auto_context_term_ids: list[UUID] = []
+    should_resync_auto_context_terms = conditions_changed or manual_context_terms_provided
+    if should_resync_auto_context_terms:
         auto_context_terms = _normalize_context_terms(
             context_terms=_build_auto_context_terms_from_conditions(
                 conditions=row.conditions,
             )
         )
+        auto_context_terms = _exclude_context_terms_by_identity(
+            context_terms=auto_context_terms,
+            excluded_keys=manual_context_term_keys,
+        )
 
     session.add(row)
+    if manual_context_terms_provided:
+        manual_context_term_ids = _upsert_company_context_terms(
+            session=session,
+            company_id=company_id,
+            context_terms=list(manual_context_terms_normalized or []),
+        )
+        _sync_rule_context_term_links(
+            session=session,
+            rule_id=row.id,
+            context_term_ids=manual_context_term_ids,
+            source=_RULE_CONTEXT_TERM_SOURCE_MANUAL,
+        )
     if auto_context_terms:
-        _upsert_company_context_terms(
+        auto_context_term_ids = _upsert_company_context_terms(
             session=session,
             company_id=company_id,
             context_terms=auto_context_terms,
         )
+    if should_resync_auto_context_terms:
+        _sync_rule_context_term_links(
+            session=session,
+            rule_id=row.id,
+            context_term_ids=auto_context_term_ids,
+            source=_RULE_CONTEXT_TERM_SOURCE_AUTO,
+        )
     if changed_fields & _EMBEDDING_RELEVANT_RULE_FIELDS:
         upsert_rule_embedding(session=session, rule=row)
+    if manual_context_terms_provided:
+        changed_fields.add("context_terms")
+    after_json = _snapshot_rule_with_linked_context_terms(
+        session=session,
+        rule=row,
+    )
     _append_rule_change_log(
         session=session,
         company_id=company_id,

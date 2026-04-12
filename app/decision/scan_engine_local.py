@@ -9,7 +9,7 @@ from uuid import UUID
 
 from sqlmodel import Session
 
-from app.common.enums import RuleScope
+from app.common.enums import RuleAction, RuleScope
 from app.decision.context_scorer import ContextScorer
 from app.decision.context_term_runtime import load_context_runtime_overrides
 from app.decision.decision_resolver import DecisionResolver
@@ -23,7 +23,8 @@ from app.decision.entity_merger import EntityMerger, MergeConfig
 from app.decision.entity_type_normalizer import EntityTypeNormalizer
 from app.decision.rule_layering import compact_matches
 from app.rag.rag_verifier import RagVerifier
-from app.rule.engine import RuleEngine
+from app.rule.engine import RuleEngine, RuleMatch
+from app.rule_embedding.service import evaluate_semantic_assist_candidates
 
 
 class ScanEngineLocal:
@@ -31,6 +32,44 @@ class ScanEngineLocal:
     _RAG_MASK_KEY = "global.security.rag.mask"
     _RAG_KEY_PREFIX = "global.security.rag."
     _SIMPLE_PII_TYPES = {"PHONE", "EMAIL", "TAX_ID", "CCCD", "CREDIT_CARD", "ADDRESS"}
+    _SEMANTIC_VERIFY_MIN_CONFIDENCE = 0.40
+    _SEMANTIC_VERIFY_ENFORCE_MIN_CONFIDENCE = 0.45
+
+    def _default_semantic_assist_signal(self) -> dict[str, Any]:
+        return {
+            "called": False,
+            "candidate_rule_keys": [],
+            "supported_rule_keys": [],
+            "top_confidence": 0.0,
+            "mode": "log_only",
+        }
+
+    def _default_semantic_verify_signal(self) -> dict[str, Any]:
+        return {
+            "called": False,
+            "rule_key": "",
+            "decision": "",
+            "confidence": 0.0,
+            "reason": "",
+            "semantic_confidence": 0.0,
+        }
+
+    def _default_semantic_verify_enforcement_state(self) -> tuple[bool, str, str]:
+        return (False, "", "")
+
+    def _find_runtime_rule_by_stable_key(
+        self,
+        *,
+        runtime_rules: list[Any],
+        stable_key: str,
+    ) -> Any | None:
+        normalized_key = str(stable_key or "").strip().lower()
+        if not normalized_key:
+            return None
+        for row in runtime_rules:
+            if str(getattr(row, "stable_key", "") or "").strip().lower() == normalized_key:
+                return row
+        return None
 
     def __init__(self, *, context_yaml_path: str):
         self.local = LocalRegexDetector()
@@ -320,6 +359,13 @@ class ScanEngineLocal:
             persona_keywords_override=overrides.persona_keywords,
         )
         signals = self.context.to_signals_dict(ctx)
+        signals["semantic_assist"] = self._default_semantic_assist_signal()
+        signals["semantic_verify"] = self._default_semantic_verify_signal()
+        (
+            signals["semantic_verify_enforced"],
+            signals["semantic_verify_enforced_rule_key"],
+            signals["semantic_verify_enforced_reason"],
+        ) = self._default_semantic_verify_enforcement_state()
         matched_exact_terms = self._match_exact_terms_in_text(
             text=text,
             exact_terms=overrides.exact_terms,
@@ -370,6 +416,13 @@ class ScanEngineLocal:
 
         if self._action_name(phase1_decision.final_action) != "allow":
             signals.pop("rag", None)
+            signals["semantic_assist"] = self._default_semantic_assist_signal()
+            signals["semantic_verify"] = self._default_semantic_verify_signal()
+            (
+                signals["semantic_verify_enforced"],
+                signals["semantic_verify_enforced_rule_key"],
+                signals["semantic_verify_enforced_reason"],
+            ) = self._default_semantic_verify_enforcement_state()
             ts = time.perf_counter()
             phase1_matches = compact_matches(
                 phase1_matches,
@@ -378,6 +431,8 @@ class ScanEngineLocal:
             timing_ms_by_stage["compact_matches"] = int(
                 (time.perf_counter() - ts) * 1000
             )
+            timing_ms_by_stage["semantic_assist"] = 0
+            timing_ms_by_stage["semantic_verify"] = 0
             timing_ms_by_stage["rag"] = 0
             timing_ms_by_stage["rule_eval"] = timing_ms_by_stage["rule_eval_phase1"]
             timing_ms_by_stage["resolve"] = timing_ms_by_stage["resolve_phase1"]
@@ -397,6 +452,135 @@ class ScanEngineLocal:
                 "signals": signals,
                 "matches": phase1_matches,
                 "final_action": phase1_decision.final_action,
+                "latency_ms": latency_ms,
+                "timing_ms_by_stage": timing_ms_by_stage,
+                "risk_score": risk_score,
+                "ambiguous": False,
+            }
+
+        ts = time.perf_counter()
+        runtime_rules = self.rule_engine.load_rules(
+            session=session,
+            company_id=company_id,
+            user_id=user_id,
+        )
+        semantic_runtime_rule_ids = [
+            row.rule_id
+            for row in runtime_rules
+            if not self._is_rag_rule_key(row.stable_key)
+        ]
+        signals["semantic_assist"] = evaluate_semantic_assist_candidates(
+            session=session,
+            query=text,
+            runtime_rule_ids=semantic_runtime_rule_ids,
+            matched_context_keywords=list(signals.get("context_keywords") or []),
+        )
+        timing_ms_by_stage["semantic_assist"] = int((time.perf_counter() - ts) * 1000)
+
+        ts = time.perf_counter()
+        semantic_assist_signal = dict(signals.get("semantic_assist") or {})
+        supported_rule_keys = list(semantic_assist_signal.get("supported_rule_keys") or [])
+        semantic_top_confidence = float(semantic_assist_signal.get("top_confidence") or 0.0)
+        top_supported_rule_key = str(supported_rule_keys[0] or "").strip() if supported_rule_keys else ""
+        if (
+            top_supported_rule_key
+            and semantic_top_confidence >= float(self._SEMANTIC_VERIFY_MIN_CONFIDENCE)
+        ):
+            verify_out = await self.rag.verify_semantic_support(
+                session=session,
+                user_text=text,
+                runtime_rule_ids=semantic_runtime_rule_ids,
+                supported_rule_key=top_supported_rule_key,
+                matched_context_keywords=list(signals.get("context_keywords") or []),
+                semantic_confidence=semantic_top_confidence,
+                message_id=None,
+            )
+            signals["semantic_verify"] = {
+                "called": bool(getattr(verify_out, "called", False)),
+                "rule_key": str(getattr(verify_out, "rule_key", "") or ""),
+                "decision": str(getattr(verify_out, "decision", "") or ""),
+                "confidence": float(getattr(verify_out, "confidence", 0.0) or 0.0),
+                "reason": str(getattr(verify_out, "reason", "") or ""),
+                "semantic_confidence": float(
+                    getattr(verify_out, "semantic_confidence", 0.0) or 0.0
+                ),
+            }
+        else:
+            signals["semantic_verify"] = self._default_semantic_verify_signal()
+            (
+                signals["semantic_verify_enforced"],
+                signals["semantic_verify_enforced_rule_key"],
+                signals["semantic_verify_enforced_reason"],
+            ) = self._default_semantic_verify_enforcement_state()
+        timing_ms_by_stage["semantic_verify"] = int((time.perf_counter() - ts) * 1000)
+
+        semantic_verify_signal = dict(signals.get("semantic_verify") or {})
+        semantic_verify_rule_key = str(semantic_verify_signal.get("rule_key") or "").strip()
+        semantic_verify_decision = str(semantic_verify_signal.get("decision") or "").strip().upper()
+        semantic_verify_confidence = float(semantic_verify_signal.get("confidence") or 0.0)
+        semantic_verify_runtime_rule = self._find_runtime_rule_by_stable_key(
+            runtime_rules=runtime_rules,
+            stable_key=semantic_verify_rule_key,
+        )
+        enforce_reason = ""
+        if semantic_verify_signal.get("called") is not True:
+            enforce_reason = "verify_not_called"
+        elif semantic_verify_runtime_rule is None:
+            enforce_reason = "eligible_rule_missing"
+        elif self._action_name(getattr(semantic_verify_runtime_rule, "action", None)) != "block":
+            enforce_reason = "rule_action_not_block"
+        elif semantic_verify_decision != "PASS":
+            enforce_reason = f"verify_{semantic_verify_decision.lower() or 'not_pass'}"
+        elif semantic_verify_confidence < float(self._SEMANTIC_VERIFY_ENFORCE_MIN_CONFIDENCE):
+            enforce_reason = "verify_confidence_below_threshold"
+        else:
+            enforce_reason = "verify_pass_confident"
+        should_enforce_semantic_verify = bool(
+            semantic_verify_signal.get("called") is True
+            and semantic_verify_decision == "PASS"
+            and semantic_verify_confidence
+            >= float(self._SEMANTIC_VERIFY_ENFORCE_MIN_CONFIDENCE)
+            and semantic_verify_runtime_rule is not None
+            and self._action_name(getattr(semantic_verify_runtime_rule, "action", None)) == "block"
+        )
+        signals["semantic_verify_enforced"] = should_enforce_semantic_verify
+        signals["semantic_verify_enforced_rule_key"] = (
+            semantic_verify_rule_key if should_enforce_semantic_verify else ""
+        )
+        signals["semantic_verify_enforced_reason"] = enforce_reason
+
+        if should_enforce_semantic_verify:
+            signals.pop("rag", None)
+            enforced_match = RuleMatch(
+                rule_id=semantic_verify_runtime_rule.rule_id,
+                stable_key=str(getattr(semantic_verify_runtime_rule, "stable_key", "") or ""),
+                name=str(getattr(semantic_verify_runtime_rule, "name", "") or ""),
+                action=RuleAction.block,
+                priority=int(getattr(semantic_verify_runtime_rule, "priority", 0) or 0),
+            )
+            enforced_matches = compact_matches(
+                [enforced_match],
+                final_action=self._action_name(RuleAction.block),
+            )
+            timing_ms_by_stage["rag"] = 0
+            timing_ms_by_stage["rule_eval"] = timing_ms_by_stage["rule_eval_phase1"]
+            timing_ms_by_stage["resolve"] = timing_ms_by_stage["resolve_phase1"]
+
+            latency_ms = int((time.perf_counter() - t0) * 1000)
+            timing_ms_by_stage["total"] = latency_ms
+
+            max_entity = max(
+                [float(getattr(e, "score", 0.0)) for e in entities], default=0.0
+            )
+            risk_score = min(
+                1.0, max_entity + float(signals.get("risk_boost", 0.0) or 0.0)
+            )
+
+            return {
+                "entities": entities,
+                "signals": signals,
+                "matches": enforced_matches,
+                "final_action": RuleAction.block,
                 "latency_ms": latency_ms,
                 "timing_ms_by_stage": timing_ms_by_stage,
                 "risk_score": risk_score,
@@ -491,4 +675,3 @@ class ScanEngineLocal:
             "risk_score": risk_score,
             "ambiguous": should_call_rag,
         }
-

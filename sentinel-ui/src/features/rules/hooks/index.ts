@@ -1,6 +1,7 @@
 export * from "@/features/rules/hooks/useMyRuleSets";
 export * from "@/features/rules/hooks/useCreateRuleSet";
 export * from "@/features/rules/hooks/useRules";
+export * from "@/features/rules/hooks/useRuleDetail";
 export * from "@/features/rules/hooks/useEffectiveRules";
 export * from "@/features/rules/hooks/useRuleChangeLogs";
 export * from "@/features/rules/hooks/useCreateRule";

@@ -1,3 +1,5 @@
+export type RuleMatchMode = "strict_keyword" | "keyword_plus_semantic";
+
 export type Rule = {
   id: string;
   rule_set_id?: string | null;
@@ -8,6 +10,7 @@ export type Rule = {
   action: string;
   severity?: string | null;
   priority?: number | null;
+  match_mode?: RuleMatchMode | null;
   rag_mode?: string | null;
   enabled: boolean;
   origin?: string | null;
@@ -15,6 +18,7 @@ export type Rule = {
   can_soft_delete?: boolean;
   conditions?: Record<string, unknown> | null;
   conditions_version?: number | null;
+  context_terms?: RuleContextTerm[] | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -37,7 +41,7 @@ export type PaginatedResult<T> = {
 };
 
 export type RuleContextTerm = {
-  id: string;
+  id?: string;
   entity_type: string;
   term: string;
   lang: string;
@@ -45,7 +49,7 @@ export type RuleContextTerm = {
   window_1: number;
   window_2: number;
   enabled: boolean;
-  created_at: string;
+  created_at?: string;
 };
 
 export type RuleDetail = {
@@ -58,6 +62,7 @@ export type RuleDetail = {
   action: string;
   severity: string;
   priority: number;
+  match_mode: RuleMatchMode;
   rag_mode: string;
   enabled: boolean;
   context_terms: RuleContextTerm[];
@@ -129,8 +134,14 @@ export type CreateRuleRequest = {
   action?: string;
   severity?: string;
   priority?: number;
+  match_mode?: RuleMatchMode;
   rag_mode?: string;
   enabled?: boolean;
+};
+
+export type CreateRuleWithContextRequest = {
+  rule: CreateRuleRequest;
+  context_terms: RuleContextTerm[];
 };
 
 export type UpdateRuleRequest = {
@@ -141,8 +152,14 @@ export type UpdateRuleRequest = {
   action?: string;
   severity?: string;
   priority?: number;
+  match_mode?: RuleMatchMode;
   rag_mode?: string;
   enabled?: boolean;
+};
+
+export type UpdateRuleWithContextRequest = {
+  rule: UpdateRuleRequest;
+  context_terms?: RuleContextTerm[];
 };
 
 export type ToggleGlobalRuleRequest = {

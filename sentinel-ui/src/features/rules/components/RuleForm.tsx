@@ -17,7 +17,14 @@ import { InlineErrorText } from "@/shared/ui/inline-error-text";
 import { Label } from "@/shared/ui/label";
 import { TechnicalDetailsAccordion } from "@/shared/ui/technical-details-accordion";
 import { Textarea } from "@/shared/ui/textarea";
-import type { CreateRuleRequest, Rule, UpdateRuleRequest } from "@/features/rules/types";
+import type {
+  CreateRuleRequest,
+  CreateRuleWithContextRequest,
+  Rule,
+  RuleContextTerm,
+  UpdateRuleRequest,
+  UpdateRuleWithContextRequest,
+} from "@/features/rules/types";
 
 function validateConditionsNode(node: unknown): { ok: boolean; message?: string } {
   if (!node || typeof node !== "object" || Array.isArray(node)) {
@@ -150,8 +157,10 @@ const ruleFormSchema = z.object({
     .min(-100000, "Priority must be between -100000 and 100000")
     .max(100000, "Priority must be between -100000 and 100000")
     .default(0),
+  match_mode: z.enum(["strict_keyword", "keyword_plus_semantic"]),
   rag_mode: z.enum(["off", "explain", "verify"]),
   enabled: z.boolean().default(true),
+  linked_context_terms_text: z.string().default(""),
 });
 
 type RuleFormValues = z.infer<typeof ruleFormSchema>;
@@ -159,6 +168,7 @@ type RuleFormValues = z.infer<typeof ruleFormSchema>;
 const scopeOptions = ["chat"] as const;
 const actionOptions = ["allow", "mask", "block"] as const;
 const severityOptions = ["low", "medium", "high"] as const;
+const matchModeOptions = ["strict_keyword", "keyword_plus_semantic"] as const;
 const ragModeOptions = ["off", "explain", "verify"] as const;
 const entityTypeOptions = [
   "CUSTOM_SECRET",
@@ -195,7 +205,13 @@ type RuleFormProps = {
   formId?: string;
   hideActions?: boolean;
   onCancel: () => void;
-  onSubmit: (payload: CreateRuleRequest | UpdateRuleRequest) => Promise<void> | void;
+  onSubmit: (
+    payload:
+      | CreateRuleRequest
+      | CreateRuleWithContextRequest
+      | UpdateRuleRequest
+      | UpdateRuleWithContextRequest
+  ) => Promise<void> | void;
 };
 
 type BuilderLogic = "any" | "all";
@@ -210,7 +226,8 @@ type BuilderCondition = {
   keywordsText: string;
 };
 
-const STABLE_KEY_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
+const STABLE_KEY_PATTERN = /^[a-z0-9]+(?:[-._][a-z0-9]+)*$/;
+const STABLE_KEY_HTML_PATTERN = "^[a-z0-9]+(?:[-._][a-z0-9]+)*$";
 const MIN_PRIORITY = -100000;
 const MAX_PRIORITY = 100000;
 
@@ -239,11 +256,17 @@ function mapFieldPathToFormKey(path: string): RuleFieldErrorKey | null {
   if (normalized.includes("priority")) {
     return "priority";
   }
+  if (normalized.includes("match_mode")) {
+    return "match_mode";
+  }
   if (normalized.includes("rag_mode")) {
     return "rag_mode";
   }
   if (normalized.includes("enabled")) {
     return "enabled";
+  }
+  if (normalized.includes("context_terms")) {
+    return "linked_context_terms_text";
   }
   if (normalized.includes("condition")) {
     return "conditions";
@@ -339,8 +362,10 @@ function extractRuleSubmitError(error: unknown): {
     action: "Action is invalid",
     severity: "Severity is invalid",
     priority: "Priority is invalid",
+    match_mode: "Match mode is invalid",
     rag_mode: "RAG mode is invalid",
     enabled: "Enabled value is invalid",
+    linked_context_terms_text: "Linked context terms are invalid",
     conditions: "Conditions are invalid",
   };
 
@@ -409,6 +434,50 @@ function parseJsonObject(value: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+function ruleContextTermsToTextareaValue(contextTerms: RuleContextTerm[] | null | undefined): string {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const row of contextTerms ?? []) {
+    const value = String(row.term ?? "").trim();
+    if (!value) {
+      continue;
+    }
+    const normalized = value.toLowerCase();
+    if (seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    lines.push(value);
+  }
+  return lines.join("\n");
+}
+
+function parseLinkedContextTerms(value: string): RuleContextTerm[] {
+  const seen = new Set<string>();
+  const out: RuleContextTerm[] = [];
+  for (const rawLine of value.split("\n")) {
+    const term = rawLine.trim();
+    if (!term) {
+      continue;
+    }
+    const normalized = term.toLowerCase();
+    if (seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    out.push({
+      entity_type: "SEM_TOPIC",
+      term,
+      lang: "vi",
+      weight: 1,
+      window_1: 60,
+      window_2: 20,
+      enabled: true,
+    });
+  }
+  return out;
 }
 
 function makeConditionId() {
@@ -654,8 +723,14 @@ export function RuleForm({
       action: getEnumValue(actionOptions, initialRule?.action, "mask"),
       severity: getEnumValue(severityOptions, initialRule?.severity, "medium"),
       priority: initialRule?.priority ?? 0,
+      match_mode: getEnumValue(
+        matchModeOptions,
+        initialRule?.match_mode,
+        "strict_keyword"
+      ),
       rag_mode: getEnumValue(ragModeOptions, initialRule?.rag_mode, "off"),
       enabled: initialRule?.enabled ?? true,
+      linked_context_terms_text: ruleContextTermsToTextareaValue(initialRule?.context_terms),
     }),
     [initialRule]
   );
@@ -930,12 +1005,17 @@ export function RuleForm({
         action: values.action,
         severity: values.severity,
         priority: values.priority,
+        match_mode: values.match_mode,
         rag_mode: values.rag_mode,
         enabled: values.enabled,
         conditions,
       };
+      const linkedContextTerms = parseLinkedContextTerms(values.linked_context_terms_text);
       try {
-        await onSubmit(payload);
+        await onSubmit({
+          rule: payload,
+          context_terms: linkedContextTerms,
+        });
       } catch (error) {
         const parsedError = extractRuleSubmitError(error);
         for (const [key, message] of Object.entries(parsedError.fieldErrors)) {
@@ -960,12 +1040,17 @@ export function RuleForm({
       action: values.action,
       severity: values.severity,
       priority: values.priority,
+      match_mode: values.match_mode,
       rag_mode: values.rag_mode,
       enabled: values.enabled,
       conditions,
     };
+    const linkedContextTerms = parseLinkedContextTerms(values.linked_context_terms_text);
     try {
-      await onSubmit(payload);
+      await onSubmit({
+        rule: payload,
+        context_terms: linkedContextTerms,
+      });
     } catch (error) {
       const parsedError = extractRuleSubmitError(error);
       for (const [key, message] of Object.entries(parsedError.fieldErrors)) {
@@ -1015,6 +1100,26 @@ export function RuleForm({
         <Label htmlFor="description">Description</Label>
         <Textarea id="description" maxLength={2000} rows={2} {...form.register("description")} />
         <FieldHelpText>Explain what should happen and why this rule exists.</FieldHelpText>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="linked_context_terms_text">Linked context terms</Label>
+        <Textarea
+          className={cn(
+            "min-h-[120px]",
+            form.formState.errors.linked_context_terms_text &&
+              "border-destructive focus-visible:ring-destructive"
+          )}
+          id="linked_context_terms_text"
+          placeholder={"tang muc thu\ndong cao hon\ndieu chinh hoc phi"}
+          {...form.register("linked_context_terms_text")}
+        />
+        <FieldHelpText>
+          Optional. Add one semantic support term per line to help this rule capture near-meaning phrasing.
+        </FieldHelpText>
+        {form.formState.errors.linked_context_terms_text ? (
+          <InlineErrorText>{form.formState.errors.linked_context_terms_text.message}</InlineErrorText>
+        ) : null}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -1087,6 +1192,31 @@ export function RuleForm({
         </div>
 
         <div className="space-y-1.5">
+          <Label htmlFor="match_mode" required>
+            Match mode
+          </Label>
+          <select
+            className={cn(
+              appSelectControlClassName,
+              form.formState.errors.match_mode && "border-destructive"
+            )}
+            id="match_mode"
+            required
+            {...form.register("match_mode")}
+          >
+            <option value="strict_keyword">Strict keyword</option>
+            <option value="keyword_plus_semantic">Keyword + semantic</option>
+          </select>
+          <FieldHelpText>
+            Choose whether this rule uses only keyword/context matching or also allows
+            semantic assist after keyword miss.
+          </FieldHelpText>
+          {form.formState.errors.match_mode ? (
+            <InlineErrorText>{form.formState.errors.match_mode.message}</InlineErrorText>
+          ) : null}
+        </div>
+
+        <div className="space-y-1.5">
           <Label htmlFor="rag_mode">RAG mode</Label>
           <select
             className={appSelectControlClassName}
@@ -1132,7 +1262,7 @@ export function RuleForm({
               disabled={mode === "edit"}
               id="stable_key"
               maxLength={200}
-              pattern={mode === "create" ? STABLE_KEY_PATTERN.source : undefined}
+              pattern={mode === "create" ? STABLE_KEY_HTML_PATTERN : undefined}
               placeholder="personal.custom.sample.rule"
               required={mode === "create"}
               title="Use lowercase letters, numbers, dot, underscore, or dash."
@@ -1312,8 +1442,8 @@ export function RuleForm({
             <div className="rounded-md border bg-muted/30 p-3">
               <p className="text-xs font-medium text-muted-foreground">Human-readable preview</p>
               <div className="mt-2 space-y-1 text-sm">
-                {humanPreviewLines.map((line) => (
-                  <p key={line}>{line}</p>
+                {humanPreviewLines.map((line, index) => (
+                  <p key={`${index}-${line}`}>{line}</p>
                 ))}
               </div>
             </div>

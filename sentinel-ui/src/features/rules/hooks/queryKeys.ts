@@ -3,6 +3,7 @@ export const ruleQueryKeys = {
   rulesRoot: (ruleSetId: string) => ["rules", ruleSetId] as const,
   rules: (ruleSetId: string, tab: string, limit: number) =>
     ["rules", ruleSetId, tab, limit] as const,
+  ruleDetail: (ruleId: string) => ["rule-detail", ruleId] as const,
   effectiveRulesRoot: ["effective-rules"] as const,
   effectiveRules: (limit: number) => ["effective-rules", limit] as const,
   ruleChangeLogsRoot: (ruleSetId: string) => ["rule-change-logs", ruleSetId] as const,

@@ -1,13 +1,16 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createRule } from "@/features/rules/api/rulesApi";
 import { ruleQueryKeys } from "@/features/rules/hooks/queryKeys";
-import type { CreateRuleRequest } from "@/features/rules/types";
+import type {
+  CreateRuleRequest,
+  CreateRuleWithContextRequest,
+} from "@/features/rules/types";
 
 export function useCreateRule(ruleSetId?: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (payload: CreateRuleRequest) =>
+    mutationFn: (payload: CreateRuleRequest | CreateRuleWithContextRequest) =>
       createRule(ruleSetId as string, payload),
     onSuccess: () => {
       if (!ruleSetId) {

@@ -51,6 +51,11 @@ class RagMode(str, Enum):
     verify = "verify"
 
 
+class MatchMode(str, Enum):
+    strict_keyword = "strict_keyword"
+    keyword_plus_semantic = "keyword_plus_semantic"
+
+
 class ConversationStatus(str, Enum):
     active = "active"
     archived = "archived"

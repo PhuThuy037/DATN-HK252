@@ -14,6 +14,7 @@ endif
 # Giá trị mặc định nếu quên truyền biến msg khi make revision
 msg ?= "auto_migration"
 run ?= seed_rule
+RULE_SET_ID ?=
 
 # Start services (background)
 up:
@@ -95,3 +96,6 @@ seed-all:
 	$(COMPOSE) exec -e UV_CACHE_DIR=/tmp/.uv_cache $(EXEC_USER) api uv run python -m app.script.seed_policy_docs
 	$(COMPOSE) exec -e UV_CACHE_DIR=/tmp/.uv_cache $(EXEC_USER) api uv run python -m app.script.seed_policy_chunks
 	$(COMPOSE) exec -e UV_CACHE_DIR=/tmp/.uv_cache $(EXEC_USER) api uv run python -m app.script.seed_policy_chunk_embeddings
+
+eval-cases:
+	$(COMPOSE) exec -e UV_CACHE_DIR=/tmp/.uv_cache $(EXEC_USER) api uv run python app/script/evaluate/run_eval_cases.py $(if $(RULE_SET_ID),--rule-set-id $(RULE_SET_ID),)

@@ -18,7 +18,7 @@ export function AppLayout() {
     <div className="relative h-screen overflow-hidden bg-background">
       <div
         className={cn(
-          "hidden h-full overflow-hidden md:grid",
+          "hidden h-full grid-rows-[minmax(0,1fr)] overflow-hidden md:grid",
           isChatRoute
             ? "grid-cols-[280px_minmax(0,1.25fr)_minmax(320px,380px)]"
             : "grid-cols-[280px_minmax(0,1fr)]"
@@ -26,12 +26,12 @@ export function AppLayout() {
       >
         <ConversationSidebar activeConversationId={conversationId} />
 
-        <main className="min-w-0 overflow-hidden">
+        <main className="h-full min-h-0 min-w-0 overflow-hidden">
           <Outlet />
         </main>
 
         {isChatRoute && (
-          <div className="h-full overflow-y-auto border-l border-border/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.7),rgba(255,255,255,0.95))] p-4 lg:p-5">
+          <div className="h-full min-h-0 overflow-y-auto border-l border-border/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.7),rgba(255,255,255,0.95))] p-4 lg:p-5">
             <CompliancePanel conversationId={conversationId} className="h-full" />
           </div>
         )}

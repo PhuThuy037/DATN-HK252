@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
+from collections.abc import Sequence
 from typing import Any, Literal, Optional
 from uuid import UUID
 
@@ -13,10 +14,14 @@ from app.core.config import get_settings
 from app.llm import LlmTextResult, generate_text_async
 from app.rag.models.rag_retrieval_log import RagRetrievalLog
 from app.rag.policy_retriever import PolicyRetriever
-from app.rule_embedding.service import retrieve_related_rules_for_runtime
+from app.rule_embedding.service import (
+    build_semantic_verify_material,
+    retrieve_related_rules_for_runtime,
+)
 
 
 DecisionType = Literal["ALLOW", "MASK", "BLOCK"]
+SemanticVerifyDecisionType = Literal["PASS", "FAIL", "UNSURE"]
 
 
 @dataclass(slots=True)
@@ -26,6 +31,16 @@ class RagDecision:
     rule_keys: list[str]
     rationale: str
     candidate_rule_keys: list[str]
+
+
+@dataclass(slots=True)
+class SemanticVerifyDecision:
+    called: bool
+    rule_key: str
+    decision: SemanticVerifyDecisionType
+    confidence: float
+    reason: str
+    semantic_confidence: float
 
 
 class RagVerifier:
@@ -209,6 +224,127 @@ class RagVerifier:
 
         return out
 
+    async def verify_semantic_support(
+        self,
+        *,
+        session: Session,
+        user_text: str,
+        runtime_rule_ids: Sequence[UUID],
+        supported_rule_key: str,
+        matched_context_keywords: Sequence[str] | None,
+        semantic_confidence: float,
+        message_id: Optional[UUID] = None,
+    ) -> SemanticVerifyDecision:
+        t0 = time.perf_counter()
+        material = build_semantic_verify_material(
+            session=session,
+            query=user_text,
+            runtime_rule_ids=runtime_rule_ids,
+            supported_rule_key=supported_rule_key,
+            matched_context_keywords=matched_context_keywords,
+        )
+        if material is None:
+            return SemanticVerifyDecision(
+                called=False,
+                rule_key=str(supported_rule_key or ""),
+                decision="UNSURE",
+                confidence=0.0,
+                reason="ineligible_rule_or_missing_material",
+                semantic_confidence=float(semantic_confidence or 0.0),
+            )
+
+        prompt = self._build_semantic_verify_prompt(
+            user_text=user_text,
+            semantic_confidence=float(semantic_confidence or 0.0),
+            material=material,
+        )
+
+        raw = ""
+        llm_out: LlmTextResult | None = None
+        try:
+            llm_out = await self._call_llm(prompt)
+            raw = llm_out.text
+        except Exception:
+            return SemanticVerifyDecision(
+                called=True,
+                rule_key=material.stable_key,
+                decision="UNSURE",
+                confidence=0.0,
+                reason="semantic_verify_timeout",
+                semantic_confidence=float(semantic_confidence or 0.0),
+            )
+
+        parse_error = None
+        try:
+            obj = self._parse_json(raw)
+            decision = str(obj.get("decision", "UNSURE")).upper()
+            if decision not in ("PASS", "FAIL", "UNSURE"):
+                decision = "UNSURE"
+
+            confidence = float(obj.get("confidence", 0.0))
+            confidence = max(0.0, min(1.0, confidence))
+            reason = str(obj.get("reason") or "")[:200]
+            out = SemanticVerifyDecision(
+                called=True,
+                rule_key=material.stable_key,
+                decision=decision,
+                confidence=confidence,
+                reason=reason,
+                semantic_confidence=float(semantic_confidence or 0.0),
+            )
+        except Exception as exc:
+            parse_error = repr(exc)
+            out = SemanticVerifyDecision(
+                called=True,
+                rule_key=material.stable_key,
+                decision="UNSURE",
+                confidence=0.0,
+                reason="semantic_verify_parse_failed",
+                semantic_confidence=float(semantic_confidence or 0.0),
+            )
+
+        try:
+            session.add(
+                RagRetrievalLog(
+                    message_id=message_id,
+                    query=user_text[:2000],
+                    top_k=0,
+                    latency_ms=int((time.perf_counter() - t0) * 1000),
+                    results_json={
+                        "meta": {
+                            "kind": "semantic_verify",
+                            "llm_model": getattr(llm_out, "model", None),
+                            "llm_provider": getattr(llm_out, "provider", None),
+                            "llm_fallback_used": getattr(llm_out, "fallback_used", None),
+                            "parse_error": parse_error,
+                        },
+                        "semantic_verify_input": {
+                            "rule_key": material.stable_key,
+                            "semantic_confidence": float(semantic_confidence or 0.0),
+                            "target_evidence": list(material.target_evidence),
+                            "topic_evidence": list(material.topic_evidence),
+                            "linked_context_terms": list(material.linked_context_terms),
+                            "conditions_summary": material.conditions_summary,
+                        },
+                        "decision": {
+                            "called": out.called,
+                            "rule_key": out.rule_key,
+                            "decision": out.decision,
+                            "confidence": out.confidence,
+                            "reason": out.reason,
+                            "semantic_confidence": out.semantic_confidence,
+                        },
+                        "prompt": prompt[:6000],
+                        "raw": raw[:6000],
+                    },
+                )
+            )
+            session.flush()
+        except Exception:
+            session.rollback()
+
+        return out
+
     async def _call_llm(self, prompt: str) -> LlmTextResult:
         timeout_s = min(6.0, float(self.settings.non_embedding_llm_timeout_seconds))
         return await generate_text_async(
@@ -264,6 +400,62 @@ ALLOWED RULE KEYS:
 
 USER MESSAGE:
 {user_text}
+""".strip()
+
+    def _build_semantic_verify_prompt(
+        self,
+        *,
+        user_text: str,
+        semantic_confidence: float,
+        material: Any,
+    ) -> str:
+        return f"""
+You are verifying whether a user message is genuinely about the same topic as a specific semantic rule.
+
+You MUST output ONLY a single valid JSON object.
+No markdown. No explanations outside JSON.
+
+Valid decision values: PASS, FAIL, UNSURE
+
+Rules:
+- Target anchor evidence shows the query is about the same target entity or anchor.
+- Topic evidence is REQUIRED for PASS.
+- Target anchor alone is NOT enough for PASS.
+- Return FAIL when the query only mentions the target but not the topic.
+- Return UNSURE only when the topic relation is ambiguous.
+
+Return JSON with exactly these fields:
+{{"decision":"PASS|FAIL|UNSURE","confidence":0.0,"reason":"short string"}}
+
+USER MESSAGE:
+{user_text}
+
+SEMANTIC SIGNAL:
+{json.dumps(
+    {
+        "semantic_confidence": round(float(semantic_confidence or 0.0), 4),
+        "target_evidence": list(getattr(material, "target_evidence", []) or []),
+        "topic_evidence": list(getattr(material, "topic_evidence", []) or []),
+    },
+    ensure_ascii=False,
+    indent=2,
+)}
+
+RULE:
+{json.dumps(
+    {
+        "stable_key": getattr(material, "stable_key", ""),
+        "name": getattr(material, "name", ""),
+        "description": getattr(material, "description", ""),
+        "conditions": getattr(material, "conditions", {}) or {},
+        "conditions_summary": getattr(material, "conditions_summary", ""),
+        "linked_context_terms": list(getattr(material, "linked_context_terms", []) or []),
+        "target_phrases": list(getattr(material, "target_phrases", []) or []),
+        "topic_phrases": list(getattr(material, "topic_phrases", []) or []),
+    },
+    ensure_ascii=False,
+    indent=2,
+)}
 """.strip()
 
     def _filter_rule_keys(

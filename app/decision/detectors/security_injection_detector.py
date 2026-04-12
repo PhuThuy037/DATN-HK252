@@ -69,6 +69,30 @@ class SecurityInjectionDetector:
                 "jailbreak",
                 "bypass_safety",
             ),
+            (
+                r"\b(bo\s+qua|bo\s+het|huy\s+bo)\s+(tat\s+ca\s+)?(quy\s+tac|huong\s+dan|chi\s+dan)\s+(truoc\s+do|cu)\b",
+                0.6,
+                "jailbreak",
+                "vi_ignore_prev",
+            ),
+            (
+                r"\b(coi\s+nhu|xem\s+nhu)\s+(tat\s+ca\s+)?(quy\s+tac|huong\s+dan|chi\s+dan)\s+(truoc\s+do|cu)\s+(khong\s+con\s+hieu\s+luc|het\s+hieu\s+luc|vo\s+hieu)\b",
+                0.65,
+                "jailbreak",
+                "vi_prev_invalid",
+            ),
+            (
+                r"\b(tra\s+loi|phan\s+hoi)\s+tu\s+do\b",
+                0.3,
+                "jailbreak",
+                "vi_answer_freely",
+            ),
+            (
+                r"\b(khong\s+can|bo\s+qua)\s+(gioi\s+han|rang\s+buoc|han\s+che|kiem\s+duyet)\b",
+                0.35,
+                "jailbreak",
+                "vi_no_limits",
+            ),
             # =========================
             # Prompt / Policy Exfiltration
             # =========================

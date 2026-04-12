@@ -2,6 +2,7 @@ import { httpClient } from "@/shared/api/httpClient";
 import type { ApiEnvelope } from "@/shared/types";
 import type {
   CreateRuleRequest,
+  CreateRuleWithContextRequest,
   CreateRuleSetRequest,
   DebugEvaluateRequest,
   DebugEvaluateResponse,
@@ -15,6 +16,7 @@ import type {
   RuleSetSummary,
   ToggleGlobalRuleRequest,
   UpdateRuleRequest,
+  UpdateRuleWithContextRequest,
 } from "@/features/rules/types";
 
 type PaginationParams = {
@@ -133,7 +135,10 @@ export async function getRuleChangeLogs(
   return toPaginatedResult(data, meta);
 }
 
-export async function createRule(ruleSetId: string, payload: CreateRuleRequest) {
+export async function createRule(
+  ruleSetId: string,
+  payload: CreateRuleRequest | CreateRuleWithContextRequest
+) {
   const response = await httpClient.post<ApiEnvelope<Rule>>(
     `/v1/rule-sets/${ruleSetId}/rules`,
     payload
@@ -144,7 +149,7 @@ export async function createRule(ruleSetId: string, payload: CreateRuleRequest) 
 export async function updateRule(
   ruleSetId: string,
   ruleId: string,
-  payload: UpdateRuleRequest
+  payload: UpdateRuleRequest | UpdateRuleWithContextRequest
 ) {
   const response = await httpClient.patch<ApiEnvelope<Rule>>(
     `/v1/rule-sets/${ruleSetId}/rules/${ruleId}`,

@@ -241,7 +241,7 @@ export function ConversationSidebar({
 
   return (
     <>
-      <aside className={cn("flex h-full flex-col border-r bg-muted/20 p-3", className)}>
+      <aside className={cn("flex h-full min-h-0 flex-col border-r bg-muted/20 p-3", className)}>
         <div className="mb-4 rounded-2xl border border-border/70 bg-background px-4 py-4 shadow-app-sm">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -361,13 +361,13 @@ export function ConversationSidebar({
           ) : null}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border/70 bg-background shadow-app-sm">
+        <div className="min-h-0 flex flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-background shadow-app-sm">
           <div className="border-b border-border/70 px-4 py-3">
             <p className="text-sm font-semibold">Conversations</p>
             <p className="text-xs text-muted-foreground">Recent chat threads and workspace history.</p>
           </div>
 
-          <ScrollArea className="h-full">
+          <ScrollArea className="min-h-0 flex-1">
             <div className="space-y-2 p-3 pb-6">
               {conversationsQuery.isLoading && (
                 <AppLoadingState

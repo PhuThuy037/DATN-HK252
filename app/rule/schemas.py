@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field as PydanticField
 
-from app.common.enums import RagMode, RuleAction, RuleScope, RuleSeverity
+from app.common.enums import MatchMode, RagMode, RuleAction, RuleScope, RuleSeverity
 
 
 class RuleOrigin(str, Enum):
@@ -28,6 +28,7 @@ class CompanyRuleOut(BaseModel):
     action: RuleAction
     severity: RuleSeverity
     priority: int
+    match_mode: MatchMode
     rag_mode: RagMode
     enabled: bool
     created_by: UUID
@@ -47,6 +48,7 @@ class CompanyRuleCreateIn(BaseModel):
     action: RuleAction = RuleAction.mask
     severity: RuleSeverity = RuleSeverity.medium
     priority: int = PydanticField(default=0, ge=-100000, le=100000)
+    match_mode: MatchMode = MatchMode.strict_keyword
     rag_mode: RagMode = RagMode.off
     enabled: bool = True
 
@@ -74,8 +76,14 @@ class CompanyRuleUpdateIn(BaseModel):
     action: Optional[RuleAction] = None
     severity: Optional[RuleSeverity] = None
     priority: Optional[int] = PydanticField(default=None, ge=-100000, le=100000)
+    match_mode: Optional[MatchMode] = None
     rag_mode: Optional[RagMode] = None
     enabled: Optional[bool] = None
+
+
+class CompanyRuleUpdateWithContextIn(BaseModel):
+    rule: CompanyRuleUpdateIn
+    context_terms: Optional[list[RuleContextTermIn]] = None
 
 
 class CompanyRuleToggleEnabledIn(BaseModel):
@@ -93,6 +101,7 @@ class PersonalRuleOut(BaseModel):
     action: RuleAction
     severity: RuleSeverity
     priority: int
+    match_mode: MatchMode
     rag_mode: RagMode
     enabled: bool
     default_enabled: bool
@@ -144,6 +153,7 @@ class RuleDetailOut(BaseModel):
     action: RuleAction
     severity: RuleSeverity
     priority: int
+    match_mode: MatchMode
     rag_mode: RagMode
     enabled: bool
     context_terms: list[RuleContextTermOut] = PydanticField(default_factory=list)
@@ -167,5 +177,6 @@ RuleSetRuleCreateIn = CompanyRuleCreateIn
 RuleSetRuleCreateWithContextIn = CompanyRuleCreateWithContextIn
 RuleSetRuleCreateOut = CompanyRuleCreateOut
 RuleSetRuleUpdateIn = CompanyRuleUpdateIn
+RuleSetRuleUpdateWithContextIn = CompanyRuleUpdateWithContextIn
 RuleSetRuleToggleEnabledIn = CompanyRuleToggleEnabledIn
 RuleSetRuleChangeLogOut = RuleChangeLogOut

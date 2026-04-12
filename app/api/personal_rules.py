@@ -22,6 +22,7 @@ from app.rule.schemas import (
     RuleSetRuleOut,
     RuleSetRuleToggleEnabledIn,
     RuleSetRuleUpdateIn,
+    RuleSetRuleUpdateWithContextIn,
 )
 
 router = APIRouter(
@@ -234,16 +235,21 @@ def create_personal_rule(
 def update_personal_rule(
     rule_set_id: UUID,
     rule_id: UUID,
-    payload: RuleSetRuleUpdateIn,
+    payload: RuleSetRuleUpdateIn | RuleSetRuleUpdateWithContextIn,
     session: SessionDep,
     principal: CurrentPrincipal,
 ):
+    rule_payload = payload.rule if isinstance(payload, RuleSetRuleUpdateWithContextIn) else payload
+    context_terms = (
+        payload.context_terms if isinstance(payload, RuleSetRuleUpdateWithContextIn) else None
+    )
     row = rule_service.update_company_rule(
         session=session,
         company_id=rule_set_id,
         rule_id=rule_id,
         actor_user_id=principal.user_id,
-        payload=payload,
+        payload=rule_payload,
+        context_terms=context_terms,
     )
     return ApiResponse(ok=True, data=row)
 

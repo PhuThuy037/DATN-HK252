@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, Relationship, SQLModel
 
 from app.common.bases import TimestampMixin
-from app.common.enums import RagMode, RuleAction, RuleScope, RuleSeverity
+from app.common.enums import MatchMode, RagMode, RuleAction, RuleScope, RuleSeverity
 
 
 class Rule(TimestampMixin, SQLModel, table=True):
@@ -82,6 +82,15 @@ class Rule(TimestampMixin, SQLModel, table=True):
     priority: int = Field(
         default=0,
         sa_column=sa.Column(sa.Integer, nullable=False, server_default="0"),
+    )
+
+    match_mode: MatchMode = Field(
+        default=MatchMode.strict_keyword,
+        sa_column=sa.Column(
+            sa.Enum(MatchMode, name="match_mode", native_enum=True),
+            nullable=False,
+            server_default=MatchMode.strict_keyword.value,
+        ),
     )
 
     rag_mode: RagMode = Field(

@@ -1,11 +1,14 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { updateRule } from "@/features/rules/api/rulesApi";
 import { ruleQueryKeys } from "@/features/rules/hooks/queryKeys";
-import type { UpdateRuleRequest } from "@/features/rules/types";
+import type {
+  UpdateRuleRequest,
+  UpdateRuleWithContextRequest,
+} from "@/features/rules/types";
 
 type UpdateRuleInput = {
   ruleId: string;
-  payload: UpdateRuleRequest;
+  payload: UpdateRuleRequest | UpdateRuleWithContextRequest;
 };
 
 export function useUpdateRule(ruleSetId?: string) {
@@ -19,6 +22,10 @@ export function useUpdateRule(ruleSetId?: string) {
         return;
       }
       queryClient.invalidateQueries({ queryKey: ruleQueryKeys.rulesRoot(ruleSetId) });
+      queryClient.invalidateQueries({
+        predicate: (query) =>
+          Array.isArray(query.queryKey) && query.queryKey[0] === "rule-detail",
+      });
       queryClient.invalidateQueries({
         queryKey: ruleQueryKeys.ruleChangeLogsRoot(ruleSetId),
       });

@@ -28,6 +28,7 @@ import {
   useDebugEvaluate,
   useDeleteRule,
   useEffectiveRules,
+  useRuleDetail,
   useRuleChangeLogs,
   useRules,
   useToggleGlobalRule,
@@ -36,12 +37,14 @@ import {
 import { useRuleSetStore } from "@/features/rules/store/ruleSetStore";
 import type {
   CreateRuleRequest,
+  CreateRuleWithContextRequest,
   DebugEvaluateResponse,
   EffectiveRule,
   Rule,
   RuleChangeLog,
   RuleDebugMatch,
   UpdateRuleRequest,
+  UpdateRuleWithContextRequest,
 } from "@/features/rules/types";
 
 type RulesPageLocationState = {
@@ -88,6 +91,17 @@ function formatScopeLabel(value?: string | null) {
     return "Unknown";
   }
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function formatMatchModeLabel(value?: string | null) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return "Strict keyword";
+  }
+  if (normalized === "keyword_plus_semantic") {
+    return "Keyword + semantic";
+  }
+  return "Strict keyword";
 }
 
 function getActionTone(action?: string | null): StatusTone {
@@ -210,6 +224,9 @@ function getRuleActionIcon(action?: string | null) {
 
 function RuleDetailsPanel({ rule }: { rule: Rule }) {
   const global = isGlobalRule(rule);
+  const linkedContextTerms = (rule.context_terms ?? []).filter((term) =>
+    String(term.term ?? "").trim()
+  );
 
   return (
     <div className="space-y-4">
@@ -239,10 +256,33 @@ function RuleDetailsPanel({ rule }: { rule: Rule }) {
             <p className="mt-1 text-foreground">{rule.rag_mode ?? "-"}</p>
           </div>
           <div>
+            <p className="text-xs font-medium uppercase tracking-wide">Match mode</p>
+            <p className="mt-1 text-foreground">{formatMatchModeLabel(rule.match_mode)}</p>
+          </div>
+          <div>
             <p className="text-xs font-medium uppercase tracking-wide">Updated</p>
             <p className="mt-1 text-foreground">{formatDateTime(rule.updated_at)}</p>
           </div>
         </div>
+      </AppSectionCard>
+
+      <AppSectionCard
+        description="Semantic support material linked directly to this rule."
+        title="Linked context terms"
+      >
+        {linkedContextTerms.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No linked context terms saved for this rule.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {linkedContextTerms.map((term, index) => (
+              <StatusBadge
+                key={term.id ?? `${term.term}-${index}`}
+                label={term.term}
+                tone="muted"
+              />
+            ))}
+          </div>
+        )}
       </AppSectionCard>
 
       <TechnicalDetailsAccordion
@@ -260,8 +300,10 @@ function RuleDetailsPanel({ rule }: { rule: Rule }) {
               action: rule.action,
               severity: rule.severity,
               priority: rule.priority,
+              match_mode: rule.match_mode,
               rag_mode: rule.rag_mode,
               enabled: rule.enabled,
+              context_terms: linkedContextTerms,
               origin: rule.origin,
               created_at: rule.created_at,
               updated_at: rule.updated_at,
@@ -727,6 +769,8 @@ export function RulesPage() {
   const [rulePendingDelete, setRulePendingDelete] = useState<Rule | null>(null);
   const createRuleFormId = "create-rule-form";
   const editRuleFormId = editingRule ? `edit-rule-form-${editingRule.id}` : "edit-rule-form";
+  const editingRuleDetailQuery = useRuleDetail(editingRule?.id);
+  const viewingRuleDetailQuery = useRuleDetail(viewingRule?.id);
   const [debugContent, setDebugContent] = useState("");
   const [activeTab, setActiveTab] = useState<RulesTab>("my-rules");
   const [deletedRules, setDeletedRules] = useState<Array<{ id: string; stableKey?: string | null }>>([]);
@@ -849,9 +893,17 @@ export function RulesPage() {
     rules,
   ]);
 
-  const handleCreateRule = async (payload: CreateRuleRequest | UpdateRuleRequest) => {
+  const handleCreateRule = async (
+    payload:
+      | CreateRuleRequest
+      | CreateRuleWithContextRequest
+      | UpdateRuleRequest
+      | UpdateRuleWithContextRequest
+  ) => {
     try {
-      await createRuleMutation.mutateAsync(payload as CreateRuleRequest);
+      await createRuleMutation.mutateAsync(
+        payload as CreateRuleRequest | CreateRuleWithContextRequest
+      );
       toast({
         title: "Rule created",
         description: "Rule has been created successfully.",
@@ -870,14 +922,20 @@ export function RulesPage() {
     }
   };
 
-  const handleUpdateRule = async (payload: CreateRuleRequest | UpdateRuleRequest) => {
+  const handleUpdateRule = async (
+    payload:
+      | CreateRuleRequest
+      | CreateRuleWithContextRequest
+      | UpdateRuleRequest
+      | UpdateRuleWithContextRequest
+  ) => {
     if (!editingRule) {
       return;
     }
     try {
       await updateRuleMutation.mutateAsync({
         ruleId: editingRule.id,
-        payload: payload as UpdateRuleRequest,
+        payload: payload as UpdateRuleRequest | UpdateRuleWithContextRequest,
       });
       toast({
         title: "Rule updated",
@@ -1277,7 +1335,15 @@ export function RulesPage() {
             <AppButton onClick={() => setEditingRule(null)} type="button" variant="secondary">
               Cancel
             </AppButton>
-            <AppButton disabled={updateRuleMutation.isPending} form={editRuleFormId} type="submit">
+            <AppButton
+              disabled={
+                updateRuleMutation.isPending ||
+                editingRuleDetailQuery.isLoading ||
+                editingRuleDetailQuery.isError
+              }
+              form={editRuleFormId}
+              type="submit"
+            >
               {updateRuleMutation.isPending ? "Saving..." : "Save Changes"}
             </AppButton>
           </div>
@@ -1287,19 +1353,51 @@ export function RulesPage() {
         requireExplicitClose
         title="Edit rule"
       >
-        <RuleForm
-          formId={editRuleFormId}
-          hideActions
-          initialRule={editingRule}
-          isSubmitting={updateRuleMutation.isPending}
-          mode="edit"
-          onCancel={() => setEditingRule(null)}
-          onSubmit={handleUpdateRule}
-        />
+        {editingRule ? (
+          editingRuleDetailQuery.isLoading ? (
+            <AppLoadingState
+              compact
+              description="Loading full rule detail before editing."
+              title="Loading rule detail"
+            />
+          ) : editingRuleDetailQuery.isError ? (
+            <AppAlert
+              description="Failed to load full rule detail for editing."
+              title="Rule detail unavailable"
+              variant="error"
+            />
+          ) : (
+            <RuleForm
+              formId={editRuleFormId}
+              hideActions
+              initialRule={editingRuleDetailQuery.data ?? editingRule}
+              isSubmitting={updateRuleMutation.isPending}
+              mode="edit"
+              onCancel={() => setEditingRule(null)}
+              onSubmit={handleUpdateRule}
+            />
+          )
+        ) : null}
       </RuleModal>
 
       <RuleModal onClose={() => setViewingRule(null)} open={Boolean(viewingRule)} title="Rule details">
-        {viewingRule ? <RuleDetailsPanel rule={viewingRule} /> : null}
+        {viewingRule ? (
+          viewingRuleDetailQuery.isLoading ? (
+            <AppLoadingState
+              compact
+              description="Loading full rule detail."
+              title="Loading rule detail"
+            />
+          ) : viewingRuleDetailQuery.isError ? (
+            <AppAlert
+              description="Failed to load full rule detail."
+              title="Rule detail unavailable"
+              variant="error"
+            />
+          ) : (
+            <RuleDetailsPanel rule={viewingRuleDetailQuery.data ?? viewingRule} />
+          )
+        ) : null}
       </RuleModal>
 
       <ConfirmDialog
@@ -1428,6 +1526,12 @@ function RuleTable({
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wide">Updated</p>
                   <p className="mt-1 text-foreground">{formatDateTime(rule.updated_at)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide">Match mode</p>
+                  <p className="mt-1 text-foreground">
+                    {formatMatchModeLabel(rule.match_mode)}
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wide">RAG mode</p>
