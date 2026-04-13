@@ -27,7 +27,7 @@ _LITERAL_INTENT_KEYWORDS = (
     "id",
 )
 _CCCD_KEYWORDS = ("cccd", "cmnd", "can cuoc")
-_TAX_ID_KEYWORDS = ("tax", "tax id", "tax code", "mst", "ma so thue", "tin")
+_TAX_ID_KEYWORDS = ("tax", "tax id", "tax code", "mst", "ma so thue")
 _PHONE_KEYWORDS = ("phone", "sdt", "so dien thoai", "hotline")
 _EMAIL_KEYWORDS = ("email", "mail", "e-mail", "gmail")
 

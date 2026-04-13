@@ -7,7 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field as PydanticField, field_validator
 
-from app.common.enums import RagMode, RuleAction, RuleScope, RuleSeverity
+from app.common.enums import RuleAction
+from app.rule.schemas import CompanyRuleCreateIn, RuleContextTermIn
 
 
 class SuggestionStatus(str, Enum):
@@ -31,27 +32,12 @@ class DuplicateLevel(str, Enum):
     strong = "strong"
 
 
-class RuleSuggestionDraftRule(BaseModel):
-    stable_key: str = PydanticField(min_length=1, max_length=200)
-    name: str = PydanticField(min_length=1, max_length=300)
-    description: Optional[str] = PydanticField(default=None, max_length=2000)
-    scope: RuleScope = RuleScope.prompt
-    conditions: dict[str, Any]
-    action: RuleAction = RuleAction.mask
-    severity: RuleSeverity = RuleSeverity.medium
-    priority: int = 0
-    rag_mode: RagMode = RagMode.off
-    enabled: bool = True
+class RuleSuggestionDraftRule(CompanyRuleCreateIn):
+    pass
 
 
-class RuleSuggestionDraftContextTerm(BaseModel):
-    entity_type: str = PydanticField(min_length=1, max_length=100)
-    term: str = PydanticField(min_length=1, max_length=500)
-    lang: str = PydanticField(default="vi", min_length=1, max_length=20)
-    weight: float = 1.0
-    window_1: int = 60
-    window_2: int = 20
-    enabled: bool = True
+class RuleSuggestionDraftContextTerm(RuleContextTermIn):
+    pass
 
 
 class RuleSuggestionDraftPayload(BaseModel):

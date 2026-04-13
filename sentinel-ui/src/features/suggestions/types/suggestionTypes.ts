@@ -18,6 +18,7 @@ export type SuggestionRule = {
   action: string;
   severity: string;
   priority: number;
+  match_mode?: "strict_keyword" | "keyword_plus_semantic";
   rag_mode: string;
   enabled: boolean;
   conditions: Record<string, unknown>;

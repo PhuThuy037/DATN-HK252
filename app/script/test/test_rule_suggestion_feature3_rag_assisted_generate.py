@@ -147,14 +147,16 @@ def test_feature3_generate_uses_retrieval_context_success(monkeypatch: pytest.Mo
     def _fake_generate_with_llm(
         prompt: str,
         *,
-        prompt_keywords: list[str],
+        prompt_keyword_bundle: dict[str, list[str]],
         policy_chunks: list[dict[str, object]],
         rule_references: list[dict[str, object]],
+        literal_detection: object,
     ) -> tuple[RuleSuggestionDraftPayload, dict[str, object]]:
         captured["prompt"] = prompt
-        captured["prompt_keywords"] = list(prompt_keywords)
+        captured["prompt_keyword_bundle"] = dict(prompt_keyword_bundle)
         captured["policy_chunks"] = list(policy_chunks)
         captured["rule_references"] = list(rule_references)
+        captured["literal_detection"] = literal_detection
         return _sample_draft(), {
             "source": "llm",
             "provider": "mock",

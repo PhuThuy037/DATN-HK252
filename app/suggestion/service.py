@@ -6,7 +6,7 @@ import json
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, TypedDict
 from uuid import UUID
 
 from sqlmodel import Session, select
@@ -393,6 +393,148 @@ def _normalize_conditions_node(node: Any, *, field: str) -> dict[str, Any]:
     _raise_invalid_conditions(field=field, reason="unsupported_node")
 
 
+def _is_simple_builder_compatible_condition_node(node: Any) -> bool:
+    if not isinstance(node, dict):
+        return False
+
+    if "entity_type" in node:
+        raw = str(node.get("entity_type") or "").strip()
+        if not raw:
+            return False
+        allowed_keys = {"entity_type", "min_score"}
+        if any(key not in allowed_keys for key in node.keys()):
+            return False
+        if "min_score" in node:
+            try:
+                score = float(node["min_score"])
+            except (TypeError, ValueError):
+                return False
+            if score < 0.0 or score > 1.0:
+                return False
+        return True
+
+    signal = node.get("signal")
+    if not isinstance(signal, dict):
+        return False
+    if str(signal.get("field") or "").strip() != "context_keywords":
+        return False
+    any_of = signal.get("any_of")
+    if not isinstance(any_of, list) or len(any_of) == 0:
+        return False
+    values = [str(value or "").strip() for value in any_of]
+    if any(not value for value in values):
+        return False
+    return set(signal.keys()) == {"field", "any_of"}
+
+
+def _is_simple_builder_compatible_conditions(conditions: Any) -> bool:
+    if not isinstance(conditions, dict):
+        return False
+    if set(conditions.keys()) != {"all"}:
+        return False
+    rows = conditions.get("all")
+    if not isinstance(rows, list) or len(rows) == 0:
+        return False
+    return all(_is_simple_builder_compatible_condition_node(row) for row in rows)
+
+
+def _normalize_to_simple_builder_conditions(
+    *,
+    conditions: Any,
+    context_terms: list[RuleSuggestionDraftContextTerm],
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    seen_entities: set[tuple[str, float | None]] = set()
+    seen_signals: set[tuple[str, ...]] = set()
+
+    def _add_entity_row(raw_node: dict[str, Any]) -> None:
+        entity_type = str(raw_node.get("entity_type") or "").strip().upper()
+        if not entity_type:
+            return
+        min_score: float | None = None
+        if "min_score" in raw_node:
+            try:
+                parsed = float(raw_node["min_score"])
+                if 0.0 <= parsed <= 1.0:
+                    min_score = parsed
+            except (TypeError, ValueError):
+                min_score = None
+        key = (entity_type, min_score)
+        if key in seen_entities:
+            return
+        seen_entities.add(key)
+        row: dict[str, Any] = {"entity_type": entity_type}
+        if min_score is not None:
+            row["min_score"] = min_score
+        rows.append(row)
+
+    def _add_signal_row(values: list[str]) -> None:
+        cleaned = _sanitize_context_keyword_values(
+            [str(value or "") for value in values],
+            fallback_phrases=[str(value or "") for value in values],
+        )
+        if not cleaned:
+            return
+        dedupe_key = tuple(cleaned)
+        if dedupe_key in seen_signals:
+            return
+        seen_signals.add(dedupe_key)
+        rows.append(
+            {
+                "signal": {
+                    "field": "context_keywords",
+                    "any_of": cleaned,
+                }
+            }
+        )
+
+    def _walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if "entity_type" in node:
+                _add_entity_row(node)
+            if "signal" in node and isinstance(node.get("signal"), dict):
+                signal = node["signal"]
+                if str(signal.get("field") or "").strip() == "context_keywords":
+                    signal_values: list[str] = []
+                    raw_any_of = signal.get("any_of")
+                    if isinstance(raw_any_of, list):
+                        signal_values.extend(str(value or "") for value in raw_any_of)
+                    raw_in = signal.get("in")
+                    if isinstance(raw_in, list):
+                        signal_values.extend(str(value or "") for value in raw_in)
+                    for scalar_op in ("equals", "contains"):
+                        scalar_value = signal.get(scalar_op)
+                        if scalar_value is None:
+                            continue
+                        signal_values.append(str(scalar_value or ""))
+                    _add_signal_row(signal_values)
+            for key, child in node.items():
+                # `not` cannot be represented in simple builder safely.
+                if key == "not":
+                    continue
+                _walk(child)
+            return
+        if isinstance(node, list):
+            for child in node:
+                _walk(child)
+
+    _walk(conditions)
+
+    if not rows:
+        fallback_terms = [str(term.term or "") for term in list(context_terms or [])]
+        fallback_keywords = _sanitize_context_keyword_values(
+            fallback_terms,
+            fallback_phrases=fallback_terms,
+        )
+        if fallback_keywords:
+            _add_signal_row(fallback_keywords)
+
+    if not rows:
+        rows.append({"signal": {"field": "context_keywords", "any_of": ["context"]}})
+
+    return {"all": rows}
+
+
 def _normalize_draft(payload: RuleSuggestionDraftPayload) -> RuleSuggestionDraftPayload:
     rule = payload.rule
     normalized_conditions = _normalize_conditions_node(
@@ -400,19 +542,6 @@ def _normalize_draft(payload: RuleSuggestionDraftPayload) -> RuleSuggestionDraft
         field="draft.rule.conditions",
     )
     action = RuleAction.mask if rule.action == RuleAction.warn else rule.action
-
-    normalized_rule = RuleSuggestionDraftRule(
-        stable_key=_normalize_stable_key(rule.stable_key),
-        name=_normalize_non_empty(value=rule.name, field="name"),
-        description=(rule.description or "").strip() or None,
-        scope=rule.scope,
-        conditions=normalized_conditions,
-        action=action,
-        severity=rule.severity,
-        priority=int(rule.priority),
-        rag_mode=rule.rag_mode,
-        enabled=bool(rule.enabled),
-    )
 
     normalized_terms: list[RuleSuggestionDraftContextTerm] = []
     dedupe_terms: set[tuple[str, str, str]] = set()
@@ -441,6 +570,26 @@ def _normalize_draft(payload: RuleSuggestionDraftPayload) -> RuleSuggestionDraft
                 )
             )
 
+    if not _is_simple_builder_compatible_conditions(normalized_conditions):
+        normalized_conditions = _normalize_to_simple_builder_conditions(
+            conditions=normalized_conditions,
+            context_terms=normalized_terms,
+        )
+
+    normalized_rule = RuleSuggestionDraftRule(
+        stable_key=_normalize_stable_key(rule.stable_key),
+        name=_normalize_non_empty(value=rule.name, field="name"),
+        description=(rule.description or "").strip() or None,
+        scope=rule.scope,
+        conditions=normalized_conditions,
+        action=action,
+        severity=rule.severity,
+        priority=int(rule.priority),
+        match_mode=rule.match_mode,
+        rag_mode=rule.rag_mode,
+        enabled=bool(rule.enabled),
+    )
+
     return RuleSuggestionDraftPayload(rule=normalized_rule, context_terms=normalized_terms)
 
 
@@ -455,6 +604,7 @@ def _canonical_rule_for_dedupe(rule: RuleSuggestionDraftRule) -> dict[str, Any]:
         "action": rule.action.value,
         "severity": rule.severity.value,
         "priority": int(rule.priority),
+        "match_mode": rule.match_mode.value,
         "rag_mode": rule.rag_mode.value,
         "enabled": bool(rule.enabled),
     }
@@ -800,6 +950,11 @@ def _load_suggestion_row_or_404(
     return row
 
 
+class PromptKeywordBundle(TypedDict):
+    phrases: list[str]
+    tokens: list[str]
+
+
 _INSIGHT_STOP_WORDS = {
     "va",
     "voi",
@@ -829,6 +984,204 @@ _INSIGHT_STOP_WORDS = {
     "ma",
     "m",
 }
+
+_TARGET_ENTITY_LABEL_PATTERN = re.compile(
+    r"(?iu)\b(?:"
+    r"cán\s+bộ|can\s+bo|"
+    r"quản\s+lý|quan\s+ly|"
+    r"công\s+ty|cong\s+ty|"
+    r"tập\s+đoàn|tap\s+doan|"
+    r"bộ\s+phận|bo\s+phan|"
+    r"phòng\s+ban|phong\s+ban|"
+    r"dự\s+án|du\s+an|"
+    r"trợ\s+giảng|tro\s+giang|"
+    r"cố\s+vấn|co\s+van|"
+    r"giảng\s+viên|giang\s+vien|"
+    r"tổ\s+chức|to\s+chuc|"
+    r"ông|ong|bà|ba"
+    r")\s+(?:[0-9A-Za-zÀ-ỹĐđ._-]+(?:\s+[0-9A-Za-zÀ-ỹĐđ._-]+){0,4})"
+)
+_TARGET_ENTITY_NAMED_PERSON_PATTERN = re.compile(
+    r"(?iu)\b(?:người|nguoi)(?:\s+[0-9A-Za-zÀ-ỹĐđ._-]+){0,5}\s+(?:tên|ten)\s+[0-9A-Za-zÀ-ỹĐđ._-]+"
+)
+_TARGET_ENTITY_FAMILY_BY_PREFIX = {
+    "can bo": "person_target",
+    "quan ly": "person_target",
+    "ong": "person_target",
+    "ba": "person_target",
+    "tro giang": "person_target",
+    "co van": "person_target",
+    "giang vien": "person_target",
+    "nguoi": "person_target",
+    "cong ty": "company_target",
+    "tap doan": "company_target",
+    "truong": "school_target",
+    "bo phan": "org_target",
+    "phong ban": "org_target",
+    "to chuc": "org_target",
+    "du an": "project_target",
+}
+_TARGET_ENTITY_RELATION_PREFIX_PATTERN = "|".join(
+    re.escape(prefix).replace(r"\ ", r"\s+")
+    for prefix in sorted(_TARGET_ENTITY_FAMILY_BY_PREFIX.keys(), key=len, reverse=True)
+)
+_TARGET_ENTITY_RELATION_ANCHORED_PATTERN = re.compile(
+    rf"(?iu)(?<![a-z0-9])(?:ve|cua|lien\s+quan\s+den|hoi\s+ve)\s+"
+    rf"((?:{_TARGET_ENTITY_RELATION_PREFIX_PATTERN})\s+[a-z0-9_.-]+(?:\s+[a-z0-9_.-]+){{0,4}})(?![a-z0-9])"
+)
+_RETRIEVAL_STOP_WORDS = set(_INSIGHT_STOP_WORDS) | {
+    "toi",
+    "muon",
+    "thong",
+    "tin",
+    "ve",
+    "noi",
+    "ve",
+    "thongtin",
+}
+
+_PROMPT_CONTEXT_PHRASE_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"(?<![a-z0-9])tai lieu noi bo(?![a-z0-9])", "tai lieu noi bo"),
+    (r"(?<![a-z0-9])chua cong bo(?![a-z0-9])", "chua cong bo"),
+    (r"(?<![a-z0-9])noi xau(?![a-z0-9])", "noi xau"),
+    (r"(?<![a-z0-9])boi nho(?![a-z0-9])", "boi nho"),
+    (r"(?<![a-z0-9])noi bo(?![a-z0-9])", "noi bo"),
+    (r"(?<![a-z0-9])ho so ky luat(?![a-z0-9])", "ho so ky luat"),
+    (r"(?<![a-z0-9])ke hoach sa thai(?![a-z0-9])", "ke hoach sa thai"),
+    (r"(?<![a-z0-9])bao cao tai chinh(?![a-z0-9])", "bao cao tai chinh"),
+    (r"(?<![a-z0-9])bien ban hop chien luoc(?![a-z0-9])", "bien ban hop chien luoc"),
+    (r"(?<![a-z0-9])danh sach thuong quy(?![a-z0-9])", "danh sach thuong quy"),
+    (r"(?<![a-z0-9])ngan sach van hanh(?![a-z0-9])", "ngan sach van hanh"),
+    (r"(?<![a-z0-9])thong tin mat(?![a-z0-9])", "thong tin mat"),
+    (r"(?<![a-z0-9])quy trinh xu ly su co(?![a-z0-9])", "quy trinh xu ly su co"),
+    (r"(?<![a-z0-9])ke hoach mo rong thi truong(?![a-z0-9])", "ke hoach mo rong thi truong"),
+    (r"(?<![a-z0-9])bao cao loi nhuan quy(?![a-z0-9])", "bao cao loi nhuan quy"),
+)
+
+_BUSINESS_NOUN_PHRASE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?<![a-z0-9])(ho so(?:\s+[a-z0-9_.-]+){1,2})(?![a-z0-9])"),
+    re.compile(r"(?<![a-z0-9])(ke hoach(?:\s+[a-z0-9_.-]+){2,4})(?![a-z0-9])"),
+    re.compile(r"(?<![a-z0-9])(bao cao(?:\s+[a-z0-9_.-]+){2,3})(?![a-z0-9])"),
+    re.compile(r"(?<![a-z0-9])(bien ban(?:\s+[a-z0-9_.-]+){1,4})(?![a-z0-9])"),
+    re.compile(r"(?<![a-z0-9])(danh sach(?:\s+[a-z0-9_.-]+){2,3})(?![a-z0-9])"),
+    re.compile(r"(?<![a-z0-9])(ngan sach(?:\s+[a-z0-9_.-]+){2,3})(?![a-z0-9])"),
+    re.compile(r"(?<![a-z0-9])(tai lieu(?:\s+[a-z0-9_.-]+){1,2})(?![a-z0-9])"),
+    re.compile(r"(?<![a-z0-9])(quy trinh(?:\s+[a-z0-9_.-]+){2,4})(?![a-z0-9])"),
+    re.compile(r"(?<![a-z0-9])(thong tin(?:\s+[a-z0-9_.-]+){1,2})(?![a-z0-9])"),
+)
+_BUSINESS_CONTEXT_QUALIFIER_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"(?<![a-z0-9])noi bo(?![a-z0-9])"), "noi bo"),
+    (re.compile(r"(?<![a-z0-9])chua cong bo(?![a-z0-9])"), "chua cong bo"),
+    (re.compile(r"(?<![a-z0-9])boi nho(?![a-z0-9])"), "boi nho"),
+)
+_GENERIC_MODIFIER_PHRASES = {"noi bo", "chua cong bo"}
+
+_CONTEXT_KEYWORD_NOISE_STOPWORDS = {
+    "toi",
+    "muon",
+    "thong",
+    "tin",
+    "noi",
+    "dung",
+    "ve",
+    "xau",
+    "la",
+    "gi",
+}
+
+_CONTEXT_KEYWORD_BANNED_VALUES = {
+    "literal refine required",
+}
+_DRAFT_DEBUG_BANNED_TEXTS = {
+    "prompt keyword refinement",
+    "cannot generate from this prompt yet",
+    "literal refine required",
+}
+
+_PROMPT_GROUNDING_STOPWORDS = set(_RETRIEVAL_STOP_WORDS) | {
+    "cac",
+    "nhung",
+    "noi",
+    "dung",
+    "ve",
+}
+
+
+def _normalize_phrase_text(value: str) -> str:
+    text = re.sub(r"\s+", " ", str(value or "").strip().lower())
+    return text.strip(" \t\r\n,.;:!?\"'()[]{}")
+
+
+def _target_family_for_phrase(phrase: str) -> str | None:
+    folded = _fold_text(phrase)
+    if not folded:
+        return None
+    for prefix, family in _TARGET_ENTITY_FAMILY_BY_PREFIX.items():
+        pattern = rf"^{re.escape(prefix)}(?:\s+|$)"
+        if re.search(pattern, folded):
+            return family
+    return None
+
+
+def _extract_target_phrases(prompt: str, *, limit: int = 4) -> list[str]:
+    raw = str(prompt or "")
+    safe_limit = max(1, min(int(limit), 32))
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def _append(value: str) -> bool:
+        phrase = _normalize_phrase_text(value)
+        if not phrase:
+            return False
+        folded = _fold_text(phrase)
+        if not folded or folded in seen:
+            return False
+        seen.add(folded)
+        out.append(phrase)
+        return len(out) >= safe_limit
+
+    folded_prompt = _fold_text(raw)
+    for match in _TARGET_ENTITY_RELATION_ANCHORED_PATTERN.finditer(folded_prompt):
+        if _append(str(match.group(1) or "")):
+            return out
+
+    for pattern in (_TARGET_ENTITY_LABEL_PATTERN, _TARGET_ENTITY_NAMED_PERSON_PATTERN):
+        for match in pattern.finditer(raw):
+            if _append(str(match.group(0) or "")):
+                return out
+    return out
+
+
+def _extract_target_families(text: str) -> set[str]:
+    families: set[str] = set()
+    for phrase in _extract_target_phrases(text, limit=16):
+        family = _target_family_for_phrase(phrase)
+        if family:
+            families.add(family)
+    folded = _fold_text(text)
+    if re.search(r"(?<![a-z0-9])can bo(?![a-z0-9])", folded):
+        families.add("person_target")
+    if re.search(r"(?<![a-z0-9])quan ly(?![a-z0-9])", folded):
+        families.add("person_target")
+    if re.search(r"(?<![a-z0-9])cong ty(?![a-z0-9])", folded):
+        families.add("company_target")
+    if re.search(r"(?<![a-z0-9])tap doan(?![a-z0-9])", folded):
+        families.add("company_target")
+    if re.search(r"(?<![a-z0-9])truong(?![a-z0-9])", folded):
+        families.add("school_target")
+    if re.search(r"(?<![a-z0-9])bo phan(?![a-z0-9])", folded):
+        families.add("org_target")
+    if re.search(r"(?<![a-z0-9])phong ban(?![a-z0-9])", folded):
+        families.add("org_target")
+    if re.search(r"(?<![a-z0-9])du an(?![a-z0-9])", folded):
+        families.add("project_target")
+    if re.search(r"(?<![a-z0-9])co van(?![a-z0-9])", folded):
+        families.add("person_target")
+    if re.search(r"(?<![a-z0-9])tro giang(?![a-z0-9])", folded):
+        families.add("person_target")
+    if re.search(r"(?<![a-z0-9])giang vien(?![a-z0-9])", folded):
+        families.add("person_target")
+    return families
 
 
 def _extract_entity_types(node: Any) -> list[str]:
@@ -907,23 +1260,864 @@ def _extract_signal_fields(node: Any) -> list[str]:
     return out
 
 
-def _prompt_keywords(prompt: str, *, limit: int = 6) -> list[str]:
-    folded = _fold_text(prompt)
-    parts = [p.strip() for p in re.split(r"[^a-zA-Z0-9_]+", folded) if p.strip()]
+def _extract_meaningful_prompt_phrases(prompt: str, *, limit: int = 4) -> list[str]:
+    safe_limit = max(1, min(int(limit), 32))
     out: list[str] = []
     seen: set[str] = set()
+
+    for phrase in _extract_target_phrases(prompt, limit=safe_limit):
+        normalized = _normalize_phrase_text(phrase)
+        folded = _fold_text(normalized)
+        if not folded or folded in seen:
+            continue
+        seen.add(folded)
+        out.append(normalized)
+        if len(out) >= safe_limit:
+            return out
+
+    return out
+
+
+def _extract_business_noun_phrases(prompt: str, *, limit: int = 4) -> list[str]:
+    safe_limit = max(1, min(int(limit), 32))
+    folded_prompt = _fold_text(prompt)
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def _append_phrase(raw_value: str) -> None:
+        normalized = _normalize_phrase_text(raw_value)
+        folded = _fold_text(normalized)
+        if not folded or folded in seen:
+            return
+        if folded in {"thong tin", "thong tin ve", "noi dung", "noi dung ve"}:
+            return
+        seen.add(folded)
+        out.append(normalized)
+
+    def _strip_trailing_generic_modifiers(segment: str) -> str:
+        normalized = _normalize_phrase_text(segment)
+        while True:
+            updated = re.sub(
+                r"(?<![a-z0-9])(.+?)\s+(?:noi bo|chua cong bo)$",
+                r"\1",
+                normalized,
+            )
+            updated = _normalize_phrase_text(updated)
+            if not updated or updated == normalized:
+                break
+            normalized = updated
+        return normalized
+
+    candidate_segments = [folded_prompt]
+    target_phrases = [_fold_text(value) for value in _extract_target_phrases(prompt, limit=8)]
+    for target in target_phrases:
+        if not target:
+            continue
+        scoped_pattern = re.compile(
+            rf"(?<![a-z0-9])ve\s+(.+?)(?:\s+cua\s+{re.escape(target)})(?![a-z0-9])"
+        )
+        for match in scoped_pattern.finditer(folded_prompt):
+            segment = _normalize_phrase_text(str(match.group(1) or ""))
+            if segment:
+                candidate_segments.append(segment)
+
+    for segment in candidate_segments:
+        segment = _strip_trailing_generic_modifiers(segment)
+        if not segment:
+            continue
+        for pattern in _BUSINESS_NOUN_PHRASE_PATTERNS:
+            for match in pattern.finditer(segment):
+                _append_phrase(str(match.group(1) or ""))
+                if len(out) >= safe_limit:
+                    return out
+        for pattern, phrase in _BUSINESS_CONTEXT_QUALIFIER_PATTERNS:
+            if pattern.search(segment) is None:
+                continue
+            _append_phrase(phrase)
+            if len(out) >= safe_limit:
+                return out
+    return out
+
+
+def _extract_prompt_context_phrases(prompt: str, *, limit: int = 4) -> list[str]:
+    safe_limit = max(1, min(int(limit), 32))
+    out: list[str] = []
+    seen: set[str] = set()
+    folded_prompt = _fold_text(prompt)
+    for pattern, phrase in _PROMPT_CONTEXT_PHRASE_PATTERNS:
+        if re.search(pattern, folded_prompt) is None:
+            continue
+        normalized = _normalize_phrase_text(phrase)
+        folded = _fold_text(normalized)
+        if not folded or folded in seen:
+            continue
+        seen.add(folded)
+        out.append(normalized)
+        if len(out) >= safe_limit:
+            break
+    if len(out) < safe_limit:
+        for phrase in _extract_business_noun_phrases(prompt, limit=safe_limit):
+            normalized = _normalize_phrase_text(phrase)
+            folded = _fold_text(normalized)
+            if not folded or folded in seen:
+                continue
+            seen.add(folded)
+            out.append(normalized)
+            if len(out) >= safe_limit:
+                break
+    return out
+
+
+def _prompt_keywords(prompt: str, *, limit: int = 6) -> PromptKeywordBundle:
+    safe_limit = max(1, min(int(limit), 32))
+    phrases = _extract_meaningful_prompt_phrases(prompt, limit=safe_limit)
+    if not phrases:
+        phrases = _extract_prompt_context_phrases(prompt, limit=safe_limit)
+    phrase_token_set: set[str] = set()
+    for phrase in phrases:
+        phrase_token_set.update(
+            p.strip()
+            for p in re.split(r"[^a-zA-Z0-9_]+", _fold_text(phrase))
+            if p.strip()
+        )
+
+    helper_limit = max(2, min(64, safe_limit * 3))
+    helper_tokens: list[str] = []
+    seen_tokens: set[str] = set()
+    folded = _fold_text(prompt)
+    parts = [p.strip() for p in re.split(r"[^a-zA-Z0-9_]+", folded) if p.strip()]
     for part in parts:
         if len(part) < 3:
             continue
         if part in _INSIGHT_STOP_WORDS:
             continue
-        if part in seen:
+        if part in phrase_token_set:
             continue
-        seen.add(part)
-        out.append(part)
-        if len(out) >= limit:
+        if part in seen_tokens:
+            continue
+        seen_tokens.add(part)
+        helper_tokens.append(part)
+        if len(helper_tokens) >= helper_limit:
+            break
+    return {"phrases": phrases, "tokens": helper_tokens}
+
+
+def _sanitize_context_keyword_values(
+    values: list[Any],
+    *,
+    fallback_phrases: list[str],
+) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def _append_if_valid(raw_value: Any) -> None:
+        text = _normalize_phrase_text(str(raw_value or ""))
+        if not text:
+            return
+        folded = _fold_text(text)
+        if not folded:
+            return
+        if folded in _CONTEXT_KEYWORD_BANNED_VALUES:
+            return
+        is_single_token = " " not in folded
+        if is_single_token:
+            if folded in _CONTEXT_KEYWORD_NOISE_STOPWORDS:
+                return
+            if len(folded) <= 3:
+                return
+        if folded in seen:
+            return
+        seen.add(folded)
+        out.append(text)
+
+    for value in values:
+        _append_if_valid(value)
+
+    if out:
+        return out
+
+    for phrase in fallback_phrases:
+        _append_if_valid(phrase)
+    if out:
+        return out
+
+    for value in values:
+        text = _normalize_phrase_text(str(value or ""))
+        if not text:
+            continue
+        folded = _fold_text(text)
+        if folded in _CONTEXT_KEYWORD_BANNED_VALUES:
+            continue
+        if not folded or folded in seen:
+            continue
+        seen.add(folded)
+        out.append(text)
+        if len(out) >= 1:
             break
     return out
+
+
+def _sanitize_context_keyword_conditions(
+    node: Any,
+    *,
+    fallback_phrases: list[str],
+) -> Any:
+    if isinstance(node, dict):
+        out: dict[str, Any] = {
+            key: _sanitize_context_keyword_conditions(value, fallback_phrases=fallback_phrases)
+            for key, value in node.items()
+        }
+        signal = out.get("signal")
+        if isinstance(signal, dict):
+            field_name = _fold_text(str(signal.get("field") or ""))
+            if field_name == "context_keywords":
+                for list_op in ("any_of", "in"):
+                    raw_values = signal.get(list_op)
+                    if isinstance(raw_values, list):
+                        sanitized_values = _sanitize_context_keyword_values(
+                            raw_values,
+                            fallback_phrases=fallback_phrases,
+                        )
+                        if sanitized_values:
+                            signal[list_op] = sanitized_values
+                        else:
+                            signal.pop(list_op, None)
+                for scalar_op in ("equals", "contains"):
+                    raw_value = signal.get(scalar_op)
+                    if raw_value is None:
+                        continue
+                    sanitized = _sanitize_context_keyword_values(
+                        [raw_value],
+                        fallback_phrases=fallback_phrases,
+                    )
+                    if sanitized:
+                        signal[scalar_op] = sanitized[0]
+                    else:
+                        signal.pop(scalar_op, None)
+
+                ops = [k for k in SIGNAL_OPERATOR_KEYS if k in signal]
+                if not ops:
+                    fallback_values = _sanitize_context_keyword_values(
+                        list(fallback_phrases),
+                        fallback_phrases=fallback_phrases,
+                    )
+                    if fallback_values:
+                        signal["any_of"] = fallback_values
+        return out
+    if isinstance(node, list):
+        return [
+            _sanitize_context_keyword_conditions(value, fallback_phrases=fallback_phrases)
+            for value in node
+        ]
+    return node
+
+
+def _sanitize_draft_context_keywords(
+    *,
+    draft: RuleSuggestionDraftPayload,
+    prompt_keyword_bundle: PromptKeywordBundle,
+) -> RuleSuggestionDraftPayload:
+    sanitized_conditions = _sanitize_context_keyword_conditions(
+        draft.rule.conditions,
+        fallback_phrases=list(prompt_keyword_bundle.get("phrases") or []),
+    )
+    sanitized_rule = draft.rule.model_copy(update={"conditions": sanitized_conditions})
+    return draft.model_copy(update={"rule": sanitized_rule})
+
+
+def _prompt_grounding_term_set(
+    prompt: str,
+    *,
+    prompt_keyword_bundle: PromptKeywordBundle,
+) -> set[str]:
+    out: set[str] = set()
+    for phrase in list(prompt_keyword_bundle.get("phrases") or []):
+        folded = _fold_text(phrase)
+        if folded:
+            out.add(folded)
+    for phrase in _extract_target_phrases(prompt, limit=12):
+        folded = _fold_text(phrase)
+        if folded:
+            out.add(folded)
+    for phrase in _extract_prompt_context_phrases(prompt, limit=12):
+        folded = _fold_text(phrase)
+        if folded:
+            out.add(folded)
+    return out
+
+
+def _term_is_prompt_grounded(
+    term: Any,
+    *,
+    folded_prompt: str,
+    prompt_tokens: set[str],
+    grounding_terms: set[str],
+) -> bool:
+    folded = _fold_text(str(term or ""))
+    if not folded:
+        return False
+    if folded in _CONTEXT_KEYWORD_BANNED_VALUES:
+        return False
+    if folded in grounding_terms:
+        return True
+    if _contains_prompt_keyword(folded_prompt=folded_prompt, keyword=folded):
+        return True
+
+    term_tokens = [p for p in re.split(r"[^a-zA-Z0-9_]+", folded) if p]
+    content_tokens = [t for t in term_tokens if t not in _PROMPT_GROUNDING_STOPWORDS]
+    if not content_tokens:
+        return False
+    if len(content_tokens) == 1:
+        token = content_tokens[0]
+        return (len(token) >= 4) and (token in prompt_tokens)
+
+    overlap = [t for t in content_tokens if t in prompt_tokens]
+    if not overlap:
+        return False
+    return (len(overlap) / max(1, len(content_tokens))) >= 0.6
+
+
+def _filter_and_ground_context_terms(
+    *,
+    prompt: str,
+    draft: RuleSuggestionDraftPayload,
+    prompt_keyword_bundle: PromptKeywordBundle,
+) -> RuleSuggestionDraftPayload:
+    folded_prompt = _fold_text(prompt)
+    prompt_tokens = {
+        token
+        for token in re.split(r"[^a-zA-Z0-9_]+", folded_prompt)
+        if token and token not in _PROMPT_GROUNDING_STOPWORDS
+    }
+    grounding_terms = _prompt_grounding_term_set(
+        prompt,
+        prompt_keyword_bundle=prompt_keyword_bundle,
+    )
+
+    context_fallback_phrases = _extract_prompt_context_phrases(prompt, limit=8)
+    condition_fallback = list(prompt_keyword_bundle.get("phrases") or []) or context_fallback_phrases
+
+    def _filter_condition_keywords(node: Any) -> Any:
+        if isinstance(node, dict):
+            out: dict[str, Any] = {
+                key: _filter_condition_keywords(value) for key, value in node.items()
+            }
+            signal = out.get("signal")
+            if isinstance(signal, dict):
+                field_name = _fold_text(str(signal.get("field") or ""))
+                if field_name == "context_keywords":
+                    for op in ("any_of", "in"):
+                        values = signal.get(op)
+                        if isinstance(values, list):
+                            kept = [
+                                value
+                                for value in values
+                                if _term_is_prompt_grounded(
+                                    value,
+                                    folded_prompt=folded_prompt,
+                                    prompt_tokens=prompt_tokens,
+                                    grounding_terms=grounding_terms,
+                                )
+                            ]
+                            if kept:
+                                signal[op] = kept
+                            else:
+                                signal.pop(op, None)
+                    for op in ("equals", "contains"):
+                        value = signal.get(op)
+                        if value is None:
+                            continue
+                        if _term_is_prompt_grounded(
+                            value,
+                            folded_prompt=folded_prompt,
+                            prompt_tokens=prompt_tokens,
+                            grounding_terms=grounding_terms,
+                        ):
+                            continue
+                        signal.pop(op, None)
+
+                    current_values = _collect_context_keyword_terms({"signal": signal})
+                    if not current_values and condition_fallback:
+                        signal["any_of"] = _sanitize_context_keyword_values(
+                            list(condition_fallback),
+                            fallback_phrases=list(condition_fallback),
+                        )
+            return out
+        if isinstance(node, list):
+            return [_filter_condition_keywords(item) for item in node]
+        return node
+
+    filtered_conditions = _filter_condition_keywords(draft.rule.conditions)
+
+    filtered_terms: list[RuleSuggestionDraftContextTerm] = []
+    seen_term_keys: set[tuple[str, str, str]] = set()
+
+    for term in list(draft.context_terms or []):
+        term_text = str(getattr(term, "term", "") or "")
+        if not _term_is_prompt_grounded(
+            term_text,
+            folded_prompt=folded_prompt,
+            prompt_tokens=prompt_tokens,
+            grounding_terms=grounding_terms,
+        ):
+            continue
+        normalized_term = _normalize_phrase_text(term_text)
+        term_key = (
+            str(getattr(term, "entity_type", "") or "").strip().upper(),
+            _fold_text(normalized_term),
+            _normalize_lang(str(getattr(term, "lang", "") or "vi")),
+        )
+        if (not term_key[0]) or (not term_key[1]) or term_key in seen_term_keys:
+            continue
+        seen_term_keys.add(term_key)
+        filtered_terms.append(
+            RuleSuggestionDraftContextTerm(
+                entity_type=term_key[0],
+                term=normalized_term,
+                lang=term_key[2],
+                weight=float(getattr(term, "weight", 1.0) or 1.0),
+                window_1=int(getattr(term, "window_1", 60) or 60),
+                window_2=int(getattr(term, "window_2", 20) or 20),
+                enabled=bool(getattr(term, "enabled", True)),
+            )
+        )
+
+    default_context_entity = "CUSTOM_SECRET"
+    if filtered_terms:
+        default_context_entity = filtered_terms[0].entity_type
+    elif draft.context_terms:
+        first_entity = str(getattr(draft.context_terms[0], "entity_type", "") or "").strip().upper()
+        if first_entity:
+            default_context_entity = first_entity
+
+    for phrase in context_fallback_phrases:
+        folded_phrase = _fold_text(phrase)
+        term_key = (default_context_entity, folded_phrase, "vi")
+        if (not folded_phrase) or term_key in seen_term_keys:
+            continue
+        seen_term_keys.add(term_key)
+        filtered_terms.append(
+            RuleSuggestionDraftContextTerm(
+                entity_type=default_context_entity,
+                term=_normalize_phrase_text(phrase),
+                lang="vi",
+                weight=1.0,
+                window_1=60,
+                window_2=20,
+                enabled=True,
+            )
+        )
+
+    filtered_rule = draft.rule.model_copy(update={"conditions": filtered_conditions})
+    return draft.model_copy(update={"rule": filtered_rule, "context_terms": filtered_terms})
+
+
+def _is_generic_modifier_phrase(value: str) -> bool:
+    return _fold_text(value) in _GENERIC_MODIFIER_PHRASES
+
+
+def _unique_phrase_values(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = _normalize_phrase_text(value)
+        folded = _fold_text(normalized)
+        if not folded or folded in seen:
+            continue
+        seen.add(folded)
+        out.append(normalized)
+    return out
+
+
+def _trim_context_phrase_against_keywords(phrase: str, keyword_phrases: list[str]) -> str:
+    folded_phrase = _fold_text(phrase)
+    if not folded_phrase:
+        return ""
+    out = folded_phrase
+    for keyword in keyword_phrases:
+        folded_keyword = _fold_text(keyword)
+        if not folded_keyword:
+            continue
+        pattern = re.compile(
+            rf"(?<![a-z0-9])(.+?)\s+(?:ve|cua)\s+{re.escape(folded_keyword)}(?![a-z0-9])$"
+        )
+        match = pattern.search(out)
+        if match is not None:
+            out = _normalize_phrase_text(str(match.group(1) or ""))
+            continue
+        pattern_suffix = re.compile(
+            rf"(?<![a-z0-9])(.+?)\s+{re.escape(folded_keyword)}(?![a-z0-9])$"
+        )
+        suffix_match = pattern_suffix.search(out)
+        if suffix_match is not None:
+            candidate = _normalize_phrase_text(str(suffix_match.group(1) or ""))
+            if candidate:
+                out = candidate
+    for modifier in _GENERIC_MODIFIER_PHRASES:
+        pattern_modifier_suffix = re.compile(
+            rf"(?<![a-z0-9])(.+?)\s+{re.escape(modifier)}(?![a-z0-9])$"
+        )
+        match_modifier = pattern_modifier_suffix.search(out)
+        if match_modifier is None:
+            continue
+        candidate = _normalize_phrase_text(str(match_modifier.group(1) or ""))
+        if len([token for token in candidate.split(" ") if token]) >= 2:
+            out = candidate
+    return _normalize_phrase_text(out)
+
+
+def _remove_redundant_subphrases(
+    phrases: list[str],
+    *,
+    protected: set[str] | None = None,
+) -> list[str]:
+    normalized = _unique_phrase_values(phrases)
+    if not normalized:
+        return []
+    protected_folded = {_fold_text(value) for value in (protected or set())}
+
+    out: list[str] = []
+    folded_values = [_fold_text(value) for value in normalized]
+    for idx, phrase in enumerate(normalized):
+        folded = folded_values[idx]
+        if not folded:
+            continue
+        if folded in protected_folded:
+            out.append(phrase)
+            continue
+        token_count = len([token for token in folded.split(" ") if token])
+        overshadowed = False
+        for jdx, other in enumerate(normalized):
+            if jdx == idx:
+                continue
+            folded_other = folded_values[jdx]
+            if not folded_other or folded == folded_other:
+                continue
+            if folded in folded_other and len(folded_other) > len(folded):
+                overshadowed = True
+                break
+        if overshadowed and token_count <= 4:
+            continue
+        out.append(phrase)
+    return _unique_phrase_values(out)
+
+
+def _select_primary_keyword_phrases(
+    *,
+    prompt: str,
+    draft: RuleSuggestionDraftPayload,
+    prompt_keyword_bundle: PromptKeywordBundle,
+    limit: int = 2,
+) -> list[str]:
+    safe_limit = max(1, min(int(limit), 4))
+    target_phrases = _unique_phrase_values(_extract_target_phrases(prompt, limit=8))
+    if target_phrases:
+        return target_phrases[:safe_limit]
+
+    bundle_phrases = _unique_phrase_values(list(prompt_keyword_bundle.get("phrases") or []))
+    bundle_phrases = [value for value in bundle_phrases if not _is_generic_modifier_phrase(value)]
+    if bundle_phrases:
+        return bundle_phrases[:safe_limit]
+
+    existing_keywords = _sanitize_context_keyword_values(
+        _collect_context_keyword_terms(draft.rule.conditions),
+        fallback_phrases=[],
+    )
+    existing_keywords = _remove_redundant_subphrases(
+        [value for value in existing_keywords if not _is_generic_modifier_phrase(value)],
+    )
+    if existing_keywords:
+        return existing_keywords[:safe_limit]
+
+    business_phrases = _remove_redundant_subphrases(
+        [value for value in _extract_business_noun_phrases(prompt, limit=6) if not _is_generic_modifier_phrase(value)]
+    )
+    if business_phrases:
+        return business_phrases[:1]
+    return []
+
+
+def _select_supporting_context_phrases(
+    *,
+    prompt: str,
+    draft: RuleSuggestionDraftPayload,
+    keyword_phrases: list[str],
+) -> list[str]:
+    folded_prompt = _fold_text(prompt)
+    prompt_tokens = {
+        token
+        for token in re.split(r"[^a-zA-Z0-9_]+", folded_prompt)
+        if token and token not in _PROMPT_GROUNDING_STOPWORDS
+    }
+    grounding_terms: set[str] = set()
+    for phrase in _extract_target_phrases(prompt, limit=12):
+        folded = _fold_text(phrase)
+        if folded:
+            grounding_terms.add(folded)
+    for phrase in _extract_business_noun_phrases(prompt, limit=12):
+        folded = _fold_text(phrase)
+        if folded:
+            grounding_terms.add(folded)
+    for phrase in _extract_prompt_context_phrases(prompt, limit=12):
+        folded = _fold_text(phrase)
+        if folded:
+            grounding_terms.add(folded)
+
+    keyword_folds = {_fold_text(value) for value in keyword_phrases if _fold_text(value)}
+    candidates: list[str] = []
+    candidates.extend(str(getattr(term, "term", "") or "") for term in list(draft.context_terms or []))
+    candidates.extend(_extract_business_noun_phrases(prompt, limit=10))
+    candidates.extend(_extract_prompt_context_phrases(prompt, limit=10))
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in candidates:
+        simplified = _trim_context_phrase_against_keywords(raw, keyword_phrases)
+        normalized = _normalize_phrase_text(simplified)
+        folded = _fold_text(normalized)
+        if not folded:
+            continue
+        if not _term_is_prompt_grounded(
+            normalized,
+            folded_prompt=folded_prompt,
+            prompt_tokens=prompt_tokens,
+            grounding_terms=grounding_terms,
+        ):
+            continue
+        if folded in keyword_folds:
+            continue
+        if any((folded in keyword) and (folded != keyword) for keyword in keyword_folds):
+            continue
+        if any(
+            re.search(rf"(?<![a-z0-9]){re.escape(keyword)}(?![a-z0-9])", folded) is not None
+            for keyword in keyword_folds
+        ):
+            continue
+        if folded in seen:
+            continue
+        seen.add(folded)
+        out.append(normalized)
+
+    cleaned = _sanitize_context_keyword_values(out, fallback_phrases=out)
+    cleaned = _remove_redundant_subphrases(
+        cleaned,
+        protected=set(_GENERIC_MODIFIER_PHRASES),
+    )
+    cleaned = [value for value in cleaned if _fold_text(value) not in keyword_folds]
+    return cleaned[:6]
+
+
+def _enforce_keyword_context_role_contract(
+    *,
+    prompt: str,
+    draft: RuleSuggestionDraftPayload,
+    prompt_keyword_bundle: PromptKeywordBundle,
+) -> tuple[RuleSuggestionDraftPayload, dict[str, Any]]:
+    if _is_literal_secret_prompt(prompt) or _has_known_pii_intent(prompt):
+        return draft, {"applied": False, "reason": "literal_or_known_pii_prompt"}
+
+    keywords = _select_primary_keyword_phrases(
+        prompt=prompt,
+        draft=draft,
+        prompt_keyword_bundle=prompt_keyword_bundle,
+        limit=2,
+    )
+    if not keywords:
+        fallback_context = _extract_prompt_context_phrases(prompt, limit=6)
+        fallback_context = [value for value in fallback_context if not _is_generic_modifier_phrase(value)]
+        if fallback_context:
+            keywords = [fallback_context[0]]
+
+    keywords = _unique_phrase_values(keywords)[:2]
+    keywords = [value for value in keywords if not _is_generic_modifier_phrase(value)]
+
+    if not keywords:
+        fallback_candidates = _unique_phrase_values(
+            _extract_target_phrases(prompt, limit=6)
+            + _extract_business_noun_phrases(prompt, limit=6)
+            + _extract_prompt_context_phrases(prompt, limit=6)
+        )
+        fallback_candidates = [
+            value for value in fallback_candidates if not _is_generic_modifier_phrase(value)
+        ]
+        if fallback_candidates:
+            keywords = fallback_candidates[:1]
+        else:
+            return draft, {"applied": False, "reason": "no_meaningful_keyword"}
+
+    supporting_terms = _select_supporting_context_phrases(
+        prompt=prompt,
+        draft=draft,
+        keyword_phrases=keywords,
+    )
+    keyword_folds = {_fold_text(value) for value in keywords if _fold_text(value)}
+    supporting_terms = [
+        value
+        for value in supporting_terms
+        if _fold_text(value) not in keyword_folds
+    ]
+
+    context_entity_type = "CUSTOM_SECRET"
+    for term in list(draft.context_terms or []):
+        entity_type = str(getattr(term, "entity_type", "") or "").strip().upper()
+        if not entity_type or entity_type == "INTERNAL_CODE":
+            continue
+        context_entity_type = entity_type
+        break
+    if context_entity_type == "INTERNAL_CODE":
+        context_entity_type = "CUSTOM_SECRET"
+
+    normalized_terms = [
+        RuleSuggestionDraftContextTerm(
+            entity_type=context_entity_type,
+            term=_normalize_phrase_text(value),
+            lang="vi",
+            weight=1.0,
+            window_1=60,
+            window_2=20,
+            enabled=True,
+        )
+        for value in supporting_terms
+        if _normalize_phrase_text(value)
+    ]
+
+    normalized_conditions: dict[str, Any] = {
+        "all": [
+            {
+                "signal": {
+                    "field": "context_keywords",
+                    "any_of": keywords,
+                }
+            }
+        ]
+    }
+    if not _is_simple_builder_compatible_conditions(normalized_conditions):
+        normalized_conditions = {
+            "all": [{"signal": {"field": "context_keywords", "any_of": keywords[:1]}}]
+        }
+
+    normalized_rule = draft.rule.model_copy(update={"conditions": normalized_conditions})
+    finalized = draft.model_copy(update={"rule": normalized_rule, "context_terms": normalized_terms})
+    return finalized, {
+        "applied": True,
+        "keywords": keywords,
+        "support_terms": [str(term.term) for term in normalized_terms],
+    }
+
+
+def _contains_banned_debug_text(value: str) -> bool:
+    folded = _fold_text(value)
+    if not folded:
+        return False
+    return any(text in folded for text in _DRAFT_DEBUG_BANNED_TEXTS)
+
+
+def _sanitize_debug_placeholder_text(
+    *,
+    prompt: str,
+    draft: RuleSuggestionDraftPayload,
+) -> RuleSuggestionDraftPayload:
+    rule = draft.rule
+    name = str(rule.name or "").strip()
+    description = str(rule.description or "").strip()
+
+    if (not name) or _contains_banned_debug_text(name):
+        name = "Suggested prompt policy"
+    if _contains_banned_debug_text(description):
+        description = f"Auto-generated suggestion from prompt: {prompt[:180]}"
+
+    sanitized_terms: list[RuleSuggestionDraftContextTerm] = []
+    for term in list(draft.context_terms or []):
+        text = _normalize_phrase_text(str(term.term or ""))
+        if (not text) or _contains_banned_debug_text(text):
+            continue
+        sanitized_terms.append(term.model_copy(update={"term": text}))
+
+    sanitized_conditions = _sanitize_context_keyword_conditions(
+        rule.conditions,
+        fallback_phrases=[str(t.term or "") for t in sanitized_terms],
+    )
+    sanitized_rule = rule.model_copy(
+        update={
+            "name": name,
+            "description": description or None,
+            "conditions": sanitized_conditions,
+        }
+    )
+    return draft.model_copy(update={"rule": sanitized_rule, "context_terms": sanitized_terms})
+
+
+def _build_minimal_safe_prompt_draft(
+    *,
+    prompt: str,
+) -> RuleSuggestionDraftPayload:
+    action = _action_hint_from_prompt(prompt)
+    stable_suffix = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
+    target_phrases = _extract_target_phrases(prompt, limit=2)
+    business_phrases = _extract_business_noun_phrases(prompt, limit=8)
+    context_phrases = _extract_prompt_context_phrases(prompt, limit=8)
+
+    keywords = _unique_phrase_values(target_phrases)[:2]
+    if not keywords:
+        fallback_keywords = _remove_redundant_subphrases(
+            [value for value in (business_phrases + context_phrases) if not _is_generic_modifier_phrase(value)],
+        )
+        keywords = fallback_keywords[:1]
+    if not keywords:
+        token_fallback = list(_prompt_keywords(prompt, limit=8).get("tokens") or [])
+        safe_tokens = [t for t in token_fallback if len(str(t or "").strip()) >= 4]
+        keywords = [safe_tokens[0]] if safe_tokens else ["context"]
+
+    support_candidates = _remove_redundant_subphrases(
+        business_phrases + context_phrases,
+        protected=set(_GENERIC_MODIFIER_PHRASES),
+    )
+    keyword_folds = {_fold_text(value) for value in keywords if _fold_text(value)}
+    support_terms = [
+        value for value in support_candidates if _fold_text(value) not in keyword_folds
+    ][:6]
+
+    rule = RuleSuggestionDraftRule(
+        stable_key=f"personal.custom.suggested.{stable_suffix}",
+        name="Suggested prompt policy",
+        description=f"Auto-generated suggestion from prompt: {prompt[:180]}",
+        scope=RuleScope.prompt,
+        conditions={
+            "all": [
+                {
+                    "signal": {
+                        "field": "context_keywords",
+                        "any_of": keywords,
+                    }
+                }
+            ]
+        },
+        action=action,
+        severity=RuleSeverity.high if action == RuleAction.block else RuleSeverity.medium,
+        priority=90 if action == RuleAction.block else 70,
+        rag_mode=RagMode.off,
+        enabled=True,
+    )
+    terms = [
+        RuleSuggestionDraftContextTerm(
+            entity_type="CUSTOM_SECRET",
+            term=_normalize_phrase_text(value),
+            lang="vi",
+            weight=1.0,
+            window_1=60,
+            window_2=20,
+            enabled=True,
+        )
+        for value in support_terms
+        if _normalize_phrase_text(value)
+    ]
+    draft = RuleSuggestionDraftPayload(rule=rule, context_terms=terms)
+    drafted, _meta = _enforce_keyword_context_role_contract(
+        prompt=prompt,
+        draft=draft,
+        prompt_keyword_bundle=_prompt_keywords(prompt, limit=16),
+    )
+    return _sanitize_debug_placeholder_text(prompt=prompt, draft=drafted)
 
 
 def _derive_terms(prompt: str, draft: RuleSuggestionDraftPayload) -> list[str]:
@@ -959,7 +2153,10 @@ def _derive_terms(prompt: str, draft: RuleSuggestionDraftPayload) -> list[str]:
         seen.add(field_name)
         out.append(field_name)
 
-    for kw in _prompt_keywords(prompt, limit=8):
+    prompt_keyword_bundle = _prompt_keywords(prompt, limit=8)
+    for kw in list(prompt_keyword_bundle.get("phrases") or []) + list(
+        prompt_keyword_bundle.get("tokens") or []
+    ):
         if kw in seen:
             continue
         seen.add(kw)
@@ -1166,7 +2363,11 @@ def _intent_confidence(
     runtime_warning_count: int = 0,
 ) -> float:
     score = 0.55
-    if len(_prompt_keywords(prompt, limit=12)) >= 3:
+    prompt_keyword_bundle = _prompt_keywords(prompt, limit=12)
+    prompt_keyword_count = len(prompt_keyword_bundle.get("phrases") or []) + len(
+        prompt_keyword_bundle.get("tokens") or []
+    )
+    if prompt_keyword_count >= 3:
         score += 0.08
     if draft.context_terms:
         score += 0.10
@@ -1629,14 +2830,15 @@ def _looks_like_rule_request_prompt(prompt: str) -> bool:
 
 
 def _validate_generate_prompt_intent(prompt: str) -> None:
-    if _looks_multi_intent_prompt(prompt):
+    reason = _intent_validation_reason(prompt)
+    if reason == "multi_intent_prompt_not_supported":
         raise AppError(
             422,
             ErrorCode.VALIDATION_ERROR,
             "Currently, each request supports creating only one rule from one prompt. Please split this into separate prompts.",
             details=[{"field": "prompt", "reason": "multi_intent_prompt_not_supported"}],
         )
-    if _looks_like_rule_request_prompt(prompt):
+    if reason is None:
         return
     raise AppError(
         422,
@@ -1644,6 +2846,22 @@ def _validate_generate_prompt_intent(prompt: str) -> None:
         "Prompt does not describe a rule request clearly enough",
         details=[{"field": "prompt", "reason": "prompt_not_rule_like"}],
     )
+
+
+def _intent_validation_reason(prompt: str) -> str | None:
+    if _looks_multi_intent_prompt(prompt):
+        return "multi_intent_prompt_not_supported"
+    if _looks_like_rule_request_prompt(prompt):
+        return None
+    return "prompt_not_rule_like"
+
+
+def _soft_intent_validation(prompt: str) -> dict[str, Any]:
+    reason = _intent_validation_reason(prompt)
+    return {
+        "valid": reason is None,
+        "reason": reason,
+    }
 
 
 def _contains_entity_leaf(conditions: Any) -> bool:
@@ -1670,6 +2888,118 @@ def _contains_entity_type(conditions: Any, entity_types: set[str]) -> bool:
     if isinstance(conditions, list):
         return any(_contains_entity_type(x, wanted) for x in conditions)
     return False
+
+
+def _drop_entity_type_from_conditions(
+    node: Any,
+    *,
+    blocked_entity_types: set[str],
+) -> tuple[Any | None, bool]:
+    blocked = {
+        str(value or "").strip().upper()
+        for value in blocked_entity_types
+        if str(value or "").strip()
+    }
+    if not blocked:
+        return node, False
+
+    def _walk(value: Any) -> tuple[Any | None, bool]:
+        if isinstance(value, dict):
+            if "entity_type" in value:
+                raw = str(value.get("entity_type") or "").upper()
+                parts = [x.strip() for x in re.split(r"[|,;/]+", raw) if x.strip()]
+                if not parts:
+                    return dict(value), False
+                kept = [part for part in parts if part not in blocked]
+                if len(kept) == len(parts):
+                    return dict(value), False
+                if not kept:
+                    return None, True
+                out_leaf = dict(value)
+                out_leaf["entity_type"] = "|".join(kept)
+                return out_leaf, True
+
+            out_obj: dict[str, Any] = {}
+            changed = False
+            for key, child in value.items():
+                new_child, child_changed = _walk(child)
+                changed = changed or child_changed
+                if new_child is None:
+                    changed = True
+                    continue
+                out_obj[key] = new_child
+
+            for op in ("any", "all"):
+                children = out_obj.get(op)
+                if not isinstance(children, list):
+                    continue
+                filtered_children = [child for child in children if child is not None]
+                if len(filtered_children) != len(children):
+                    changed = True
+                if filtered_children:
+                    out_obj[op] = filtered_children
+                else:
+                    out_obj.pop(op, None)
+                    changed = True
+
+            if out_obj.get("not") is None:
+                out_obj.pop("not", None)
+                changed = True
+
+            if not out_obj:
+                return None, True
+            return out_obj, changed
+
+        if isinstance(value, list):
+            out_list: list[Any] = []
+            changed = False
+            for item in value:
+                new_item, item_changed = _walk(item)
+                changed = changed or item_changed
+                if new_item is None:
+                    changed = True
+                    continue
+                out_list.append(new_item)
+            if not out_list:
+                return None, True
+            return out_list, changed
+
+        return value, False
+
+    return _walk(node)
+
+
+def _drop_internal_code_entity_fallback(
+    *,
+    prompt: str,
+    draft: RuleSuggestionDraftPayload,
+) -> tuple[RuleSuggestionDraftPayload, dict[str, Any]]:
+    sanitized_conditions, changed = _drop_entity_type_from_conditions(
+        draft.rule.conditions,
+        blocked_entity_types={"INTERNAL_CODE"},
+    )
+    if not changed:
+        return draft, {"applied": False, "fallback_rebuilt": False}
+
+    fallback_rebuilt = False
+    if sanitized_conditions is None:
+        h = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
+        keyword_bundle = _prompt_keywords(prompt, limit=8)
+        phrases = list(keyword_bundle.get("phrases") or [])
+        if not phrases:
+            phrases = _extract_prompt_context_phrases(prompt, limit=6)
+        fallback = _build_generic_prompt_keyword_draft(
+            prompt=prompt,
+            action=draft.rule.action,
+            stable_suffix=h,
+            phrases=phrases or ["context"],
+        )
+        sanitized_conditions = fallback.rule.conditions
+        fallback_rebuilt = True
+
+    sanitized_rule = draft.rule.model_copy(update={"conditions": sanitized_conditions})
+    sanitized_draft = draft.model_copy(update={"rule": sanitized_rule})
+    return sanitized_draft, {"applied": True, "fallback_rebuilt": fallback_rebuilt}
 
 
 def _has_signal_persona(conditions: Any, persona: str) -> bool:
@@ -2190,6 +3520,16 @@ def _post_generate_intent_guard(
         applied = True
         reasons.append("removed_unprompted_code_like_terms")
 
+    internal_code_guarded, internal_code_guard_meta = _drop_internal_code_entity_fallback(
+        prompt=prompt,
+        draft=guarded,
+    )
+    if bool(internal_code_guard_meta.get("applied")):
+        guarded = internal_code_guarded
+        mismatch_detected = True
+        applied = True
+        reasons.append("removed_internal_code_entity_fallback")
+
     explicit_action_intent = _explicit_action_intent_from_prompt(prompt)
     if explicit_action_intent and guarded.rule.action != explicit_action_intent:
         guarded = _realign_action_dependent_fields_after_override(
@@ -2265,9 +3605,12 @@ def _build_generic_prompt_keyword_draft(
     prompt: str,
     action: RuleAction,
     stable_suffix: str,
-    keywords: list[str],
+    phrases: list[str],
 ) -> RuleSuggestionDraftPayload:
-    keyword_values = [_fold_text(k) for k in keywords if _fold_text(k)]
+    keyword_values = _sanitize_context_keyword_values(
+        list(phrases),
+        fallback_phrases=list(phrases),
+    )
     keyword_values = keyword_values[:6] or ["context"]
     rule = RuleSuggestionDraftRule(
         stable_key=f"personal.custom.suggested.{stable_suffix}",
@@ -2294,17 +3637,38 @@ def _build_literal_refinement_draft(
     action: RuleAction,
     stable_suffix: str,
 ) -> RuleSuggestionDraftPayload:
+    prompt_keywords = _prompt_keywords(prompt, limit=6)
+    keyword_values = list(prompt_keywords.get("phrases") or [])
+    if not keyword_values:
+        keyword_values = _extract_prompt_context_phrases(prompt, limit=6)
+    keyword_values = _sanitize_context_keyword_values(
+        list(keyword_values),
+        fallback_phrases=list(keyword_values),
+    )
+    keyword_values = keyword_values[:6] or ["context"]
+
+    context_terms = [
+        RuleSuggestionDraftContextTerm(
+            entity_type="CUSTOM_SECRET",
+            term=_normalize_phrase_text(term),
+            lang="vi",
+            weight=1.0,
+            window_1=60,
+            window_2=20,
+            enabled=True,
+        )
+        for term in _extract_prompt_context_phrases(prompt, limit=4)
+        if _normalize_phrase_text(term)
+    ]
+
     rule = RuleSuggestionDraftRule(
         stable_key=f"personal.custom.suggested.{stable_suffix}",
-        name="Literal token requires refinement",
-        description=(
-            "Literal token in prompt is ambiguous or unsupported for deterministic runtime "
-            f"matching: {prompt[:180]}"
-        ),
+        name="Suggested prompt policy",
+        description=f"Auto-generated suggestion from prompt: {prompt[:180]}",
         scope=RuleScope.prompt,
         conditions={
             "all": [
-                {"signal": {"field": "context_keywords", "any_of": ["literal refine required"]}},
+                {"signal": {"field": "context_keywords", "any_of": keyword_values}},
             ]
         },
         action=action,
@@ -2313,7 +3677,7 @@ def _build_literal_refinement_draft(
         rag_mode=RagMode.off,
         enabled=True,
     )
-    return RuleSuggestionDraftPayload(rule=rule, context_terms=[])
+    return RuleSuggestionDraftPayload(rule=rule, context_terms=context_terms)
 
 
 def _known_pii_fallback_profile(
@@ -2713,16 +4077,17 @@ def _fallback_generate(prompt: str) -> RuleSuggestionDraftPayload:
             stable_suffix=h,
         )
 
+    keyword_bundle = _prompt_keywords(prompt, limit=6)
     keyword_fallback = list(code_tokens)
     if not keyword_fallback:
-        keyword_fallback = _prompt_keywords(prompt, limit=4)
+        keyword_fallback = list(keyword_bundle.get("phrases") or [])
     if not keyword_fallback and literal_detection.top_token:
         keyword_fallback = [literal_detection.top_token]
     return _build_generic_prompt_keyword_draft(
         prompt=prompt,
         action=action,
         stable_suffix=h,
-        keywords=keyword_fallback or ["context"],
+        phrases=keyword_fallback or ["context"],
     )
 
 
@@ -2849,7 +4214,9 @@ def _enforce_prompt_semantic_guard(
 def _tokenize_for_score(text: str) -> set[str]:
     folded = _fold_text(text or "")
     parts = re.split(r"[^a-zA-Z0-9_]+", folded)
-    return {p for p in parts if len(p) >= 2}
+    return {
+        p for p in parts if len(p) >= 2 and p not in _RETRIEVAL_STOP_WORDS
+    }
 
 
 def _jaccard_score(a: set[str], b: set[str]) -> float:
@@ -2863,6 +4230,10 @@ def _jaccard_score(a: set[str], b: set[str]) -> float:
 
 
 def _rule_reference_text(rule: Rule) -> str:
+    match_mode = getattr(rule, "match_mode", None)
+    if hasattr(match_mode, "value"):
+        match_mode = str(getattr(match_mode, "value"))
+    match_mode_text = str(match_mode or "strict_keyword")
     return "\n".join(
         [
             f"stable_key: {rule.stable_key}",
@@ -2872,6 +4243,7 @@ def _rule_reference_text(rule: Rule) -> str:
             f"action: {rule.action.value}",
             f"severity: {rule.severity.value}",
             f"priority: {int(rule.priority)}",
+            f"match_mode: {match_mode_text}",
             f"rag_mode: {rule.rag_mode.value}",
             f"conditions: {json.dumps(rule.conditions, sort_keys=True, ensure_ascii=False)}",
         ]
@@ -2894,10 +4266,36 @@ def _build_rule_references(
         ).all()
     )
     prompt_tokens = _tokenize_for_score(prompt)
+    prompt_target_phrases = _extract_target_phrases(prompt, limit=6)
+    prompt_target_families = _extract_target_families(prompt)
+    prompt_target_phrases_folded = [
+        _fold_text(phrase) for phrase in prompt_target_phrases if _fold_text(phrase)
+    ]
 
     scored: list[tuple[float, int, Rule]] = []
     for row in rows:
-        score = _jaccard_score(prompt_tokens, _tokenize_for_score(_rule_reference_text(row)))
+        rule_text = _rule_reference_text(row)
+        rule_text_folded = _fold_text(rule_text)
+        score = _jaccard_score(prompt_tokens, _tokenize_for_score(rule_text))
+        if prompt_target_phrases_folded:
+            phrase_hits = sum(
+                1
+                for phrase in prompt_target_phrases_folded
+                if _contains_prompt_keyword(
+                    folded_prompt=rule_text_folded,
+                    keyword=phrase,
+                )
+            )
+            if phrase_hits > 0:
+                score += 0.40 + (0.10 * min(phrase_hits - 1, 2))
+            else:
+                score -= 0.15
+
+        rule_target_families = _extract_target_families(rule_text)
+        if prompt_target_families and rule_target_families:
+            if not (prompt_target_families & rule_target_families):
+                continue
+            score += 0.18
         if score <= 0.0:
             continue
         scored.append((score, int(row.priority), row))
@@ -2915,6 +4313,11 @@ def _build_rule_references(
                 "action": row.action.value,
                 "severity": row.severity.value,
                 "priority": int(row.priority),
+                "match_mode": str(
+                    getattr(getattr(row, "match_mode", None), "value", None)
+                    or getattr(row, "match_mode", None)
+                    or "strict_keyword"
+                ),
                 "rag_mode": row.rag_mode.value,
                 "conditions": row.conditions,
                 "origin": "global_default" if row.company_id is None else "personal_rule",
@@ -3272,10 +4675,40 @@ def _ensure_company_stable_key(
     return draft.model_copy(update={"rule": rule})
 
 
+def _to_llm_style_rule_references(
+    *,
+    prompt: str,
+    rule_references: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    prompt_families = _extract_target_families(prompt)
+    out: list[dict[str, Any]] = []
+    for ref in list(rule_references or []):
+        name = str(ref.get("name") or "")
+        description = str(ref.get("description") or "")
+        ref_families = _extract_target_families(f"{name}\n{description}")
+        if prompt_families and ref_families and not (prompt_families & ref_families):
+            continue
+        out.append(
+            {
+                "rule_id": str(ref.get("rule_id") or ""),
+                "stable_key": str(ref.get("stable_key") or ""),
+                "name": name,
+                "scope": str(ref.get("scope") or ""),
+                "action": str(ref.get("action") or ""),
+                "severity": str(ref.get("severity") or ""),
+                "priority": int(ref.get("priority") or 0),
+                "match_mode": str(ref.get("match_mode") or "strict_keyword"),
+                "origin": str(ref.get("origin") or ""),
+                "prompt_overlap_score": float(ref.get("prompt_overlap_score") or 0.0),
+            }
+        )
+    return out
+
+
 def _generate_with_llm(
     prompt: str,
     *,
-    prompt_keywords: list[str],
+    prompt_keyword_bundle: PromptKeywordBundle,
     policy_chunks: list[dict[str, Any]],
     rule_references: list[dict[str, Any]],
     literal_detection: LiteralDetectionResult,
@@ -3289,10 +4722,11 @@ Output ONLY one JSON object with this schema:
     "name": "string",
     "description": "string|null",
     "scope": "prompt|chat|file|api",
-    "conditions": {"all":[{"signal":{"field":"persona","equals":"dev|office"}}]} OR {"any":[{"entity_type":"PHONE|CCCD|TAX_ID|EMAIL|CREDIT_CARD|API_SECRET|INTERNAL_CODE|CUSTOM_SECRET"}]} OR {"all":[{"signal":{"field":"context_keywords","any_of":["<concrete_term_from_user_prompt>"]}}]},
+    "conditions": {"all":[{"signal":{"field":"persona","equals":"dev|office"}}]} OR {"any":[{"entity_type":"PHONE|CCCD|TAX_ID|EMAIL|CREDIT_CARD|API_SECRET|CUSTOM_SECRET"}]} OR {"all":[{"signal":{"field":"context_keywords","any_of":["<concrete_term_from_user_prompt>"]}}]},
     "action": "allow|mask|block",
     "severity": "low|medium|high",
     "priority": 0,
+    "match_mode": "strict_keyword|keyword_plus_semantic",
     "rag_mode": "off|explain|verify",
     "enabled": true
   },
@@ -3311,20 +4745,35 @@ Output ONLY one JSON object with this schema:
 Return valid JSON only.
 """.strip()
 
-    keywords_json = json.dumps(prompt_keywords[:16], ensure_ascii=False)
+    target_phrases = list(prompt_keyword_bundle.get("phrases") or [])
+    if not target_phrases:
+        target_phrases = _extract_meaningful_prompt_phrases(prompt, limit=8)
+    helper_tokens = list(prompt_keyword_bundle.get("tokens") or [])
+    prompt_context_phrases = _extract_prompt_context_phrases(prompt, limit=8)
+    llm_style_references = _to_llm_style_rule_references(
+        prompt=prompt,
+        rule_references=rule_references,
+    )
+    target_phrases_json = json.dumps(target_phrases, ensure_ascii=False)
+    context_phrases_json = json.dumps(prompt_context_phrases, ensure_ascii=False)
+    helper_tokens_json = json.dumps(helper_tokens[:24], ensure_ascii=False)
     policy_json = json.dumps(policy_chunks[:5], ensure_ascii=False)
-    references_json = json.dumps(rule_references[:8], ensure_ascii=False)
+    references_json = json.dumps(llm_style_references[:8], ensure_ascii=False)
     literal_detection_json = json.dumps(literal_detection.to_dict(), ensure_ascii=False)
     prompt_input = (
         "User request:\n"
         f"{prompt}\n\n"
-        "Detected request keywords:\n"
-        f"{keywords_json}\n\n"
+        "Target phrases to preserve verbatim:\n"
+        f"{target_phrases_json}\n\n"
+        "Prompt context phrases (allowed for linked context terms only):\n"
+        f"{context_phrases_json}\n\n"
+        "Helper tokens for retrieval/context only (never emit as standalone condition keywords):\n"
+        f"{helper_tokens_json}\n\n"
         "Literal identifier detection hint:\n"
         f"{literal_detection_json}\n\n"
         "Relevant policy excerpts:\n"
         f"{policy_json}\n\n"
-        "Related existing rules:\n"
+        "Related existing rules (style-only, no keyword/context reuse):\n"
         f"{references_json}\n\n"
         "Task / output schema requirements:\n"
         "1) Prefer rule conditions consistent with existing rule DSL.\n"
@@ -3335,6 +4784,14 @@ Return valid JSON only.
         "6) If request mentions a specific internal code/token/secret that appears in the user request, prioritize exact-term protection and do not map to common PII entity types unless user explicitly asks.\n"
         "7) If request mentions payroll/salary plus personal/external email (e.g. gmail), draft conditions must reflect BOTH payroll domain and external-email risk, not generic office-only context.\n"
         "8) Respect literal identifier detection hint: INTERNAL_CODE means prefer deterministic exact-token protection; AMBIGUOUS means avoid forcing unrelated PII mapping.\n"
+        "9) Preserve target phrase(s) from user request; only allow trim/whitespace/lowercase normalization, never semantic rewriting.\n"
+        "10) Do not rewrite person-target phrases into company/school/organization-like labels.\n"
+        "11) Related existing rules are style references only and must not override target phrase/entity from user request.\n"
+        "12) For signal.field=context_keywords, use only meaningful phrase-level keywords from Target phrases.\n"
+        "13) Do not output helper tokens as standalone context_keywords values.\n"
+        "14) Do not copy linked context terms from related rules unless those terms are clearly grounded in the current user prompt.\n"
+        "15) Never emit placeholder text such as 'literal refine required'.\n"
+        "16) Never auto-fallback to conditions.entity_type=INTERNAL_CODE; when request is unclear, keep signal.field=context_keywords only.\n"
     )
 
     llm_out = generate_text_sync(
@@ -3361,7 +4818,7 @@ def _generate_draft_from_prompt(
 ) -> tuple[RuleSuggestionDraftPayload, dict[str, Any]]:
     normalized_prompt = _normalize_non_empty(value=prompt, field="prompt")
     literal_detection = _literal_detection(normalized_prompt, limit=8)
-    prompt_keywords = _prompt_keywords(normalized_prompt, limit=16)
+    prompt_keyword_bundle = _prompt_keywords(normalized_prompt, limit=16)
     context_retriever = SuggestionContextRetriever(
         session=session,
         company_id=company_id,
@@ -3389,7 +4846,7 @@ def _generate_draft_from_prompt(
     try:
         draft, meta = _generate_with_llm(
             normalized_prompt,
-            prompt_keywords=prompt_keywords,
+            prompt_keyword_bundle=prompt_keyword_bundle,
             policy_chunks=policy_chunks,
             rule_references=rule_references,
             literal_detection=literal_detection,
@@ -3397,16 +4854,28 @@ def _generate_draft_from_prompt(
         meta["context_retrieval"] = context_retrieval_meta
         meta["literal_detection"] = literal_detection.to_dict()
     except Exception:
-        draft = _fallback_generate(normalized_prompt)
-        meta = {
-            "source": "fallback_generator",
-            "provider": "none",
-            "model": "none",
-            "fallback_used": False,
-            "context_retrieval": context_retrieval_meta,
-            "literal_detection": literal_detection.to_dict(),
-        }
+        try:
+            draft = _fallback_generate(normalized_prompt)
+            meta = {
+                "source": "fallback_generator",
+                "provider": "none",
+                "model": "none",
+                "fallback_used": False,
+                "context_retrieval": context_retrieval_meta,
+                "literal_detection": literal_detection.to_dict(),
+            }
+        except Exception:
+            draft = _build_minimal_safe_prompt_draft(prompt=normalized_prompt)
+            meta = {
+                "source": "safe_minimal_fallback_after_generation_error",
+                "provider": "none",
+                "model": "none",
+                "fallback_used": False,
+                "context_retrieval": context_retrieval_meta,
+                "literal_detection": literal_detection.to_dict(),
+            }
 
+    draft = _sanitize_debug_placeholder_text(prompt=normalized_prompt, draft=draft)
     draft = _realign_literal_specific_draft(prompt=normalized_prompt, draft=draft)
     draft = _align_draft_with_prompt(normalized_prompt, draft)
     draft = _enforce_prompt_semantic_guard(normalized_prompt, draft)
@@ -3419,34 +4888,47 @@ def _generate_draft_from_prompt(
         draft=draft,
     )
     draft = _realign_literal_specific_draft(prompt=normalized_prompt, draft=draft)
+    draft = _sanitize_draft_context_keywords(
+        draft=draft,
+        prompt_keyword_bundle=prompt_keyword_bundle,
+    )
+    draft = _filter_and_ground_context_terms(
+        prompt=normalized_prompt,
+        draft=draft,
+        prompt_keyword_bundle=prompt_keyword_bundle,
+    )
+    draft, keyword_context_contract_meta = _enforce_keyword_context_role_contract(
+        prompt=normalized_prompt,
+        draft=draft,
+        prompt_keyword_bundle=prompt_keyword_bundle,
+    )
+    draft = _sanitize_debug_placeholder_text(prompt=normalized_prompt, draft=draft)
     meta["intent_guard"] = intent_guard_meta
     meta["runtime_usability"] = runtime_usability_meta
+    meta["keyword_context_contract"] = keyword_context_contract_meta
     try:
-        return _normalize_draft(draft), meta
+        normalized = _normalize_draft(draft)
+        normalized = _sanitize_debug_placeholder_text(prompt=normalized_prompt, draft=normalized)
+        return _normalize_draft(normalized), meta
     except Exception:
-        # Last-resort fallback for malformed LLM draft.
-        fb = _fallback_generate(normalized_prompt)
-        fb = _realign_literal_specific_draft(prompt=normalized_prompt, draft=fb)
-        fb = _align_draft_with_prompt(normalized_prompt, fb)
-        fb = _enforce_prompt_semantic_guard(normalized_prompt, fb)
-        fb, fb_intent_guard_meta = _post_generate_intent_guard(
-            prompt=normalized_prompt,
-            draft=fb,
-        )
-        fb, fb_runtime_usability_meta = _apply_runtime_usability_constraint(
-            prompt=normalized_prompt,
-            draft=fb,
-        )
-        fb = _realign_literal_specific_draft(prompt=normalized_prompt, draft=fb)
-        return _normalize_draft(fb), {
-            "source": "fallback_generator_after_normalize_error",
+        safe = _build_minimal_safe_prompt_draft(prompt=normalized_prompt)
+        safe = _sanitize_debug_placeholder_text(prompt=normalized_prompt, draft=safe)
+        return _normalize_draft(safe), {
+            "source": "safe_minimal_fallback_after_processing_error",
             "provider": "none",
             "model": "none",
             "fallback_used": False,
             "context_retrieval": context_retrieval_meta,
             "literal_detection": literal_detection.to_dict(),
-            "intent_guard": fb_intent_guard_meta,
-            "runtime_usability": fb_runtime_usability_meta,
+            "intent_guard": {"applied": False, "mismatch_detected": False, "reasons": ["safe_minimal_fallback"]},
+            "runtime_usability": {
+                "runtime_usable": True,
+                "warnings": [],
+                "repair_applied": True,
+                "reasons": ["safe_minimal_fallback"],
+                "abstract_terms": [],
+            },
+            "keyword_context_contract": {"applied": True, "reason": "safe_minimal_fallback"},
         }
 
 
@@ -3516,7 +4998,7 @@ def generate_rule_suggestion(
 ) -> RuleSuggestionGenerateOut:
     _load_company_or_404(session=session, company_id=company_id)
     _require_company_admin(session=session, company_id=company_id, user_id=actor_user_id)
-    _validate_generate_prompt_intent(payload.prompt)
+    intent_validation = _soft_intent_validation(payload.prompt)
     normalized_prompt = _normalize_non_empty(value=payload.prompt, field="prompt")
 
     draft, generation_meta = _generate_draft_from_prompt(
@@ -3525,6 +5007,7 @@ def generate_rule_suggestion(
         actor_user_id=actor_user_id,
         prompt=normalized_prompt,
     )
+    generation_meta["intent_validation"] = intent_validation
     duplicate_rule = _canonicalize_known_pii_rule_for_duplicate_check(
         prompt=normalized_prompt,
         rule=draft.rule,
@@ -4195,6 +5678,7 @@ def _apply_rule_draft(
             action=rule_draft.action,
             severity=rule_draft.severity,
             priority=rule_draft.priority,
+            match_mode=rule_draft.match_mode,
             rag_mode=rule_draft.rag_mode,
             enabled=rule_draft.enabled,
             created_by=actor_user_id,

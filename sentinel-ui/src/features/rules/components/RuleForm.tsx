@@ -17,6 +17,10 @@ import { InlineErrorText } from "@/shared/ui/inline-error-text";
 import { Label } from "@/shared/ui/label";
 import { TechnicalDetailsAccordion } from "@/shared/ui/technical-details-accordion";
 import { Textarea } from "@/shared/ui/textarea";
+import {
+  contextTermsToTextareaValue,
+  parseLinkedContextTermsText,
+} from "@/features/rules/components/contextTermsText";
 import type {
   CreateRuleRequest,
   CreateRuleWithContextRequest,
@@ -436,50 +440,6 @@ function parseJsonObject(value: string): Record<string, unknown> | null {
   }
 }
 
-function ruleContextTermsToTextareaValue(contextTerms: RuleContextTerm[] | null | undefined): string {
-  const seen = new Set<string>();
-  const lines: string[] = [];
-  for (const row of contextTerms ?? []) {
-    const value = String(row.term ?? "").trim();
-    if (!value) {
-      continue;
-    }
-    const normalized = value.toLowerCase();
-    if (seen.has(normalized)) {
-      continue;
-    }
-    seen.add(normalized);
-    lines.push(value);
-  }
-  return lines.join("\n");
-}
-
-function parseLinkedContextTerms(value: string): RuleContextTerm[] {
-  const seen = new Set<string>();
-  const out: RuleContextTerm[] = [];
-  for (const rawLine of value.split("\n")) {
-    const term = rawLine.trim();
-    if (!term) {
-      continue;
-    }
-    const normalized = term.toLowerCase();
-    if (seen.has(normalized)) {
-      continue;
-    }
-    seen.add(normalized);
-    out.push({
-      entity_type: "SEM_TOPIC",
-      term,
-      lang: "vi",
-      weight: 1,
-      window_1: 60,
-      window_2: 20,
-      enabled: true,
-    });
-  }
-  return out;
-}
-
 function makeConditionId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -730,7 +690,7 @@ export function RuleForm({
       ),
       rag_mode: getEnumValue(ragModeOptions, initialRule?.rag_mode, "off"),
       enabled: initialRule?.enabled ?? true,
-      linked_context_terms_text: ruleContextTermsToTextareaValue(initialRule?.context_terms),
+      linked_context_terms_text: contextTermsToTextareaValue(initialRule?.context_terms),
     }),
     [initialRule]
   );
@@ -1010,7 +970,9 @@ export function RuleForm({
         enabled: values.enabled,
         conditions,
       };
-      const linkedContextTerms = parseLinkedContextTerms(values.linked_context_terms_text);
+      const linkedContextTerms = parseLinkedContextTermsText(
+        values.linked_context_terms_text
+      ) as RuleContextTerm[];
       try {
         await onSubmit({
           rule: payload,
@@ -1045,7 +1007,9 @@ export function RuleForm({
       enabled: values.enabled,
       conditions,
     };
-    const linkedContextTerms = parseLinkedContextTerms(values.linked_context_terms_text);
+    const linkedContextTerms = parseLinkedContextTermsText(
+      values.linked_context_terms_text
+    ) as RuleContextTerm[];
     try {
       await onSubmit({
         rule: payload,
@@ -1111,7 +1075,7 @@ export function RuleForm({
               "border-destructive focus-visible:ring-destructive"
           )}
           id="linked_context_terms_text"
-          placeholder={"tang muc thu\ndong cao hon\ndieu chinh hoc phi"}
+          placeholder="Add one term per line"
           {...form.register("linked_context_terms_text")}
         />
         <FieldHelpText>
