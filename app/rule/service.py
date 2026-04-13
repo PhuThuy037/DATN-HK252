@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 from app.auth import service as auth_service
 from app.common.error_codes import ErrorCode
 from app.common.errors import AppError
-from app.common.enums import MemberRole, MemberStatus, RuleAction, RuleScope, SystemRole
+from app.common.enums import MatchMode, MemberRole, MemberStatus, RuleAction, RuleScope, SystemRole
 from app.company.model import Company
 from app.company_member.model import CompanyMember
 from app.decision.context_term_runtime import invalidate_context_runtime_cache
@@ -69,6 +69,22 @@ _EMBEDDING_RELEVANT_RULE_FIELDS = {
 _PAGINATION_MAX_LIMIT = 200
 _PAGINATION_DEFAULT_LIMIT = 20
 T = TypeVar("T")
+
+_WEAK_SEMANTIC_CONTEXT_TERMS = {
+    "noi bo",
+    "tai lieu",
+}
+_PREFERRED_SEMANTIC_CONTEXT_TERMS = {
+    "noi xau",
+    "boi nho",
+    "tai lieu noi bo",
+    "thong tin mat",
+    "ke hoach mo rong thi truong",
+    "quy trinh xu ly su co",
+    "bao cao loi nhuan quy",
+    "bao cao tai chinh",
+    "chua cong bo",
+}
 
 
 def _normalize_page_limit(*, limit: int | None) -> int:
@@ -650,6 +666,112 @@ def _build_auto_context_terms_from_conditions(
     ]
 
 
+def _normalize_semantic_context_term(value: str | None) -> str:
+    return str(value or "").strip().lower()
+
+
+def _select_semantic_condition_terms(
+    *,
+    keyword_terms: set[str],
+    context_terms: list[RuleContextTermIn],
+    limit: int = 2,
+) -> list[str]:
+    safe_limit = max(1, int(limit))
+    keyword_folds = {_normalize_semantic_context_term(value) for value in keyword_terms if value}
+    seen: set[str] = set()
+    ordered_terms: list[str] = []
+
+    for row in list(context_terms or []):
+        if not bool(getattr(row, "enabled", True)):
+            continue
+        normalized = _normalize_semantic_context_term(getattr(row, "term", ""))
+        if not normalized or normalized in keyword_folds or normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered_terms.append(normalized)
+
+    ordered_set = set(ordered_terms)
+    synthesized_terms: list[str] = []
+    if "tai lieu noi bo" not in ordered_set and {"tai lieu", "noi bo"}.issubset(ordered_set):
+        synthesized_terms.append("tai lieu noi bo")
+
+    scored: list[tuple[int, int, int, str]] = []
+    for idx, term in enumerate([*synthesized_terms, *ordered_terms]):
+        normalized = _normalize_semantic_context_term(term)
+        if not normalized or normalized in keyword_folds:
+            continue
+        if normalized in _WEAK_SEMANTIC_CONTEXT_TERMS:
+            continue
+        token_count = len([part for part in normalized.split() if part])
+        if token_count < 2:
+            continue
+        preferred = 1 if normalized in _PREFERRED_SEMANTIC_CONTEXT_TERMS else 0
+        scored.append((preferred, token_count, -idx, normalized))
+
+    scored.sort(reverse=True)
+    out: list[str] = []
+    kept: set[str] = set()
+    for _preferred, _token_count, _position, term in scored:
+        if term in kept:
+            continue
+        kept.add(term)
+        out.append(term)
+        if len(out) >= safe_limit:
+            break
+    return out
+
+
+def _build_semantic_conditions(
+    *,
+    conditions: dict[str, Any],
+    match_mode: MatchMode,
+    context_terms: list[RuleContextTermIn],
+) -> dict[str, Any]:
+    base_conditions = deepcopy(conditions or {})
+    if match_mode != MatchMode.keyword_plus_semantic:
+        return base_conditions
+
+    keyword_terms = _extract_context_keyword_terms_from_conditions(base_conditions)
+    if not keyword_terms:
+        return base_conditions
+
+    semantic_terms = _select_semantic_condition_terms(
+        keyword_terms=keyword_terms,
+        context_terms=context_terms,
+    )
+    if not semantic_terms:
+        return base_conditions
+
+    existing_terms = _extract_context_keyword_terms_from_conditions(base_conditions)
+    extra_nodes = [
+        {"signal": {"field": "context_keywords", "any_of": [term]}}
+        for term in semantic_terms
+        if term not in existing_terms
+    ]
+    if isinstance(base_conditions.get("all"), list):
+        preserved_nodes: list[Any] = []
+        keyword_anchor_kept = False
+        for node in list(base_conditions.get("all") or []):
+            signal = node.get("signal") if isinstance(node, dict) else None
+            field = str(signal.get("field") or "").strip().lower() if isinstance(signal, dict) else ""
+            if field != "context_keywords":
+                preserved_nodes.append(node)
+                continue
+            if keyword_anchor_kept:
+                continue
+            preserved_nodes.append(node)
+            keyword_anchor_kept = True
+        if not extra_nodes:
+            base_conditions["all"] = preserved_nodes
+            return base_conditions
+        base_conditions["all"] = [*preserved_nodes, *extra_nodes]
+        return base_conditions
+
+    if not extra_nodes:
+        return base_conditions
+    return {"all": [base_conditions, *extra_nodes]}
+
+
 def _context_term_identity_from_input(
     row: RuleContextTermIn,
 ) -> tuple[str, str, str]:
@@ -667,6 +789,18 @@ def _context_term_identity_from_model(
         str(row.entity_type or "").strip().upper(),
         str(row.term or "").strip().lower(),
         str(row.lang or "").strip().lower(),
+    )
+
+
+def _context_term_input_from_model(row: ContextTerm) -> RuleContextTermIn:
+    return RuleContextTermIn(
+        entity_type=str(row.entity_type or "").strip(),
+        term=str(row.term or "").strip(),
+        lang=str(row.lang or "").strip() or "vi",
+        weight=float(row.weight or 1.0),
+        window_1=int(row.window_1 or 60),
+        window_2=int(row.window_2 or 20),
+        enabled=bool(row.enabled),
     )
 
 
@@ -1279,11 +1413,17 @@ def create_company_custom_rule(
     manual_context_terms = _normalize_context_terms(
         context_terms=list(context_terms or [])
     )
+    effective_conditions = _build_semantic_conditions(
+        conditions=payload.conditions,
+        match_mode=payload.match_mode,
+        context_terms=manual_context_terms,
+    )
+    _validate_conditions(conditions=effective_conditions)
     manual_context_term_keys = {
         _context_term_identity_from_input(row) for row in manual_context_terms
     }
     auto_context_terms = _build_auto_context_terms_from_conditions(
-        conditions=payload.conditions
+        conditions=effective_conditions
     )
     normalized_auto_context_terms = _normalize_context_terms(
         context_terms=auto_context_terms
@@ -1299,7 +1439,7 @@ def create_company_custom_rule(
         name=name,
         description=description,
         scope=payload.scope,
-        conditions=payload.conditions,
+        conditions=effective_conditions,
         conditions_version=1,
         action=payload.action,
         severity=payload.severity,
@@ -1434,11 +1574,13 @@ def update_company_rule(
         _validate_company_scope(scope=payload.scope)
         row.scope = payload.scope
     conditions_changed = "conditions" in changed_fields and payload.conditions is not None
+    conditions_mutated = False
 
     if conditions_changed:
         _validate_conditions(conditions=payload.conditions)
         row.conditions = payload.conditions
         row.conditions_version = int(row.conditions_version or 1) + 1
+        conditions_mutated = True
     if "severity" in changed_fields and payload.severity is not None:
         row.severity = payload.severity
     if "priority" in changed_fields and payload.priority is not None:
@@ -1478,9 +1620,32 @@ def update_company_rule(
             rule_id=row.id,
             source=_RULE_CONTEXT_TERM_SOURCE_MANUAL,
         )
+        manual_context_terms_normalized = [
+            _context_term_input_from_model(term) for term in existing_manual_terms
+        ]
         manual_context_term_keys = {
             _context_term_identity_from_model(term) for term in existing_manual_terms
         }
+
+    should_rebuild_semantic_conditions = (
+        conditions_changed
+        or manual_context_terms_provided
+        or ("match_mode" in changed_fields and payload.match_mode is not None)
+    )
+    if should_rebuild_semantic_conditions:
+        previous_conditions = deepcopy(row.conditions or {})
+        rebuilt_conditions = _build_semantic_conditions(
+            conditions=row.conditions,
+            match_mode=row.match_mode,
+            context_terms=list(manual_context_terms_normalized or []),
+        )
+        _validate_conditions(conditions=rebuilt_conditions)
+        if rebuilt_conditions != previous_conditions:
+            row.conditions = rebuilt_conditions
+            if not conditions_mutated:
+                row.conditions_version = int(row.conditions_version or 1) + 1
+            conditions_mutated = True
+            changed_fields.add("conditions")
 
     auto_context_terms: list[RuleContextTermIn] = []
     auto_context_term_ids: list[UUID] = []
@@ -1543,7 +1708,7 @@ def update_company_rule(
     session.commit()
     session.refresh(row)
     RuleEngine.invalidate_cache(company_id)
-    if conditions_changed:
+    if conditions_mutated:
         invalidate_context_runtime_cache(company_id)
     return _to_rule_out(rule=row, origin=origin)
 

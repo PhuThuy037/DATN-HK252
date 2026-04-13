@@ -3,6 +3,7 @@ import { canSimulate } from "@/features/suggestions/components/StatusBadge";
 import { SimulatePanel } from "@/features/suggestions/components/SimulatePanel";
 import { AppButton } from "@/shared/ui/app-button";
 import { appActionRowClassName } from "@/shared/ui/design-tokens";
+import { AppAlert } from "@/shared/ui/app-alert";
 import { AppSectionCard } from "@/shared/ui/app-section-card";
 import { StatusBadge } from "@/shared/ui/status-badge";
 
@@ -37,7 +38,6 @@ export function SuggestionSimulateStep({
       description="Run sample inputs to see actual runtime behavior before moving to review."
       title="Simulate"
     >
-
       <SimulatePanel
         disabled={!canSimulate(status)}
         errorMessage={errorMessage}
@@ -47,15 +47,17 @@ export function SuggestionSimulateStep({
         result={result}
       />
 
+      <AppAlert
+        description="Simulation preview does not fully support semantic rules yet. You can continue to review, confirm, and apply this suggestion, then validate final behavior in chat/runtime."
+        title="Simulation limitation"
+        variant="warning"
+      />
+
       <div className={appActionRowClassName}>
         <AppButton onClick={onBack} type="button" variant="secondary">
           Back
         </AppButton>
-        <AppButton
-          disabled={!result || !result.runtime_usable}
-          onClick={onContinue}
-          type="button"
-        >
+        <AppButton disabled={isSubmitting} onClick={onContinue} type="button">
           Continue to Review
         </AppButton>
       </div>

@@ -10,6 +10,8 @@ type SuggestionDecisionStepProps = {
   isConfirming: boolean;
   isRejecting: boolean;
   duplicateRisk?: string | null;
+  runtimeUsable?: boolean;
+  runtimeWarnings?: string[];
   onBack: () => void;
   onOpenConfirm: () => void;
   onOpenReject: () => void;
@@ -34,6 +36,8 @@ export function SuggestionDecisionStep({
   isConfirming,
   isRejecting,
   duplicateRisk,
+  runtimeUsable = true,
+  runtimeWarnings = [],
   onBack,
   onOpenConfirm,
   onOpenReject,
@@ -74,6 +78,21 @@ export function SuggestionDecisionStep({
           }
           title={isExactDuplicate ? "Confirmation blocked" : "Duplicate warning"}
           variant={isExactDuplicate ? "error" : "warning"}
+        />
+      ) : null}
+
+      {!runtimeUsable || runtimeWarnings.length > 0 ? (
+        <AppAlert
+          description={
+            <div className="space-y-1">
+              <p>May not work as expected at runtime, but you can still confirm and apply this suggestion.</p>
+              {runtimeWarnings.map((warning) => (
+                <p key={warning}>{warning}</p>
+              ))}
+            </div>
+          }
+          title="Runtime usability: warning"
+          variant="warning"
         />
       ) : null}
 

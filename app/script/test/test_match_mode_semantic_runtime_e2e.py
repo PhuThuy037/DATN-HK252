@@ -257,7 +257,7 @@ def main() -> None:
 
         semantic_conversation_id = create_rule_set_conversation(client, token, rule_set_id)
 
-        print("[5/8] keyword_plus_semantic exact keyword hit should still block via phase-1")
+        print("[5/8] keyword_plus_semantic target-only hit should stay allow")
         exact_send = send_message(
             client,
             token,
@@ -265,8 +265,8 @@ def main() -> None:
             f"Toi muon noi ve {keyword_term}",
         )
         exact_message_id = str(exact_send.get("id") or "").strip()
-        if str(exact_send.get("final_action") or "").lower() != "block":
-            fail(f"semantic rule exact keyword hit must block: {exact_send}")
+        if str(exact_send.get("final_action") or "").lower() != "allow":
+            fail(f"semantic rule target-only hit must stay allow: {exact_send}")
         exact_detail = get_message_detail(
             client,
             token,
@@ -274,10 +274,30 @@ def main() -> None:
             exact_message_id,
         )
         exact_semantic = _semantic_signal(exact_detail)
-        if exact_semantic.get("called") is not False:
-            fail(f"semantic assist must not run after phase-1 block: {exact_semantic}")
+        if exact_semantic.get("called") is not True:
+            fail(f"semantic assist should run when target matches without topic support: {exact_semantic}")
 
-        print("[6/8] keyword miss but near meaning should allow and log semantic assist")
+        print("[6/8] keyword_plus_semantic target + topic exact hit should block via phase-1")
+        exact_topic_send = send_message(
+            client,
+            token,
+            semantic_conversation_id,
+            f"Toi muon noi ve {keyword_term} internal launch teaser",
+        )
+        exact_topic_message_id = str(exact_topic_send.get("id") or "").strip()
+        if str(exact_topic_send.get("final_action") or "").lower() != "block":
+            fail(f"semantic rule target+topic exact hit must block: {exact_topic_send}")
+        exact_topic_detail = get_message_detail(
+            client,
+            token,
+            semantic_conversation_id,
+            exact_topic_message_id,
+        )
+        exact_topic_semantic = _semantic_signal(exact_topic_detail)
+        if exact_topic_semantic.get("called") is not False:
+            fail(f"semantic assist must not run after phase-1 target+topic block: {exact_topic_semantic}")
+
+        print("[7/8] keyword miss but near meaning should allow and log semantic assist")
         near_send = send_message(
             client,
             token,
@@ -307,11 +327,11 @@ def main() -> None:
         if str(near_semantic.get("mode") or "") != "log_only":
             fail(f"semantic mode should be log_only: {near_semantic}")
 
-        print("[7/8] verify metadata is exposed through message detail entities_json.signals")
+        print("[8/8] verify metadata is exposed through message detail entities_json.signals")
         if not isinstance((near_detail.get("entities_json") or {}).get("signals"), dict):
             fail(f"message detail should expose signals metadata: {near_detail}")
 
-        print("[8/8] verify semantic assist does not masquerade as matched rule")
+        print("[9/9] verify semantic assist does not masquerade as matched rule")
         matched_rule_ids = [str(x) for x in list(near_detail.get("matched_rule_ids") or []) if str(x)]
         if str(semantic_rule.get("id") or "") in matched_rule_ids:
             fail(

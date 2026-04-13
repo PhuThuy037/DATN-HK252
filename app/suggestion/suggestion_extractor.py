@@ -307,6 +307,9 @@ def _extract_business_noun_phrases(prompt: str, *, limit: int = 4) -> list[str]:
 
     def _append_phrase(raw_value: str) -> None:
         normalized = _normalize_phrase_text(raw_value)
+        normalized = _normalize_phrase_text(
+            re.sub(r"(?<![a-z0-9])(.+?)\s+(?:noi|chua)$", r"\1", normalized)
+        )
         folded = _fold_text(normalized)
         if not folded or folded in seen:
             return
@@ -327,6 +330,9 @@ def _extract_business_noun_phrases(prompt: str, *, limit: int = 4) -> list[str]:
             if not updated or updated == normalized:
                 break
             normalized = updated
+        normalized = _normalize_phrase_text(
+            re.sub(r"(?<![a-z0-9])(.+?)\s+(?:noi|chua)$", r"\1", normalized)
+        )
         return normalized
 
     candidate_segments = [folded_prompt]

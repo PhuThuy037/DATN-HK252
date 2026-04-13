@@ -233,12 +233,12 @@ async def main_async() -> None:
         )
         semantic_a_exact = dict((out_a_exact.get("signals") or {}).get("semantic_assist") or {})
         _assert(
-            str(out_a_exact.get("final_action")).lower().endswith("block"),
-            f"company_a exact keyword must still block via phase-1: {out_a_exact}",
+            str(out_a_exact.get("final_action")).lower().endswith("allow"),
+            f"company_a target-only keyword hit must stay allow: {out_a_exact}",
         )
         _assert(
-            semantic_a_exact.get("called") is False,
-            f"company_a exact keyword must not call semantic assist after phase-1 block: {semantic_a_exact}",
+            semantic_a_exact.get("called") is True,
+            f"company_a target-only keyword hit should still call semantic assist: {semantic_a_exact}",
         )
 
         out_b = await scan.scan(

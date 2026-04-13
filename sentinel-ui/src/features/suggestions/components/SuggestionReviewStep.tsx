@@ -43,7 +43,8 @@ export function SuggestionReviewStep({
   const duplicateRisk = String(suggestion.quality_signals?.duplicate_risk ?? "-");
   const runtimeUsable = Boolean(suggestion.quality_signals?.runtime_usable);
   const intentConfidence = formatConfidence(suggestion.quality_signals?.intent_confidence);
-  const readyToApply = runtimeUsable && !String(duplicateRisk).toLowerCase().includes("exact");
+  const hasExactDuplicate = String(duplicateRisk).toLowerCase().includes("exact");
+  const readyToApply = !hasExactDuplicate;
 
   return (
     <AppSectionCard
@@ -51,7 +52,13 @@ export function SuggestionReviewStep({
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge label="Step 4 of 6" tone="muted" />
           <StatusBadge
-            label={readyToApply ? "Ready to confirm" : "Review carefully"}
+            label={
+              readyToApply
+                ? runtimeUsable
+                  ? "Ready to confirm"
+                  : "Ready with warnings"
+                : "Review carefully"
+            }
             tone={readyToApply ? "success" : "warning"}
           />
         </div>
@@ -108,7 +115,10 @@ export function SuggestionReviewStep({
               Runtime usable
             </p>
             <div className="mt-2">
-              <StatusBadge status={runtimeUsable ? "approved" : "rejected"} />
+              <StatusBadge
+                label={runtimeUsable ? "Ready" : "Warning"}
+                tone={runtimeUsable ? "success" : "warning"}
+              />
             </div>
           </div>
         </div>
@@ -129,6 +139,7 @@ export function SuggestionReviewStep({
         <AppAlert
           description={
             <div className="space-y-1">
+              <p>May not work as expected at runtime, but you can still confirm and apply this rule.</p>
               {suggestion.quality_signals.runtime_warnings.map((warning) => (
                 <p key={warning}>{warning}</p>
               ))}
@@ -143,7 +154,7 @@ export function SuggestionReviewStep({
         <AppButton onClick={onBack} type="button" variant="secondary">
           Back
         </AppButton>
-        <AppButton disabled={!runtimeUsable} onClick={onContinue} type="button">
+        <AppButton onClick={onContinue} type="button">
           Continue to Confirm
         </AppButton>
       </div>

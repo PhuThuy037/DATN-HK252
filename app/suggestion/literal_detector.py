@@ -21,7 +21,6 @@ _LITERAL_INTENT_KEYWORDS = (
     "key",
     "token",
     "secret",
-    "noi bo",
     "internal",
     "identifier",
     "id",

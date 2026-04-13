@@ -98,6 +98,8 @@ from app.suggestion.suggestion_postprocess import (
     _canonicalize_known_pii_draft_for_runtime,
     _align_draft_with_prompt,
     _apply_runtime_usability_constraint,
+    _build_literal_specific_stable_key,
+    _collect_context_keyword_terms,
     _evaluate_runtime_usability,
     _enforce_keyword_context_role_contract,
     _enforce_prompt_semantic_guard,
@@ -2451,21 +2453,6 @@ def confirm_rule_suggestion(
     runtime_usable = bool(runtime_meta.get("runtime_usable", not runtime_warnings))
     if runtime_warnings:
         runtime_usable = False
-    if not runtime_usable:
-        raise AppError(
-            422,
-            ErrorCode.VALIDATION_ERROR,
-            "Suggestion draft is not runtime-usable yet; refine before confirming",
-            details=[
-                {
-                    "field": "draft.rule.conditions",
-                    "reason": "runtime_not_usable",
-                    "extra": {
-                        "runtime_warnings": runtime_warnings,
-                    },
-                }
-            ],
-        )
 
     duplicate_rule = _canonicalize_known_pii_rule_for_duplicate_check(
         prompt=str(row.nl_input or ""),
@@ -2731,21 +2718,6 @@ def apply_rule_suggestion(
     runtime_usable = bool(runtime_meta.get("runtime_usable", not runtime_warnings))
     if runtime_warnings:
         runtime_usable = False
-    if not runtime_usable:
-        raise AppError(
-            422,
-            ErrorCode.VALIDATION_ERROR,
-            "Suggestion draft is not runtime-usable yet; cannot apply",
-            details=[
-                {
-                    "field": "draft.rule.conditions",
-                    "reason": "runtime_not_usable",
-                    "extra": {
-                        "runtime_warnings": runtime_warnings,
-                    },
-                }
-            ],
-        )
 
     before_json = _snapshot_suggestion(row)
 

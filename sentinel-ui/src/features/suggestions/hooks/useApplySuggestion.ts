@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { applySuggestion } from "@/features/suggestions/api/suggestionsApi";
+import { ruleQueryKeys } from "@/features/rules/hooks/queryKeys";
 import { suggestionQueryKeys } from "@/features/suggestions/hooks/queryKeys";
 import type { ApplySuggestionRequest } from "@/features/suggestions/types";
 
@@ -13,6 +14,15 @@ export function useApplySuggestion(ruleSetId?: string, suggestionId?: string) {
       if (!ruleSetId || !suggestionId) {
         return;
       }
+      queryClient.invalidateQueries({
+        queryKey: ruleQueryKeys.rulesRoot(ruleSetId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: ruleQueryKeys.ruleChangeLogsRoot(ruleSetId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: ruleQueryKeys.effectiveRulesRoot,
+      });
       queryClient.invalidateQueries({
         queryKey: suggestionQueryKeys.listBase(ruleSetId),
       });

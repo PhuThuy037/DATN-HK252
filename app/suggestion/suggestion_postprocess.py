@@ -74,6 +74,23 @@ _PRIMARY_KEYWORD_TRAILING_NOISE_TOKENS = {
     "xau",
 }
 
+_WEAK_SEMANTIC_CONDITION_TERMS = {
+    "noi bo",
+    "tai lieu",
+}
+
+_PREFERRED_SEMANTIC_CONDITION_TERMS = {
+    "noi xau",
+    "boi nho",
+    "tai lieu noi bo",
+    "thong tin mat",
+    "ke hoach mo rong thi truong",
+    "quy trinh xu ly su co",
+    "bao cao loi nhuan quy",
+    "bao cao tai chinh",
+    "chua cong bo",
+}
+
 
 def _contains_prompt_keyword(*, folded_prompt: str, keyword: str) -> bool:
     return _svc()._contains_prompt_keyword(folded_prompt=folded_prompt, keyword=keyword)
@@ -690,6 +707,9 @@ def _sanitize_context_term_values(
             continue
         text = _trim_context_phrase_against_keywords(text, keyword_phrases)
         text = _trim_context_term_boilerplate(text)
+        text = _normalize_phrase_text(
+            re.sub(r"(?<![a-z0-9])(.+?)\s+(?:noi|chua)$", r"\1", text)
+        )
         folded = _fold_text(text)
         if not folded:
             continue
@@ -1173,6 +1193,58 @@ def _select_supporting_context_phrases(
     cleaned = [value for value in cleaned if _fold_text(value) not in keyword_folds]
     return cleaned[:6]
 
+
+def _select_semantic_condition_phrases(
+    *,
+    keyword_phrases: list[str],
+    context_phrases: list[str],
+    limit: int = 2,
+) -> list[str]:
+    safe_limit = max(1, int(limit))
+    keyword_folds = {_fold_text(value) for value in keyword_phrases if _fold_text(value)}
+    ordered_terms: list[str] = []
+    seen: set[str] = set()
+
+    for value in list(context_phrases or []):
+        normalized = _normalize_phrase_text(value)
+        folded = _fold_text(normalized)
+        if not folded or folded in keyword_folds or folded in seen:
+            continue
+        seen.add(folded)
+        ordered_terms.append(normalized)
+
+    ordered_folds = {_fold_text(value) for value in ordered_terms if _fold_text(value)}
+    synthesized_terms: list[str] = []
+    if "tai lieu noi bo" not in ordered_folds and {"tai lieu", "noi bo"}.issubset(ordered_folds):
+        synthesized_terms.append("tai lieu noi bo")
+
+    scored: list[tuple[int, int, int, str]] = []
+    for idx, term in enumerate([*synthesized_terms, *ordered_terms]):
+        normalized = _normalize_phrase_text(term)
+        folded = _fold_text(normalized)
+        if not folded or folded in keyword_folds:
+            continue
+        if folded in _WEAK_SEMANTIC_CONDITION_TERMS:
+            continue
+        token_count = len([part for part in folded.split() if part])
+        if token_count < 2:
+            continue
+        preferred = 1 if folded in _PREFERRED_SEMANTIC_CONDITION_TERMS else 0
+        scored.append((preferred, token_count, -idx, normalized))
+
+    scored.sort(reverse=True)
+    out: list[str] = []
+    kept: set[str] = set()
+    for _preferred, _token_count, _position, value in scored:
+        folded = _fold_text(value)
+        if folded in kept:
+            continue
+        kept.add(folded)
+        out.append(value)
+        if len(out) >= safe_limit:
+            break
+    return out
+
 def _enforce_keyword_context_role_contract(
     *,
     prompt: str,
@@ -1247,16 +1319,26 @@ def _enforce_keyword_context_role_contract(
         if _normalize_phrase_text(value)
     ]
 
-    normalized_conditions: dict[str, Any] = {
-        "all": [
-            {
-                "signal": {
-                    "field": "context_keywords",
-                    "any_of": keywords,
-                }
+    semantic_terms = _select_semantic_condition_phrases(
+        keyword_phrases=keywords,
+        context_phrases=supporting_terms,
+        limit=2,
+    )
+
+    normalized_condition_nodes: list[dict[str, Any]] = [
+        {
+            "signal": {
+                "field": "context_keywords",
+                "any_of": keywords,
             }
-        ]
-    }
+        }
+    ]
+    normalized_condition_nodes.extend(
+        {"signal": {"field": "context_keywords", "any_of": [value]}}
+        for value in semantic_terms
+    )
+
+    normalized_conditions: dict[str, Any] = {"all": normalized_condition_nodes}
     if not _is_simple_builder_compatible_conditions(normalized_conditions):
         normalized_conditions = {
             "all": [{"signal": {"field": "context_keywords", "any_of": keywords[:1]}}]

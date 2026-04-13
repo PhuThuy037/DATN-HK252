@@ -73,6 +73,22 @@ export function SuggestionApplyStep({
         </>
       ) : (
         <>
+          {!suggestion.quality_signals?.runtime_usable ||
+          (suggestion.quality_signals?.runtime_warnings?.length ?? 0) > 0 ? (
+            <AppAlert
+              description={
+                <div className="space-y-1">
+                  <p>May not work as expected at runtime, but you can still apply this rule.</p>
+                  {(suggestion.quality_signals?.runtime_warnings ?? []).map((warning) => (
+                    <p key={warning}>{warning}</p>
+                  ))}
+                </div>
+              }
+              title="Runtime usability: warning"
+              variant="warning"
+            />
+          ) : null}
+
           <div>
             <AppButton
               disabled={!canApply(suggestion.status) || isApplying}

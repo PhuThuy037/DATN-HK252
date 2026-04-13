@@ -204,6 +204,43 @@ def _draft_heuristic_abstract() -> RuleSuggestionDraftPayload:
     )
 
 
+def _draft_business_context_semantic() -> RuleSuggestionDraftPayload:
+    return RuleSuggestionDraftPayload(
+        rule=RuleSuggestionDraftRule(
+            stable_key="personal.custom.business.trung_tam_m.block",
+            name="Chan tai lieu noi bo cua Trung tam M",
+            description="semantic business phrase draft",
+            scope=RuleScope.chat,
+            conditions={
+                "all": [
+                    {
+                        "signal": {
+                            "field": "context_keywords",
+                            "any_of": ["trung tam m"],
+                        }
+                    }
+                ]
+            },
+            action=RuleAction.block,
+            severity=RuleSeverity.high,
+            priority=120,
+            rag_mode=RagMode.off,
+            enabled=True,
+        ),
+        context_terms=[
+            RuleSuggestionDraftContextTerm(
+                entity_type="CUSTOM_SECRET",
+                term="tai lieu noi bo",
+                lang="vi",
+                weight=1.0,
+                window_1=60,
+                window_2=20,
+                enabled=True,
+            )
+        ],
+    )
+
+
 class _ExecResult:
     def __init__(self, rows: list[object]) -> None:
         self._rows = rows
@@ -726,7 +763,12 @@ def test_round1_confirm_apply_and_apply_idempotent(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(
         suggestion_service,
         "_apply_rule_draft",
-        lambda **_kwargs: SimpleNamespace(id=fake_rule_id),
+        lambda **_kwargs: SimpleNamespace(
+            id=fake_rule_id,
+            stable_key="personal.custom.manual.mask_internal_code",
+            name="Mask internal token",
+            action=RuleAction.mask,
+        ),
     )
     monkeypatch.setattr(
         suggestion_service,
@@ -894,7 +936,12 @@ def test_round1_apply_syncs_empty_manual_links_when_draft_has_no_context_terms(
     monkeypatch.setattr(
         suggestion_service,
         "_apply_rule_draft",
-        lambda **_kwargs: SimpleNamespace(id=fake_rule_id),
+        lambda **_kwargs: SimpleNamespace(
+            id=fake_rule_id,
+            stable_key="personal.custom.manual.target_only",
+            name="Target only rule",
+            action=RuleAction.block,
+        ),
     )
     monkeypatch.setattr(
         suggestion_service,
@@ -1402,4 +1449,165 @@ def test_round1_logs_history_has_before_after(monkeypatch: pytest.MonkeyPatch) -
     assert "suggestion.confirm" in actions
     assert any(x.after_json for x in logs)
     assert any(x.before_json for x in logs if x.action in {"suggestion.edit", "suggestion.confirm"})
+
+
+def test_round1_confirm_allows_business_phrase_with_noi_bo(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = _FakeSession()
+    company_id = uuid4()
+    actor_user_id = uuid4()
+    _patch_access(monkeypatch)
+    _wire_generate_from_prompt(
+        monkeypatch,
+        {
+            "toi muon chan cac noi dung ve tai lieu noi bo cua Trung tam M": (
+                _draft_business_context_semantic(),
+                _case_meta(has_policy_context=False),
+            )
+        },
+    )
+
+    generated = suggestion_service.generate_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionGenerateIn(
+            prompt="toi muon chan cac noi dung ve tai lieu noi bo cua Trung tam M"
+        ),
+    )
+
+    confirmed = suggestion_service.confirm_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        suggestion_id=generated.id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionConfirmIn(reason="ok", expected_version=1),
+    )
+
+    assert confirmed.status == SuggestionStatus.approved
+    assert confirmed.draft.rule.match_mode.value == "keyword_plus_semantic"
+    assert [str(term.term).lower() for term in confirmed.draft.context_terms] == [
+        "tai lieu noi bo"
+    ]
+
+
+def test_round1_confirm_allows_true_literal_prompt_but_keeps_runtime_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _FakeSession()
+    company_id = uuid4()
+    actor_user_id = uuid4()
+    _patch_access(monkeypatch)
+    _wire_generate_from_prompt(
+        monkeypatch,
+        {
+            "Che token noi bo": (
+                _draft_heuristic_abstract(),
+                _case_meta(has_policy_context=False),
+            )
+        },
+    )
+
+    generated = suggestion_service.generate_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionGenerateIn(prompt="Che token noi bo"),
+    )
+
+    confirmed = suggestion_service.confirm_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        suggestion_id=generated.id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionConfirmIn(reason="ok", expected_version=1),
+    )
+
+    assert confirmed.status == SuggestionStatus.approved
+
+    detail = suggestion_service.get_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        suggestion_id=generated.id,
+        actor_user_id=actor_user_id,
+    )
+    assert detail.quality_signals.runtime_usable is False
+    runtime_warnings = detail.quality_signals.runtime_warnings
+    assert runtime_warnings
+
+
+def test_round1_apply_allows_runtime_warning_rule(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = _FakeSession()
+    company_id = uuid4()
+    actor_user_id = uuid4()
+    _patch_access(monkeypatch)
+    _wire_generate_from_prompt(
+        monkeypatch,
+        {
+            "Che token noi bo": (
+                _draft_heuristic_abstract(),
+                _case_meta(has_policy_context=False),
+            )
+        },
+    )
+
+    generated = suggestion_service.generate_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionGenerateIn(prompt="Che token noi bo"),
+    )
+    suggestion_service.confirm_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        suggestion_id=generated.id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionConfirmIn(reason="ok", expected_version=1),
+    )
+
+    fake_rule_id = uuid4()
+    monkeypatch.setattr(
+        suggestion_service,
+        "_apply_rule_draft",
+        lambda **_kwargs: SimpleNamespace(id=fake_rule_id, stable_key="personal.custom.manual.office_abstract", name="Office abstract mask", action=RuleAction.mask),
+    )
+    monkeypatch.setattr(
+        suggestion_service,
+        "_apply_context_terms",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        suggestion_service,
+        "_build_auto_context_terms_from_conditions",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        suggestion_service,
+        "_upsert_company_context_terms",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        suggestion_service,
+        "_sync_rule_context_term_links",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        suggestion_service,
+        "invalidate_context_runtime_cache",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        suggestion_service.RuleEngine,
+        "invalidate_cache",
+        lambda *args, **kwargs: None,
+    )
+
+    applied = suggestion_service.apply_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        suggestion_id=generated.id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionApplyIn(expected_version=2),
+    )
+
+    assert str(applied.rule_id) == str(fake_rule_id)
 
