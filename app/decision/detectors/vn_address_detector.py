@@ -11,45 +11,65 @@ from app.decision.detectors.local_regex_detector import Entity
 
 
 class VietnameseAddressDetector:
+    _INLINE_WS = r"[ \t]+"
+    _OPT_INLINE_WS = r"[ \t]*"
+    _SEP = rf"(?:\s*,\s*|{_INLINE_WS})"
     _HOUSE_NUMBER = r"\d{1,5}[a-z]?(?:/\d{1,4}[a-z]?)?"
     _HOUSE_STREET = (
-        rf"{_HOUSE_NUMBER}(?:\s*,\s*|\s+)[a-z0-9]+(?:\s+[a-z0-9]+){{1,6}}"
+        rf"{_HOUSE_NUMBER}{_SEP}[a-z0-9]+(?:{_INLINE_WS}[a-z0-9]+){{1,5}}"
+    )
+    _WARD_MARKER = (
+        rf"(?:phuong|xa|thi{_INLINE_WS}tran|p\b\.?|x\b\.?|tt\b\.?)"
     )
     _WARD = (
-        r"(?:phuong|p\.?|xa|x\.?|thi tran|tt\.?)\s*[a-z0-9]+(?:\s+[a-z0-9]+){0,3}"
+        rf"{_WARD_MARKER}{_INLINE_WS}[a-z0-9]+(?:{_INLINE_WS}[a-z0-9]+){{0,3}}"
     )
-    _DISTRICT = r"(?:(?:quan|q\.?)\s*\d{1,2}|(?:huyen|h\.?|thi xa|tx\.?)\s*[a-z0-9]+(?:\s+[a-z0-9]+){0,3})"
+    _DISTRICT = (
+        rf"(?:(?:quan{_INLINE_WS}|q\b\.?{_OPT_INLINE_WS})\d{{1,2}}|"
+        rf"(?:huyen|thi{_INLINE_WS}xa|h\b\.?|tx\b\.?){_INLINE_WS}"
+        rf"[a-z0-9]+(?:{_INLINE_WS}[a-z0-9]+){{0,3}})"
+    )
     _DISTRICT_PLAIN = r"(?:binh thanh|thu duc|go vap|tan binh|tan phu|phu nhuan|binh tan)"
     _DISTRICT_ANY = rf"(?:{_DISTRICT}|{_DISTRICT_PLAIN})"
     _CITY = (
-        r"(?:tp\.?\s*[a-z0-9.]+|thanh pho\s+[a-z0-9]+(?:\s+[a-z0-9]+){0,3}|tinh\s+[a-z0-9]+(?:\s+[a-z0-9]+){0,3})"
+        rf"(?:tp\.?{_OPT_INLINE_WS}[a-z0-9.]+|thanh{_INLINE_WS}pho{_INLINE_WS}"
+        rf"[a-z0-9]+(?:{_INLINE_WS}[a-z0-9]+){{0,3}}|"
+        rf"tinh{_INLINE_WS}[a-z0-9]+(?:{_INLINE_WS}[a-z0-9]+){{0,3}})"
     )
     _BUILDING = (
-        r"(?:(?:tang\s*\d+[a-z]?\s*,\s*(?:toa\s+nha\s+[a-z0-9]+(?:\s+[a-z0-9]+){0,4}\s*,\s*)?)|(?:toa\s+nha\s+[a-z0-9]+(?:\s+[a-z0-9]+){0,4}\s*,\s*))"
+        rf"(?:(?:tang{_OPT_INLINE_WS}\d+[a-z]?\s*,\s*(?:toa{_INLINE_WS}nha{_INLINE_WS}"
+        rf"[a-z0-9]+(?:{_INLINE_WS}[a-z0-9]+){{0,4}}\s*,\s*)?)|"
+        rf"(?:toa{_INLINE_WS}nha{_INLINE_WS}[a-z0-9]+"
+        rf"(?:{_INLINE_WS}[a-z0-9]+){{0,4}}\s*,\s*))"
     )
-    _ROOM = r"phong\s*[a-z0-9]+(?:/[a-z0-9]+)?"
-    _HOUSE_BLOCK = r"nha\s*[a-z0-9]+(?:\s+[a-z0-9]+){0,2}"
-    _NEIGHBORHOOD = r"khu\s+pho\s*[a-z0-9]+(?:\s+[a-z0-9]+){0,2}"
+    _ROOM = rf"phong{_OPT_INLINE_WS}[a-z0-9]+(?:/[a-z0-9]+)?"
+    _HOUSE_BLOCK = rf"nha{_OPT_INLINE_WS}[a-z0-9]+(?:{_INLINE_WS}[a-z0-9]+){{0,2}}"
+    _NEIGHBORHOOD = (
+        rf"khu{_INLINE_WS}pho{_OPT_INLINE_WS}[a-z0-9]+"
+        rf"(?:{_INLINE_WS}[a-z0-9]+){{0,2}}"
+    )
     _WARD_PLAIN = r"(?:linh trung|linh tay|linh xuan|ben nghe|ben thanh)"
     _WARD_ANY = rf"(?:{_WARD}|{_WARD_PLAIN})"
     _FULL_PATTERN = re.compile(
-        rf"(?P<address>{_HOUSE_STREET}(?:\s*,\s*|\s+){_WARD}(?:\s*,\s*|\s+){_DISTRICT}(?:\s*,\s*|\s+){_CITY})",
+        rf"(?P<address>{_HOUSE_STREET}{_SEP}{_WARD}{_SEP}{_DISTRICT}{_SEP}{_CITY})",
         flags=re.IGNORECASE,
     )
     _SHORT_PATTERN = re.compile(
-        rf"(?P<address>{_HOUSE_STREET}(?:\s*,\s*|\s+){_DISTRICT}(?:\s*,\s*|\s+){_CITY})",
+        rf"(?P<address>{_HOUSE_STREET}{_SEP}{_DISTRICT}{_SEP}{_CITY})",
         flags=re.IGNORECASE,
     )
     _NO_CITY_PATTERN = re.compile(
-        rf"(?P<address>{_HOUSE_STREET}(?:\s*,\s*|\s+){_WARD}(?:\s*,\s*|\s+){_DISTRICT_ANY})",
+        rf"(?P<address>{_HOUSE_STREET}{_SEP}{_WARD}{_SEP}{_DISTRICT_ANY})",
         flags=re.IGNORECASE,
     )
     _BUILDING_PATTERN = re.compile(
-        rf"(?P<address>{_BUILDING}{_HOUSE_STREET}(?:\s*,\s*|\s+){_DISTRICT_ANY})",
+        rf"(?P<address>{_BUILDING}{_HOUSE_STREET}{_SEP}{_DISTRICT_ANY})",
         flags=re.IGNORECASE,
     )
     _DORM_PATTERN = re.compile(
-        rf"(?P<address>(?:{_HOUSE_BLOCK}\s*,\s*)?(?:{_ROOM}\s*,\s*)?(?:ky\s+tuc\s+xa(?:\s+[a-z0-9]+){{0,3}}\s*,\s*)?{_NEIGHBORHOOD}(?:\s*,\s*|\s+){_WARD_ANY}(?:\s*,\s*|\s+){_DISTRICT_ANY})",
+        rf"(?P<address>(?:{_HOUSE_BLOCK}\s*,\s*)?(?:{_ROOM}\s*,\s*)?"
+        rf"(?:ky{_INLINE_WS}tuc{_INLINE_WS}xa(?:{_INLINE_WS}[a-z0-9]+){{0,3}}\s*,\s*)?"
+        rf"{_NEIGHBORHOOD}{_SEP}{_WARD_ANY}{_SEP}{_DISTRICT_ANY})",
         flags=re.IGNORECASE,
     )
 
@@ -82,9 +102,17 @@ class VietnameseAddressDetector:
                 span = (original_start, original_end)
                 if span in seen_spans:
                     continue
-                seen_spans.add(span)
+                if any(
+                    span[0] >= seen_start and span[1] <= seen_end
+                    for seen_start, seen_end in seen_spans
+                ):
+                    continue
 
                 fragment = raw_text[original_start:original_end]
+                if not self._is_valid_address_fragment(fragment):
+                    continue
+
+                seen_spans.add(span)
                 entities.append(
                     Entity(
                         type="ADDRESS",
@@ -98,3 +126,18 @@ class VietnameseAddressDetector:
                 )
 
         return entities
+
+    def _is_valid_address_fragment(self, fragment: str) -> bool:
+        text = str(fragment or "").strip()
+        if not text:
+            return False
+
+        # Keep the detector narrow: prose and multi-line snippets were the main
+        # source of false positives in email-like bodies.
+        if "\n" in text or "\r" in text:
+            return False
+
+        if re.fullmatch(r"\d+", text):
+            return False
+
+        return True

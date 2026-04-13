@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from app.decision.detectors.local_regex_detector import LocalRegexDetector
+from app.decision.detectors.vn_address_detector import VietnameseAddressDetector
 from app.masking.service import MaskService
 
 
@@ -113,3 +115,44 @@ def test_mask_service_prefers_api_secret_over_nested_phone() -> None:
     )
 
     assert masked == "Key la [API_SECRET]"
+
+
+def test_mask_service_keeps_password_field_line_unchanged() -> None:
+    service = MaskService()
+    regex_detector = LocalRegexDetector()
+    address_detector = VietnameseAddressDetector()
+    text = "password: 123456"
+
+    entities = regex_detector.scan(text) + address_detector.scan(text)
+    masked = service.mask(text, entities=entities, extra_terms=None)
+
+    assert not any(getattr(entity, "type", "") == "ADDRESS" for entity in entities)
+    assert not any(getattr(entity, "type", "") == "API_SECRET" for entity in entities)
+    assert masked == text
+
+
+def test_mask_service_keeps_password_field_with_prose_unchanged() -> None:
+    service = MaskService()
+    regex_detector = LocalRegexDetector()
+    address_detector = VietnameseAddressDetector()
+    text = "password: 123456\n\nAnh xem giup em roi phan hoi som nhe"
+
+    entities = regex_detector.scan(text) + address_detector.scan(text)
+    masked = service.mask(text, entities=entities, extra_terms=None)
+
+    assert not any(getattr(entity, "type", "") == "ADDRESS" for entity in entities)
+    assert not any(getattr(entity, "type", "") == "API_SECRET" for entity in entities)
+    assert masked == text
+
+
+def test_mask_service_keeps_token_label_sentence_unchanged() -> None:
+    service = MaskService()
+    regex_detector = LocalRegexDetector()
+    address_detector = VietnameseAddressDetector()
+    text = "Trong tai lieu co dong token: abc123"
+
+    entities = regex_detector.scan(text) + address_detector.scan(text)
+    masked = service.mask(text, entities=entities, extra_terms=None)
+
+    assert not any(getattr(entity, "type", "") == "API_SECRET" for entity in entities)
+    assert masked == text
