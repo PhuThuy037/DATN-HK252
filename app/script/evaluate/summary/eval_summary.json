@@ -1,0 +1,24 @@
+{
+  "total": 51,
+  "passed": 49,
+  "failed": 2,
+  "pass_rate": "96.1%",
+  "top_fail_groups": [
+    {
+      "group": "false_positive",
+      "failed": 1,
+      "pass_rate": "80%"
+    },
+    {
+      "group": "semantic_rule",
+      "failed": 1,
+      "pass_rate": "91.7%"
+    }
+  ],
+  "top_fail_reason": {
+    "no_rule_matched": 0,
+    "wrong_action": 2,
+    "mask_missing": 0,
+    "action_and_mask": 0
+  }
+}
