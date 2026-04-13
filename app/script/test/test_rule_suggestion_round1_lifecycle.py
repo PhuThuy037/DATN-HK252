@@ -9,6 +9,7 @@ import pytest
 from app.db import all_models as _all_models  # noqa: F401
 from app.common.enums import RagMode, RuleAction, RuleScope, RuleSeverity
 from app.common.errors import AppError
+from app.rule.schemas import RuleContextTermIn
 from app.suggestion import service as suggestion_service
 from app.suggestion.schemas import (
     DuplicateDecision,
@@ -719,7 +720,9 @@ def test_round1_confirm_apply_and_apply_idempotent(monkeypatch: pytest.MonkeyPat
     assert confirmed.version == 2
 
     fake_rule_id = uuid4()
-    fake_context_term_ids = [uuid4()]
+    fake_manual_context_term_ids = [uuid4()]
+    fake_auto_context_term_ids = [uuid4()]
+    sync_calls: list[dict[str, object]] = []
     monkeypatch.setattr(
         suggestion_service,
         "_apply_rule_draft",
@@ -728,7 +731,32 @@ def test_round1_confirm_apply_and_apply_idempotent(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(
         suggestion_service,
         "_apply_context_terms",
-        lambda **_kwargs: list(fake_context_term_ids),
+        lambda **_kwargs: list(fake_manual_context_term_ids),
+    )
+    monkeypatch.setattr(
+        suggestion_service,
+        "_build_auto_context_terms_from_conditions",
+        lambda **_kwargs: [
+            RuleContextTermIn(
+                entity_type="CUSTOM_SECRET",
+                term="zxq-unseen-9981",
+                lang="vi",
+                weight=1.0,
+                window_1=60,
+                window_2=20,
+                enabled=True,
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        suggestion_service,
+        "_upsert_company_context_terms",
+        lambda **_kwargs: list(fake_auto_context_term_ids),
+    )
+    monkeypatch.setattr(
+        suggestion_service,
+        "_sync_rule_context_term_links",
+        lambda **kwargs: sync_calls.append(dict(kwargs)),
     )
     invalidated_context_company_ids: list[UUID | None] = []
     monkeypatch.setattr(
@@ -751,7 +779,24 @@ def test_round1_confirm_apply_and_apply_idempotent(monkeypatch: pytest.MonkeyPat
         payload=RuleSuggestionApplyIn(expected_version=2),
     )
     assert applied.rule_id == fake_rule_id
-    assert applied.context_term_ids == fake_context_term_ids
+    assert applied.context_term_ids == [
+        *fake_manual_context_term_ids,
+        *fake_auto_context_term_ids,
+    ]
+    assert sync_calls == [
+        {
+            "session": session,
+            "rule_id": fake_rule_id,
+            "context_term_ids": fake_manual_context_term_ids,
+            "source": "manual",
+        },
+        {
+            "session": session,
+            "rule_id": fake_rule_id,
+            "context_term_ids": fake_auto_context_term_ids,
+            "source": "auto",
+        },
+    ]
 
     row = session.suggestions[str(generated.id)]
     assert row.status == SuggestionStatus.applied.value
@@ -768,7 +813,10 @@ def test_round1_confirm_apply_and_apply_idempotent(monkeypatch: pytest.MonkeyPat
         payload=RuleSuggestionApplyIn(expected_version=3),
     )
     assert applied_again.rule_id == fake_rule_id
-    assert applied_again.context_term_ids == fake_context_term_ids
+    assert applied_again.context_term_ids == [
+        *fake_manual_context_term_ids,
+        *fake_auto_context_term_ids,
+    ]
     assert invalidated_context_company_ids == [company_id]
     assert invalidated_company_ids == [company_id]
 
@@ -788,6 +836,130 @@ def test_round1_confirm_apply_and_apply_idempotent(monkeypatch: pytest.MonkeyPat
             payload=RuleSuggestionApplyIn(expected_version=1),
         )
     assert not_approved_err.value.status_code == 422
+
+
+def test_round1_apply_syncs_empty_manual_links_when_draft_has_no_context_terms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _FakeSession()
+    company_id = uuid4()
+    actor_user_id = uuid4()
+    _patch_access(monkeypatch)
+    draft = RuleSuggestionDraftPayload(
+        rule=RuleSuggestionDraftRule(
+            stable_key="personal.custom.manual.target_only",
+            name="Target only rule",
+            description="auto terms should still materialize",
+            scope=RuleScope.chat,
+            conditions={
+                "all": [
+                    {
+                        "signal": {
+                            "field": "context_keywords",
+                            "any_of": ["truong nhom q"],
+                        }
+                    }
+                ]
+            },
+            action=RuleAction.block,
+            severity=RuleSeverity.high,
+            priority=120,
+            rag_mode=RagMode.off,
+            enabled=True,
+        ),
+        context_terms=[],
+    )
+    _wire_generate_from_prompt(
+        monkeypatch,
+        {"apply_no_manual_terms_prompt": (draft, _case_meta(has_policy_context=False))},
+    )
+
+    generated = suggestion_service.generate_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionGenerateIn(prompt="apply_no_manual_terms_prompt"),
+    )
+    suggestion_service.confirm_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        suggestion_id=generated.id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionConfirmIn(reason="ok", expected_version=1),
+    )
+
+    fake_rule_id = uuid4()
+    fake_auto_context_term_ids = [uuid4()]
+    sync_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        suggestion_service,
+        "_apply_rule_draft",
+        lambda **_kwargs: SimpleNamespace(id=fake_rule_id),
+    )
+    monkeypatch.setattr(
+        suggestion_service,
+        "_apply_context_terms",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        suggestion_service,
+        "_build_auto_context_terms_from_conditions",
+        lambda **_kwargs: [
+            RuleContextTermIn(
+                entity_type="CUSTOM_SECRET",
+                term="truong nhom q",
+                lang="vi",
+                weight=1.0,
+                window_1=60,
+                window_2=20,
+                enabled=True,
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        suggestion_service,
+        "_upsert_company_context_terms",
+        lambda **_kwargs: list(fake_auto_context_term_ids),
+    )
+    monkeypatch.setattr(
+        suggestion_service,
+        "_sync_rule_context_term_links",
+        lambda **kwargs: sync_calls.append(dict(kwargs)),
+    )
+    monkeypatch.setattr(
+        suggestion_service,
+        "invalidate_context_runtime_cache",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        suggestion_service.RuleEngine,
+        "invalidate_cache",
+        lambda *args, **kwargs: None,
+    )
+
+    applied = suggestion_service.apply_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        suggestion_id=generated.id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionApplyIn(expected_version=2),
+    )
+
+    assert applied.context_term_ids == fake_auto_context_term_ids
+    assert sync_calls == [
+        {
+            "session": session,
+            "rule_id": fake_rule_id,
+            "context_term_ids": [],
+            "source": "manual",
+        },
+        {
+            "session": session,
+            "rule_id": fake_rule_id,
+            "context_term_ids": fake_auto_context_term_ids,
+            "source": "auto",
+        },
+    ]
 
 
 def test_round1_reject_and_status_validation(monkeypatch: pytest.MonkeyPatch) -> None:

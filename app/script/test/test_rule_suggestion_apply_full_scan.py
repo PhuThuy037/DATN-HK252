@@ -164,6 +164,16 @@ def list_rule_set_rules(
     return list(r.json().get("data") or [])
 
 
+def get_rule_detail(client: httpx.Client, token: str, rule_id: str) -> dict[str, Any]:
+    r = client.get(
+        f"{V1}/rules/{rule_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if r.status_code != 200:
+        fail(f"get rule detail failed: HTTP {r.status_code}\n{r.text}")
+    return r.json().get("data") or {}
+
+
 def full_scan(client: httpx.Client, token: str, rule_set_id: str, text: str) -> dict[str, Any]:
     r = client.post(
         f"{V1}/debug/full-scan",
@@ -212,7 +222,7 @@ def main() -> None:
         if not rule_id:
             fail(f"missing rule_id from apply: {applied}")
 
-        print("[6/8] verify rule exists in rule-set rules")
+        print("[6/8] verify rule exists in rule-set rules and detail exposes linked context terms")
         rules = list_rule_set_rules(client, token, rule_set_id)
         target_rules = [r for r in rules if str(r.get("id") or "") == rule_id]
         if not target_rules:
@@ -222,6 +232,14 @@ def main() -> None:
                 "stable_key mismatch after apply: "
                 f"expected={stable_key}, got={target_rules[0].get('stable_key')}"
             )
+        detail = get_rule_detail(client, token, rule_id)
+        detail_terms = {
+            str((term or {}).get("term") or "").strip().lower()
+            for term in list(detail.get("context_terms") or [])
+            if str((term or {}).get("term") or "").strip()
+        }
+        if "ke toan" not in detail_terms or "stk" not in detail_terms:
+            fail(f"rule detail should expose linked manual+auto context terms: {detail}")
 
         print("[7/8] full-scan positive should match and block")
         pos = full_scan(
