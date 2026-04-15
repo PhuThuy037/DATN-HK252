@@ -151,12 +151,10 @@ export function SimulatePanel({
           <AppAlert
             description={
               hasRuntimeReviewFlag
-                ? result?.runtime_usable === false
-                  ? "Runtime is not usable yet. Refine the draft before confirming or applying."
-                  : "Review recommended before continuing."
-                : "Runtime looks ready. You can continue to review."
+                ? "This draft may require validation in chat/runtime before production use."
+                : "Simulation looks good for this preview. You can continue to review."
             }
-            title={hasRuntimeReviewFlag ? "Review recommended" : "Ready to continue"}
+            title={hasRuntimeReviewFlag ? "Additional review recommended" : "Ready to continue"}
             variant={hasRuntimeReviewFlag ? "warning" : "success"}
           />
 

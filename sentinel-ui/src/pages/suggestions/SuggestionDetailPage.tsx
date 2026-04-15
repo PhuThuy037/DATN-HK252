@@ -593,6 +593,24 @@ export function SuggestionDetailPage() {
     [detailQuery.data?.draft, draftState]
   );
 
+  const showSimulationSemanticNote = useMemo(() => {
+    const draft = draftState ?? detailQuery.data?.draft;
+    if (!draft) {
+      return false;
+    }
+
+    const hasSemanticMatchMode = draft.rule?.match_mode === "keyword_plus_semantic";
+    const hasNonExactLinkedTerms = (draft.context_terms ?? []).some((term) => {
+      if (term.enabled === false) {
+        return false;
+      }
+      const entityType = String(term.entity_type ?? "").trim().toUpperCase();
+      return !["INTERNAL_CODE", "CUSTOM_SECRET", "PROPRIETARY_IDENTIFIER"].includes(entityType);
+    });
+
+    return hasSemanticMatchMode || hasNonExactLinkedTerms;
+  }, [detailQuery.data?.draft, draftState]);
+
   const goToStep = useCallback((step: SuggestionStepKey) => {
     setActiveStep(step);
   }, []);
@@ -1107,6 +1125,7 @@ export function SuggestionDetailPage() {
               onContinue={handleContinueToReview}
               onSimulate={handleSimulate}
               result={simulateResult}
+              showSemanticNote={showSimulationSemanticNote}
               status={suggestion.status}
             />
           )}

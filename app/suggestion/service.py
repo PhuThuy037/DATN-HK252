@@ -592,7 +592,48 @@ def _collect_simulation_exact_terms_from_draft(
         out.append(text)
         if len(out) >= safe_limit:
             break
+
+    if len(out) >= safe_limit:
+        return out
+
+    for keyword in _collect_context_keyword_terms(draft.rule.conditions):
+        text = _fold_text(keyword)
+        if len(text) < 4 or text in seen:
+            continue
+        if not _is_code_like_term(text):
+            continue
+        seen.add(text)
+        out.append(text)
+        if len(out) >= safe_limit:
+            break
     return out
+
+
+def _filter_simulation_runtime_warnings(
+    *,
+    warnings: list[str],
+    draft: RuleSuggestionDraftPayload,
+    exact_terms: list[str],
+) -> list[str]:
+    cleaned = _to_str_list(warnings)
+    if not cleaned:
+        return []
+
+    code_like_terms = {
+        _fold_text(term)
+        for term in _collect_context_keyword_terms(draft.rule.conditions)
+        if _is_code_like_term(term)
+    }
+    anchored_terms = {_fold_text(term) for term in exact_terms if str(term or "").strip()}
+
+    if code_like_terms and code_like_terms.issubset(anchored_terms):
+        cleaned = [
+            warning
+            for warning in cleaned
+            if warning != "code_like_context_keywords_without_exact_anchor"
+        ]
+
+    return cleaned
 
 
 def _match_simulation_exact_terms_in_text(
@@ -2216,7 +2257,12 @@ def simulate_rule_suggestion(
         draft_enabled=bool(draft.rule.enabled),
     )
     runtime_meta = _evaluate_runtime_usability(draft=draft, prompt=row.nl_input)
-    runtime_warnings = _to_str_list(runtime_meta.get("warnings"))
+    draft_exact_terms = _collect_simulation_exact_terms_from_draft(draft=draft)
+    runtime_warnings = _filter_simulation_runtime_warnings(
+        warnings=_to_str_list(runtime_meta.get("warnings")),
+        draft=draft,
+        exact_terms=draft_exact_terms,
+    )
     runtime_usable = bool(runtime_meta.get("runtime_usable", not runtime_warnings))
     if runtime_warnings:
         runtime_usable = False
@@ -2225,7 +2271,6 @@ def simulate_rule_suggestion(
     matched_count = 0
     results: list[RuleSuggestionSimulateResultOut] = []
     draft_stable_key = str(draft.rule.stable_key)
-    draft_exact_terms = _collect_simulation_exact_terms_from_draft(draft=draft)
     overrides = load_context_runtime_overrides(
         session=session,
         company_id=company_id,

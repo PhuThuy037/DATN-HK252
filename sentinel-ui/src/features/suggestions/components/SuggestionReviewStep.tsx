@@ -139,13 +139,13 @@ export function SuggestionReviewStep({
         <AppAlert
           description={
             <div className="space-y-1">
-              <p>May not work as expected at runtime, but you can still confirm and apply this rule.</p>
+              <p>This draft may require validation in chat/runtime before production use.</p>
               {suggestion.quality_signals.runtime_warnings.map((warning) => (
                 <p key={warning}>{warning}</p>
               ))}
             </div>
           }
-          title="Runtime warnings"
+          title="Additional review recommended"
           variant="warning"
         />
       ) : null}

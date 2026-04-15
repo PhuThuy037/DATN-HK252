@@ -13,6 +13,7 @@ type SuggestionSimulateStepProps = {
   errorMessage?: string | null;
   result?: RuleSuggestionSimulateOut | null;
   highlightTerms?: string[];
+  showSemanticNote?: boolean;
   onSimulate: (payload: { samples: string[]; include_examples: boolean }) => Promise<void> | void;
   onBack: () => void;
   onContinue: () => void;
@@ -24,6 +25,7 @@ export function SuggestionSimulateStep({
   errorMessage,
   result,
   highlightTerms,
+  showSemanticNote = false,
   onSimulate,
   onBack,
   onContinue,
@@ -47,11 +49,13 @@ export function SuggestionSimulateStep({
         result={result}
       />
 
-      <AppAlert
-        description="Simulation preview does not fully support semantic rules yet. You can continue to review, confirm, and apply this suggestion, then validate final behavior in chat/runtime."
-        title="Simulation limitation"
-        variant="warning"
-      />
+      {showSemanticNote ? (
+        <AppAlert
+          description="Simulation is most reliable for exact and pattern-based rules. Validate advanced semantic behavior in chat/runtime."
+          title="Simulation note"
+          variant="warning"
+        />
+      ) : null}
 
       <div className={appActionRowClassName}>
         <AppButton onClick={onBack} type="button" variant="secondary">

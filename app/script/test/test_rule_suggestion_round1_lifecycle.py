@@ -123,6 +123,34 @@ def _draft_internal_code_exact_token(token: str = "zxq-thuydt123-1989") -> RuleS
     )
 
 
+def _draft_code_like_condition_only(token: str = "xxx-yyy-zzz-b") -> RuleSuggestionDraftPayload:
+    normalized = str(token).strip().lower()
+    return RuleSuggestionDraftPayload(
+        rule=RuleSuggestionDraftRule(
+            stable_key="personal.custom.manual.mask_condition_only_code",
+            name=f"Mask exact code {normalized}",
+            description=f"Mask {normalized} from conditions only",
+            scope=RuleScope.prompt,
+            conditions={
+                "all": [
+                    {
+                        "signal": {
+                            "field": "context_keywords",
+                            "any_of": [normalized],
+                        }
+                    }
+                ]
+            },
+            action=RuleAction.mask,
+            severity=RuleSeverity.medium,
+            priority=80,
+            rag_mode=RagMode.off,
+            enabled=True,
+        ),
+        context_terms=[],
+    )
+
+
 def _draft_payroll_external_email() -> RuleSuggestionDraftPayload:
     return RuleSuggestionDraftPayload(
         rule=RuleSuggestionDraftRule(
@@ -1398,6 +1426,213 @@ def test_round1_simulate_internal_code_exact_non_match_returns_allow(
     assert all(r.matched is False for r in result.results)
     assert all(r.predicted_action == "ALLOW" for r in result.results)
     assert len(session.rules) == 0
+
+
+def test_round1_simulate_derives_code_like_exact_anchor_from_conditions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _FakeSession()
+    company_id = uuid4()
+    actor_user_id = uuid4()
+    token = "xxx-yyy-zzz-b"
+    _patch_access(monkeypatch)
+    prompt = f"Che ma {token}"
+    _wire_generate_from_prompt(
+        monkeypatch,
+        {
+            prompt: (
+                _draft_code_like_condition_only(token),
+                _case_meta(has_policy_context=False),
+            )
+        },
+    )
+
+    generated = suggestion_service.generate_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionGenerateIn(prompt=prompt),
+    )
+    row = session.suggestions[str(generated.id)]
+    row.nl_input = prompt
+
+    monkeypatch.setattr(
+        suggestion_service,
+        "load_context_runtime_overrides",
+        lambda **_kwargs: SimpleNamespace(regex_hints={}, persona_keywords={}, exact_terms=[]),
+    )
+    monkeypatch.setattr(
+        suggestion_service,
+        "_build_simulation_runtime_rules",
+        lambda **_kwargs: [
+            suggestion_service.RuleRuntime(
+                rule_id=uuid4(),
+                stable_key="personal.custom.manual.mask_condition_only_code",
+                name="simulate exact runtime rule",
+                action=RuleAction.mask,
+                priority=100,
+                conditions={},
+            )
+        ],
+    )
+
+    class _FakeDetector:
+        def scan(self, _text: str, context_hints_by_entity: object | None = None) -> list[object]:
+            _ = context_hints_by_entity
+            return []
+
+    class _FakeScorer:
+        def score(self, _text: str, persona_keywords_override: object | None = None) -> dict[str, object]:
+            _ = persona_keywords_override
+            return {"ctx": "ok"}
+
+        def to_signals_dict(self, _ctx: dict[str, object]) -> dict[str, object]:
+            return {"context_keywords": []}
+
+    class _FakeResolver:
+        def resolve(self, matches: list[object]) -> SimpleNamespace:
+            return SimpleNamespace(final_action=RuleAction.mask if matches else RuleAction.allow)
+
+    monkeypatch.setattr(suggestion_service, "_SIMULATE_DETECTOR", _FakeDetector())
+    monkeypatch.setattr(suggestion_service, "_SIMULATE_CONTEXT_SCORER", _FakeScorer())
+    monkeypatch.setattr(suggestion_service, "_SIMULATE_RESOLVER", _FakeResolver())
+
+    def _fake_eval(**kwargs: object) -> list[object]:
+        signals = kwargs.get("signals") or {}
+        keywords = {str(x).strip().lower() for x in list((signals or {}).get("context_keywords") or [])}
+        if token not in keywords:
+            return []
+        return [
+            suggestion_service.RuleMatch(
+                rule_id=uuid4(),
+                stable_key="personal.custom.manual.mask_condition_only_code",
+                name="simulate exact runtime rule",
+                action=RuleAction.mask,
+                priority=100,
+            )
+        ]
+
+    monkeypatch.setattr(suggestion_service, "_evaluate_with_runtime_rules", _fake_eval)
+
+    result = suggestion_service.simulate_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        suggestion_id=generated.id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionSimulateIn(
+            samples=[token, "Xin chao ban"],
+            include_examples=True,
+        ),
+    )
+
+    assert result.sample_size == 2
+    assert result.matched_count == 1
+    assert result.action_breakdown == {"ALLOW": 1, "MASK": 1, "BLOCK": 0}
+    assert result.results[0].content == token
+    assert result.results[0].matched is True
+    assert result.results[0].predicted_action == "MASK"
+    assert result.results[1].matched is False
+    assert "code_like_context_keywords_without_exact_anchor" not in result.runtime_warnings
+
+
+def test_round1_simulate_does_not_promote_non_code_like_condition_keyword_to_exact_anchor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _FakeSession()
+    company_id = uuid4()
+    actor_user_id = uuid4()
+    _patch_access(monkeypatch)
+    _wire_generate_from_prompt(
+        monkeypatch,
+        {
+            "simulate_semantic_preview_prompt": (
+                _draft_business_context_semantic(),
+                _case_meta(has_policy_context=False),
+            )
+        },
+    )
+
+    generated = suggestion_service.generate_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionGenerateIn(prompt="simulate_semantic_preview_prompt"),
+    )
+
+    monkeypatch.setattr(
+        suggestion_service,
+        "load_context_runtime_overrides",
+        lambda **_kwargs: SimpleNamespace(regex_hints={}, persona_keywords={}, exact_terms=[]),
+    )
+    monkeypatch.setattr(
+        suggestion_service,
+        "_build_simulation_runtime_rules",
+        lambda **_kwargs: [
+            suggestion_service.RuleRuntime(
+                rule_id=uuid4(),
+                stable_key="personal.custom.business.trung_tam_m.block",
+                name="simulate semantic runtime rule",
+                action=RuleAction.block,
+                priority=100,
+                conditions={},
+            )
+        ],
+    )
+
+    class _FakeDetector:
+        def scan(self, _text: str, context_hints_by_entity: object | None = None) -> list[object]:
+            _ = context_hints_by_entity
+            return []
+
+    class _FakeScorer:
+        def score(self, _text: str, persona_keywords_override: object | None = None) -> dict[str, object]:
+            _ = persona_keywords_override
+            return {"ctx": "ok"}
+
+        def to_signals_dict(self, _ctx: dict[str, object]) -> dict[str, object]:
+            return {"context_keywords": []}
+
+    class _FakeResolver:
+        def resolve(self, matches: list[object]) -> SimpleNamespace:
+            return SimpleNamespace(final_action=RuleAction.block if matches else RuleAction.allow)
+
+    monkeypatch.setattr(suggestion_service, "_SIMULATE_DETECTOR", _FakeDetector())
+    monkeypatch.setattr(suggestion_service, "_SIMULATE_CONTEXT_SCORER", _FakeScorer())
+    monkeypatch.setattr(suggestion_service, "_SIMULATE_RESOLVER", _FakeResolver())
+
+    def _fake_eval(**kwargs: object) -> list[object]:
+        signals = kwargs.get("signals") or {}
+        keywords = {str(x).strip().lower() for x in list((signals or {}).get("context_keywords") or [])}
+        if "trung tam m" not in keywords:
+            return []
+        return [
+            suggestion_service.RuleMatch(
+                rule_id=uuid4(),
+                stable_key="personal.custom.business.trung_tam_m.block",
+                name="simulate semantic runtime rule",
+                action=RuleAction.block,
+                priority=100,
+            )
+        ]
+
+    monkeypatch.setattr(suggestion_service, "_evaluate_with_runtime_rules", _fake_eval)
+
+    result = suggestion_service.simulate_rule_suggestion(
+        session=session,  # type: ignore[arg-type]
+        company_id=company_id,
+        suggestion_id=generated.id,
+        actor_user_id=actor_user_id,
+        payload=RuleSuggestionSimulateIn(
+            samples=["Trung tam M o dau"],
+            include_examples=True,
+        ),
+    )
+
+    assert result.sample_size == 1
+    assert result.matched_count == 0
+    assert result.action_breakdown == {"ALLOW": 1, "MASK": 0, "BLOCK": 0}
+    assert result.results[0].matched is False
+    assert result.results[0].predicted_action == "ALLOW"
 
 
 def test_round1_logs_history_has_before_after(monkeypatch: pytest.MonkeyPatch) -> None:
