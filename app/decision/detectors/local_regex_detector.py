@@ -51,6 +51,14 @@ class LocalRegexDetector:
         re.compile(r"\bsk_(?:live|test)_[A-Za-z0-9]{10,}\b"),
         re.compile(r"\bsk-(?:proj|live|test|svcacct)-[A-Za-z0-9_-]{10,}\b"),
     ]
+    API_SECRET_PREFIX_HEURISTICS = [
+        re.compile(r"\bsk-live-[A-Za-z0-9_-]{3,}\b", flags=re.IGNORECASE),
+        re.compile(r"\bsk-test-[A-Za-z0-9_-]{3,}\b", flags=re.IGNORECASE),
+        re.compile(r"\bghp_[A-Za-z0-9_-]{3,}\b", flags=re.IGNORECASE),
+        re.compile(r"\bAKIA[0-9A-Z]{4,}\b"),
+    ]
+    API_SECRET_CONTEXT_TERMS = ("key", "token", "secret", "debug")
+    API_SECRET_PLACEHOLDER_TERMS = ("xxxxx", "example", "demo")
 
     # Keep ASCII-safe defaults; DB-backed context_terms is preferred in runtime.
     CCCD_CONTEXT = ["cccd", "can cuoc", "cmnd"]
@@ -180,6 +188,33 @@ class LocalRegexDetector:
                     )
                 )
 
+        existing_api_secret_spans = {
+            (entity.start, entity.end)
+            for entity in entities
+            if str(entity.type) == "API_SECRET"
+        }
+        for pattern in self.API_SECRET_PREFIX_HEURISTICS:
+            for m in pattern.finditer(text):
+                span = (m.start(), m.end())
+                if span in existing_api_secret_spans:
+                    continue
+                if self._looks_like_placeholder_secret(m.group()):
+                    continue
+                if not self._has_api_secret_context(lower_text, m.start(), m.end()):
+                    continue
+                existing_api_secret_spans.add(span)
+                entities.append(
+                    Entity(
+                        type="API_SECRET",
+                        start=m.start(),
+                        end=m.end(),
+                        score=0.90,
+                        source="local_regex",
+                        text=m.group(),
+                        metadata={"heuristic": "strong_prefix"},
+                    )
+                )
+
         return entities
 
     def _is_valid_credit_card_number(self, digits: str) -> bool:
@@ -249,3 +284,22 @@ class LocalRegexDetector:
                 return 1
 
         return 0
+
+    def _has_api_secret_context(self, text: str, start_pos: int, end_pos: int) -> bool:
+        window_1_start = max(0, int(start_pos) - 24)
+        window_1_end = min(len(text), int(end_pos) + 24)
+        if any(term in text[window_1_start:window_1_end] for term in self.API_SECRET_CONTEXT_TERMS):
+            return True
+
+        window_2_start = max(0, int(start_pos) - 60)
+        window_2_end = min(len(text), int(end_pos) + 60)
+        if any(term in text[window_2_start:window_2_end] for term in self.API_SECRET_CONTEXT_TERMS):
+            return True
+
+        return any(term in text for term in self.API_SECRET_CONTEXT_TERMS)
+
+    def _looks_like_placeholder_secret(self, token: str) -> bool:
+        lowered = str(token or "").strip().lower()
+        if not lowered:
+            return True
+        return any(term in lowered for term in self.API_SECRET_PLACEHOLDER_TERMS)

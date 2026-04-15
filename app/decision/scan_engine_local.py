@@ -34,6 +34,17 @@ class ScanEngineLocal:
     _SIMPLE_PII_TYPES = {"PHONE", "EMAIL", "TAX_ID", "CCCD", "CREDIT_CARD", "ADDRESS"}
     _SEMANTIC_VERIFY_MIN_CONFIDENCE = 0.40
     _SEMANTIC_VERIFY_ENFORCE_MIN_CONFIDENCE = 0.45
+    _RAG_EXAMPLE_SUPPRESSION_CUES = (
+        "mau",
+        "vi du",
+        "minh hoa",
+        "format key",
+        "khong phai secret",
+        "not a real secret",
+        "xxxxx",
+        "example",
+        "demo",
+    )
 
     def _default_semantic_assist_signal(self) -> dict[str, Any]:
         return {
@@ -134,6 +145,7 @@ class ScanEngineLocal:
     def _should_call_rag(
         self,
         *,
+        text: str,
         sec_decision: str,
         sec_score: float,
         persona: Optional[str],
@@ -146,6 +158,10 @@ class ScanEngineLocal:
 
         if sec_decision == "REVIEW":
             return True
+
+        folded_text = self._fold_text(text)
+        if any(cue in folded_text for cue in self._RAG_EXAMPLE_SUPPRESSION_CUES):
+            return False
 
         has_high_conf_api_secret = any(
             str(getattr(e, "type", "") or "") == "API_SECRET"
@@ -387,6 +403,7 @@ class ScanEngineLocal:
 
         ts = time.perf_counter()
         should_rag_gate = self._should_call_rag(
+            text=text,
             sec_decision=str(sec.decision),
             sec_score=float(sec.score),
             persona=signals.get("persona"),
