@@ -67,7 +67,7 @@
     "expected": "mask",
     "actual": "mask",
     "reason": null,
-    "matched_rule": "global.pii.email.mask"
+    "matched_rule": "global.pii.address.mask"
   },
   {
     "id": "pii_email_003",
@@ -242,22 +242,22 @@
   {
     "id": "false_positive_003",
     "group": "false_positive",
-    "status": "FAIL",
-    "input": "Trong slide minh viet mau sk-test-xxxxx de minh hoa format key, khong phai secret that.",
-    "expected": "allow",
-    "actual": "block",
-    "reason": "wrong_action",
-    "matched_rule": "global.security.rag.block"
-  },
-  {
-    "id": "false_positive_004",
-    "group": "false_positive",
     "status": "PASS",
-    "input": "Su kien to chuc tai hoi truong A co so 1 cua truong vao sang thu Bay.",
+    "input": "Trong slide minh viet mau sk-test-xxxxx de minh hoa format key, khong phai secret that.",
     "expected": "allow",
     "actual": "allow",
     "reason": null,
     "matched_rule": null
+  },
+  {
+    "id": "false_positive_004",
+    "group": "false_positive",
+    "status": "FAIL",
+    "input": "Su kien to chuc tai hoi truong A co so 1 cua truong vao sang thu Bay.",
+    "expected": "allow",
+    "actual": "mask",
+    "reason": "wrong_action",
+    "matched_rule": "global.pii.address.mask"
   },
   {
     "id": "normal_allow_001",
@@ -352,12 +352,12 @@
   {
     "id": "false_positive_edge_005",
     "group": "false_positive",
-    "status": "PASS",
+    "status": "FAIL",
     "input": "Trong tai lieu huong dan, toi viet mau AKIA-XXXXX va sk-demo-123 de minh hoa format thoi.",
     "expected": "allow",
-    "actual": "allow",
-    "reason": null,
-    "matched_rule": null
+    "actual": "mask",
+    "reason": "wrong_action",
+    "matched_rule": "global.pii.address.mask"
   },
   {
     "id": "semantic_rule_ong_a_001",
@@ -504,6 +504,46 @@
     "group": "strict_keyword_rule",
     "status": "PASS",
     "input": "Công ty X có báo cáo tài chính công khai ở đâu?",
+    "expected": "allow",
+    "actual": "allow",
+    "reason": null,
+    "matched_rule": null
+  },
+  {
+    "id": "pii_mixed_001",
+    "group": "pii_mixed",
+    "status": "PASS",
+    "input": "Lien he toi qua so 0901234567 hoac email nguyenvana@gmail.com, dia chi 12 Nguyen Trai, Ha Noi.",
+    "expected": "mask",
+    "actual": "mask",
+    "reason": null,
+    "matched_rule": "global.pii.phone.mask"
+  },
+  {
+    "id": "priority_conflict_001",
+    "group": "priority",
+    "status": "PASS",
+    "input": "Gui key sk-live-ABC123 qua email dev@company.com de debug loi.",
+    "expected": "block",
+    "actual": "block",
+    "reason": null,
+    "matched_rule": "global.dev.api_secret.block"
+  },
+  {
+    "id": "pii_address_multi_001",
+    "group": "pii_address",
+    "status": "PASS",
+    "input": "Gui hang toi 12 Nguyen Trai, Ha Noi hoac 45 Le Loi, Quan 1, TP HCM.",
+    "expected": "mask",
+    "actual": "mask",
+    "reason": null,
+    "matched_rule": "global.pii.address.mask"
+  },
+  {
+    "id": "false_positive_address_006",
+    "group": "false_positive",
+    "status": "PASS",
+    "input": "Toi song o Ha Noi gan quan Thanh Xuan.",
     "expected": "allow",
     "actual": "allow",
     "reason": null,
